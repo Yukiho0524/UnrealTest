@@ -128,13 +128,14 @@ def open_unreal_asset(
     editor_path: Path,
     project_path: Path,
     asset_path: str,
+    fallback_asset_path: str | None = None,
 ) -> dict:
     if not editor_path.exists():
         raise FileNotFoundError(f"UnrealEditor.exe was not found: {editor_path}")
     if not project_path.exists():
         raise FileNotFoundError(f"Unreal project was not found: {project_path}")
 
-    runner_path = write_open_asset_runner(asset_path)
+    runner_path = write_open_asset_runner(asset_path, fallback_asset_path)
     runner_arg = str(runner_path).replace("\\", "/")
     command = [
         str(editor_path),
@@ -147,12 +148,13 @@ def open_unreal_asset(
         "command": command,
         "runner": str(runner_path),
         "assetPath": asset_path,
+        "fallbackAssetPath": fallback_asset_path,
         "processId": process.pid,
         "message": "Opening Unreal Editor and focusing the generated VFX asset.",
     }
 
 
-def write_open_asset_runner(asset_path: str) -> Path:
+def write_open_asset_runner(asset_path: str, fallback_asset_path: str | None = None) -> Path:
     runner_dir = Path("generated/unreal-runners").resolve()
     runner_dir.mkdir(parents=True, exist_ok=True)
     safe_name = asset_path.strip("/").replace("/", "_").replace(".", "_") or "asset"
@@ -163,11 +165,19 @@ def write_open_asset_runner(asset_path: str) -> Path:
                 "import unreal",
                 "",
                 f"asset_path = {asset_path!r}",
+                f"fallback_asset_path = {fallback_asset_path!r}",
+                "requested_asset_path = asset_path",
+                "if not unreal.EditorAssetLibrary.does_asset_exist(asset_path) and fallback_asset_path:",
+                "    unreal.log_warning(f'VFX MCP preview asset was not found, falling back: {asset_path} -> {fallback_asset_path}')",
+                "    asset_path = fallback_asset_path",
                 "asset_name = asset_path.rsplit('/', 1)[-1]",
                 "asset_dir = asset_path.rsplit('/', 1)[0]",
                 "effect_name = asset_name[3:] if asset_name.startswith('NS_') else asset_name",
+                "effect_name = effect_name[2:-11] if effect_name.startswith('L_') and effect_name.endswith('_VFXPreview') else effect_name",
                 "related_paths = [",
+                "    requested_asset_path,",
                 "    asset_path,",
+                "    f'{asset_dir}/L_{effect_name}_VFXPreview',",
                 "    f'{asset_dir}/T_{effect_name}_VFX_Sprite',",
                 "    f'{asset_dir}/M_{effect_name}_VFX',",
                 "    f'{asset_dir}/MI_{effect_name}_VFX',",

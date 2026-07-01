@@ -22,6 +22,18 @@
 
 ## 下一步
 
-- 產生 `BP_<name>_VFXPreview`，把 reference card 與多個 Niagara Systems 組成一個可直接檢視的 Actor。
+- 產生 `L_<name>_VFXPreview`，把 reference card、各層材質與多個 Niagara Systems 組成一個可直接檢視的預覽關卡。
 - 將 bundle systems 進一步合成成單一 Niagara System 內的多 emitter。
 - 將 `production_notes` 轉成實際 Niagara module 設定，例如 size over life、color over life、rotation rate、curl noise、sub UV/flipbook。
+
+## 已落地的預覽流程
+
+- `Generate Unreal Assets` 會建立 `L_<name>_VFXPreview` 預覽關卡。
+- 預覽關卡會放入 reference card 材質平面、每個 emitter 對應的材質平面、Niagara layer actor、camera 與 light。
+- `Open In Unreal` 優先開 preview level；單獨的 `NS_` 系統只用於檢查單層 emitter。
+
+## 後續真正要再強化的地方
+
+- 把目前分開的 Niagara layer 合成為同一個 Niagara System 內的多個 emitter。
+- 依 `module_stack` 實際設定 velocity、curl noise、color/alpha over life、sprite size over life、rotation rate。
+- 將 GIF/序列幀轉成 flipbook texture，讓主體不只是靜態 reference card。

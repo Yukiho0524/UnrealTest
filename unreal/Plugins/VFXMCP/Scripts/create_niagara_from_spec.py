@@ -84,6 +84,7 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
         return {
             "mode": "dry-run",
             "asset_path": f"{destination_path}/NS_{spec['name']}",
+            "preview_asset_path": f"{destination_path}/L_{spec['name']}_VFXPreview",
             "message": "Run this script inside Unreal Editor Python to create assets.",
         }
 
@@ -92,6 +93,16 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
         return build_niagara_bundle_from_spec(unreal, spec, destination_path, emitters)
 
     single_result = build_single_niagara_system(unreal, spec, destination_path)
+    single_result["preview"] = create_preview_level_from_bundle(
+        unreal,
+        spec,
+        destination_path,
+        [single_result],
+        {"created": False},
+    )
+    single_result["preview_asset_path"] = single_result["preview"].get("asset_path")
+    if single_result["preview"].get("created"):
+        single_result["asset_path"] = single_result["preview"]["asset_path"]
     unreal.EditorAssetLibrary.save_directory(destination_path, only_if_is_dirty=False, recursive=True)
     return single_result
 
@@ -108,20 +119,23 @@ def build_niagara_bundle_from_spec(unreal_module, spec: dict, destination_path: 
         systems.append(system_result)
 
     primary_system = next((system for system in systems if system.get("is_primary")), systems[0] if systems else None)
+    preview = create_preview_level_from_bundle(unreal_module, spec, destination_path, systems, reference_card)
     unreal_module.EditorAssetLibrary.save_directory(destination_path, only_if_is_dirty=False, recursive=True)
     return {
         "mode": "unreal-editor",
         "status": "created_bundle" if primary_system and primary_system.get("status") != "partial" else "partial_bundle",
-        "asset_path": primary_system.get("asset_path") if primary_system else f"{destination_path}/NS_{spec['name']}",
+        "asset_path": preview.get("asset_path") if preview.get("created") else (primary_system.get("asset_path") if primary_system else f"{destination_path}/NS_{spec['name']}"),
+        "preview_asset_path": preview.get("asset_path"),
         "bundle": {
             "enabled": True,
             "primary_emitter": primary_emitter,
             "system_count": len(systems),
             "reference_card": reference_card,
             "systems": systems,
+            "preview": preview,
         },
         "spec_summary": summarize_spec(spec),
-        "message": "Created a VFX bundle from vfx_plan emitters. Each planned emitter has its own Niagara System, texture, material, and material instance.",
+        "message": "Created a composited VFX preview level plus a bundle from vfx_plan emitters. Open the preview level first; individual Niagara systems remain available for layer debugging.",
     }
 
 
@@ -223,6 +237,204 @@ def create_reference_card_assets(unreal_module, spec: dict, destination_path: st
         }
     )
     return result
+
+
+def create_preview_level_from_bundle(unreal_module, spec: dict, destination_path: str, systems: list[dict], reference_card: dict) -> dict:
+    level_path = preview_level_path(spec, destination_path)
+    result = {
+        "asset_path": level_path,
+        "created": False,
+        "actors": [],
+        "errors": [],
+    }
+    if not hasattr(unreal_module, "EditorLevelLibrary"):
+        result["errors"].append("EditorLevelLibrary is not available; preview level could not be created.")
+        return result
+
+    try:
+        if unreal_module.EditorAssetLibrary.does_asset_exist(level_path):
+            unreal_module.EditorAssetLibrary.delete_asset(level_path)
+        if not unreal_module.EditorLevelLibrary.new_level(level_path):
+            result["errors"].append(f"Could not create preview level: {level_path}")
+            return result
+
+        spawn_preview_environment(unreal_module, result)
+        plane_mesh = unreal_module.EditorAssetLibrary.load_asset("/Engine/BasicShapes/Plane")
+        if not plane_mesh:
+            result["errors"].append("Could not load /Engine/BasicShapes/Plane for preview cards.")
+
+        reference_material = reference_card.get("material_instance_path") if reference_card else None
+        if plane_mesh and reference_material:
+            spawn_material_preview_plane(
+                unreal_module,
+                result,
+                plane_mesh,
+                reference_material,
+                "VFX Reference Silhouette",
+                layer_index=0,
+                scale=2.1,
+                opacity_offset=0,
+            )
+
+        for index, system in enumerate(systems, start=1):
+            material_path = (system.get("materials") or {}).get("material_instance_path")
+            emitter = system.get("emitter_plan") or {}
+            label = f"VFX Layer {index}: {emitter.get('name') or system.get('asset_path', 'layer').rsplit('/', 1)[-1]}"
+            if plane_mesh and material_path:
+                spawn_material_preview_plane(
+                    unreal_module,
+                    result,
+                    plane_mesh,
+                    material_path,
+                    label,
+                    layer_index=index,
+                    scale=preview_scale_for_emitter(emitter, index),
+                    opacity_offset=index,
+                )
+            spawn_niagara_preview_actor(unreal_module, result, system, emitter, index)
+
+        try:
+            unreal_module.EditorLevelLibrary.save_current_level()
+        except Exception as exc:
+            result["errors"].append(f"Could not save preview level: {exc}")
+
+        level_asset = unreal_module.EditorAssetLibrary.load_asset(level_path)
+        if level_asset:
+            annotate_asset(unreal_module, level_asset, spec)
+            unreal_module.EditorAssetLibrary.save_loaded_asset(level_asset)
+
+        result["created"] = unreal_module.EditorAssetLibrary.does_asset_exist(level_path)
+        return result
+    except Exception as exc:
+        result["errors"].append(str(exc))
+        return result
+
+
+def preview_level_path(spec: dict, destination_path: str) -> str:
+    return f"{destination_path}/L_{spec['name']}_VFXPreview"
+
+
+def spawn_preview_environment(unreal_module, result: dict) -> None:
+    try:
+        camera = unreal_module.EditorLevelLibrary.spawn_actor_from_class(
+            unreal_module.CameraActor,
+            unreal_module.Vector(-520.0, 0.0, 180.0),
+            unreal_module.Rotator(-8.0, 0.0, 0.0),
+        )
+        if camera:
+            camera.set_actor_label("VFX Preview Camera")
+            result["actors"].append({"label": "VFX Preview Camera", "type": "CameraActor"})
+    except Exception as exc:
+        result["errors"].append(f"Could not spawn preview camera: {exc}")
+
+    light_class = getattr(unreal_module, "DirectionalLight", None)
+    if light_class:
+        try:
+            light = unreal_module.EditorLevelLibrary.spawn_actor_from_class(
+                light_class,
+                unreal_module.Vector(-180.0, -220.0, 380.0),
+                unreal_module.Rotator(-42.0, 24.0, 0.0),
+            )
+            if light:
+                light.set_actor_label("VFX Preview Key Light")
+                result["actors"].append({"label": "VFX Preview Key Light", "type": "DirectionalLight"})
+        except Exception as exc:
+            result["errors"].append(f"Could not spawn preview light: {exc}")
+
+
+def spawn_material_preview_plane(
+    unreal_module,
+    result: dict,
+    plane_mesh,
+    material_path: str,
+    label: str,
+    layer_index: int,
+    scale: float,
+    opacity_offset: int,
+) -> None:
+    material = unreal_module.EditorAssetLibrary.load_asset(material_path)
+    if not material:
+        result["errors"].append(f"Preview material does not exist: {material_path}")
+        return
+    try:
+        actor = unreal_module.EditorLevelLibrary.spawn_actor_from_class(
+            unreal_module.StaticMeshActor,
+            unreal_module.Vector(opacity_offset * 4.0, 0.0, 150.0 + layer_index * 8.0),
+            unreal_module.Rotator(90.0, 0.0, 0.0),
+        )
+        if not actor:
+            result["errors"].append(f"Could not spawn preview plane for {material_path}")
+            return
+        actor.set_actor_label(label)
+        actor.set_actor_scale3d(unreal_module.Vector(scale, scale, scale))
+        component = static_mesh_component_for_actor(unreal_module, actor)
+        if component:
+            component.set_static_mesh(plane_mesh)
+            component.set_material(0, material)
+        result["actors"].append({"label": label, "type": "StaticMeshActor", "material": material_path})
+    except Exception as exc:
+        result["errors"].append(f"Could not spawn preview plane {label}: {exc}")
+
+
+def spawn_niagara_preview_actor(unreal_module, result: dict, system: dict, emitter: dict, index: int) -> None:
+    niagara_actor_class = getattr(unreal_module, "NiagaraActor", None)
+    niagara_component_class = getattr(unreal_module, "NiagaraComponent", None)
+    if not niagara_actor_class or not niagara_component_class:
+        result["errors"].append("NiagaraActor/NiagaraComponent is not available for preview placement.")
+        return
+
+    system_path = system.get("asset_path")
+    system_asset = unreal_module.EditorAssetLibrary.load_asset(system_path) if system_path else None
+    if not system_asset:
+        result["errors"].append(f"Preview Niagara system does not exist: {system_path}")
+        return
+
+    try:
+        actor = unreal_module.EditorLevelLibrary.spawn_actor_from_class(
+            niagara_actor_class,
+            unreal_module.Vector(-38.0, (index - 1) * 34.0, 118.0),
+            unreal_module.Rotator(0.0, 0.0, 0.0),
+        )
+        if not actor:
+            result["errors"].append(f"Could not spawn Niagara preview actor: {system_path}")
+            return
+        label = f"VFX Niagara Layer {index}: {emitter.get('name') or system_path.rsplit('/', 1)[-1]}"
+        actor.set_actor_label(label)
+        component = actor.get_component_by_class(niagara_component_class)
+        if component:
+            if hasattr(component, "set_asset"):
+                component.set_asset(system_asset)
+            else:
+                component.set_editor_property("asset", system_asset)
+        result["actors"].append({"label": label, "type": "NiagaraActor", "system": system_path})
+    except Exception as exc:
+        result["errors"].append(f"Could not spawn Niagara preview actor for {system_path}: {exc}")
+
+
+def static_mesh_component_for_actor(unreal_module, actor):
+    try:
+        return actor.get_component_by_class(unreal_module.StaticMeshComponent)
+    except Exception:
+        pass
+    try:
+        return actor.static_mesh_component
+    except Exception:
+        return None
+
+
+def preview_scale_for_emitter(emitter: dict, index: int) -> float:
+    role = emitter.get("role")
+    if role == "supporting_glow":
+        return 1.7
+    if role == "accent_particles":
+        return 0.65
+    if role == "detail_particles":
+        return 0.85
+    if role == "primary_body":
+        return 1.45
+    if role == "primary_particles":
+        return 1.15
+    return max(0.8, 1.2 - index * 0.08)
 
 
 def planned_emitters(spec: dict) -> list[dict]:

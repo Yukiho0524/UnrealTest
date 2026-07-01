@@ -84,13 +84,15 @@ def run_ui(host: str, port: int, references_root: Path, output_root: Path) -> No
                 destination_path = payload.get("destinationPath") or f"/Game/VFX/Generated/{package_path.name}"
                 project = project_from_payload(payload)
                 spec = analyze_effect_package(package_path)
-                asset_path = f"{destination_path}/NS_{spec.name}"
+                asset_path = payload.get("assetPath") or f"{destination_path}/L_{spec.name}_VFXPreview"
+                fallback_asset_path = f"{destination_path}/NS_{spec.name}"
                 result = open_unreal_asset(
                     Path(project["editorPath"]),
                     Path(project["path"]),
                     asset_path,
+                    fallback_asset_path=fallback_asset_path,
                 )
-                self.respond_json({"assetPath": asset_path, "unreal": result})
+                self.respond_json({"assetPath": asset_path, "fallbackAssetPath": fallback_asset_path, "unreal": result})
                 return
             self.send_error(404, "Not found")
 
