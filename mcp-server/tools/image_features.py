@@ -192,6 +192,8 @@ def infer_shape_hint(profiles: list[dict[str, Any]]) -> str:
     square_ratio = mean(profile["square_component_ratio"] for profile in profiles)
     component_count = mean(profile["bright_component_count"] for profile in profiles)
     warm = mean(profile["warm_pixel_ratio"] for profile in profiles)
+    if component_count >= 12 and 0.25 <= square_ratio < 0.68 and warm < 0.1:
+        return "glowing_shard_particles"
     if component_count >= 6 and square_ratio > 0.28 and warm < 0.1:
         return "glowing_square_particles"
     if vertical > 0.24 and center > 0.32:
@@ -208,6 +210,8 @@ def infer_style_hint(profiles: list[dict[str, Any]]) -> str:
     vertical = mean(profile["vertical_energy"] for profile in profiles)
     square_ratio = mean(profile["square_component_ratio"] for profile in profiles)
     component_count = mean(profile["bright_component_count"] for profile in profiles)
+    if bright > 0.025 and warm < 0.1 and component_count >= 12 and 0.25 <= square_ratio < 0.68:
+        return "white_gold_glowing_shards"
     if bright > 0.025 and warm < 0.1 and component_count >= 6 and square_ratio > 0.28:
         return "white_glowing_square_particles"
     if (bright > 0.08 and warm > 0.12) or (vertical > 0.4 and any(profile["sparks_hint"] for profile in profiles)):
@@ -220,6 +224,8 @@ def infer_style_hint(profiles: list[dict[str, Any]]) -> str:
 def effect_palette(profiles: list[dict[str, Any]], palette: list[str]) -> list[str]:
     shape_hint = infer_shape_hint(profiles)
     style_hint = infer_style_hint(profiles)
+    if shape_hint == "glowing_shard_particles" or style_hint == "white_gold_glowing_shards":
+        return ["#FFFFFF", "#FFF0C8", "#FFD36A", "#A87528"]
     if shape_hint == "glowing_square_particles" or style_hint == "white_glowing_square_particles":
         return ["#FFFFFF", "#FFFCE8", "#DDE6FF", "#9FB3D9"]
     if shape_hint == "bright_core_column_with_outer_flames" or style_hint == "high_intensity_stylized_fire":

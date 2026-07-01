@@ -48,7 +48,7 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
         palette = visual_profile["palette"]
     if visual_profile.get("motion_hint") == "vertical_column_rise":
         motion = "rise_and_fade"
-    if visual_profile.get("shape_hint") == "glowing_square_particles":
+    if visual_profile.get("shape_hint") in {"glowing_square_particles", "glowing_shard_particles"}:
         effect_type = "glowing_particles"
         motion = "rise_and_fade"
     if visual_profile.get("shape_hint") in {"bright_core_column_with_outer_flames", "ground_ring_with_upward_flare"}:
@@ -72,7 +72,9 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
         end_size=float(config.get("end_size", inferred_end_size(visual_profile)) if config.get("lock_particles") else inferred_end_size(visual_profile)),
     )
 
-    reference_sprite_source = create_reference_sprite_source(package_dir.name, media_files, effect_type, visual_profile)
+    reference_sprite_source = None
+    if visual_profile.get("shape_hint") != "glowing_shard_particles":
+        reference_sprite_source = create_reference_sprite_source(package_dir.name, media_files, effect_type, visual_profile)
 
     return VFXSpec(
         name=config.get("name", package_dir.name),
@@ -166,6 +168,41 @@ def build_vfx_plan(
     visual_profile: dict[str, Any],
     reference_sprite_source: str | None,
 ) -> VFXPlan:
+    if visual_profile.get("shape_hint") == "glowing_shard_particles":
+        return VFXPlan(
+            visual_intent="Gold-white glowing shard particles swirling upward with varied small triangular silhouettes and a faint bloom core.",
+            primary_emitter="glowing_shards",
+            emitters=[
+                VFXEmitterPlan(
+                    name="glowing_shards",
+                    role="primary_particles",
+                    sprite_shape="shard",
+                    material_style="gold_white_emissive_shards",
+                    motion="rise_with_turbulence",
+                    spawn_rate=max(particles.spawn_rate, 150.0),
+                    lifetime_seconds=max(particles.lifetime_seconds, 0.95),
+                    start_size=max(particles.start_size, 8.0),
+                    end_size=max(particles.end_size, 22.0),
+                    color_palette=palette[:4],
+                    sprite_source=reference_sprite_source,
+                    notes=["Use a crisp triangular shard sprite, random rotation, and nonuniform sizes."],
+                ),
+                VFXEmitterPlan(
+                    name="overexposed_glints",
+                    role="accent_particles",
+                    sprite_shape="soft_disc",
+                    material_style="white_hot_glint",
+                    motion="quick_rise_and_fade",
+                    spawn_rate=36.0,
+                    lifetime_seconds=0.42,
+                    start_size=12.0,
+                    end_size=4.0,
+                    color_palette=["#FFFFFF", "#FFF0C8"],
+                    notes=["Adds small hot flashes between shard particles."],
+                ),
+            ],
+        )
+
     if effect_type == "glowing_particles" or visual_profile.get("shape_hint") == "glowing_square_particles":
         return VFXPlan(
             visual_intent="White emissive square particles drifting upward in a loose vertical column with soft bloom.",
@@ -258,6 +295,8 @@ def build_vfx_plan(
 
 
 def inferred_spawn_rate(visual_profile: dict[str, Any]) -> float:
+    if visual_profile.get("shape_hint") == "glowing_shard_particles":
+        return 155.0
     if visual_profile.get("shape_hint") == "glowing_square_particles":
         return 130.0
     if visual_profile.get("style_hint") == "high_intensity_stylized_fire":
@@ -268,6 +307,8 @@ def inferred_spawn_rate(visual_profile: dict[str, Any]) -> float:
 
 
 def inferred_lifetime(visual_profile: dict[str, Any]) -> float:
+    if visual_profile.get("shape_hint") == "glowing_shard_particles":
+        return 0.95
     if visual_profile.get("shape_hint") == "glowing_square_particles":
         return 1.05
     if visual_profile.get("motion_hint") == "vertical_column_rise":
@@ -276,6 +317,8 @@ def inferred_lifetime(visual_profile: dict[str, Any]) -> float:
 
 
 def inferred_start_size(visual_profile: dict[str, Any]) -> float:
+    if visual_profile.get("shape_hint") == "glowing_shard_particles":
+        return 8.0
     if visual_profile.get("shape_hint") == "glowing_square_particles":
         return 10.0
     if visual_profile.get("base_energy", 0) > 0.34:
@@ -284,6 +327,8 @@ def inferred_start_size(visual_profile: dict[str, Any]) -> float:
 
 
 def inferred_end_size(visual_profile: dict[str, Any]) -> float:
+    if visual_profile.get("shape_hint") == "glowing_shard_particles":
+        return 22.0
     if visual_profile.get("shape_hint") == "glowing_square_particles":
         return 28.0
     if visual_profile.get("shape_hint") == "bright_core_column_with_outer_flames":

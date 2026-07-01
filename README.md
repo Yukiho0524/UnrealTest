@@ -105,6 +105,8 @@ Unreal 端會先用 primary emitter 的 `sprite_shape` 產生對應貼圖。火�
 
 如果參考圖可被萃取，primary emitter 也會帶 `sprite_source`，指向 `generated/reference-sprites/<package>/` 內的 PNG。Unreal 端會優先匯入這張由原圖亮部/暖色前景裁切出的 sprite，只有沒有 `sprite_source` 時才使用程序貼圖。
 
+對於大量小型亮片或三角碎光，工具會優先使用分析出的 palette 與乾淨的 shard sprite。這比直接把低解析度截圖中的單顆亮片放大更穩定，也能避免背景窗格或白牆被誤裁進貼圖。
+
 ## UI 使用
 
 啟動 UI：

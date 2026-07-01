@@ -289,6 +289,8 @@ def write_sprite_png(path: Path, spec: dict) -> None:
     sprite_shape = primary_sprite_shape(spec)
     if sprite_shape == "square":
         pixels = square_sprite_pixels(width, height, spec)
+    elif sprite_shape == "shard":
+        pixels = shard_sprite_pixels(width, height, spec)
     elif is_fire_spec(spec) or sprite_shape == "flame_tongue":
         pixels = fire_sprite_pixels(width, height, spec)
     else:
@@ -363,6 +365,38 @@ def square_sprite_pixels(width: int, height: int, spec: dict) -> bytes:
             brightness = 0.82 + inner * 0.18
             pixels.extend((int(color[0] * brightness), int(color[1] * brightness), int(color[2] * brightness), int(alpha * 255)))
     return bytes(pixels)
+
+
+def shard_sprite_pixels(width: int, height: int, spec: dict) -> bytes:
+    color = hex_to_rgba_tuple(spec["color_palette"][0] if spec.get("color_palette") else "#FFFFFF")
+    warm = hex_to_rgba_tuple(spec["color_palette"][1] if len(spec.get("color_palette", [])) > 1 else "#FFF0C8")
+    pixels = bytearray()
+    points = [(-0.82, -0.46), (0.72, -0.08), (-0.18, 0.74)]
+    for y in range(height):
+        ny = (y / (height - 1) - 0.5) * 2.0
+        for x in range(width):
+            nx = (x / (width - 1) - 0.5) * 2.0
+            inside = triangle_coverage(nx, ny, points)
+            ridge = 1.0 - min(1.0, abs(nx + ny * 0.42) * 1.55)
+            alpha = inside * (0.78 + ridge * 0.22)
+            mixed = mix_color(warm, color, ridge)
+            pixels.extend((mixed[0], mixed[1], mixed[2], int(clamp(alpha) * 255)))
+    return bytes(pixels)
+
+
+def triangle_coverage(x: float, y: float, points: list[tuple[float, float]]) -> float:
+    def sign(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]) -> float:
+        return (a[0] - c[0]) * (b[1] - c[1]) - (b[0] - c[0]) * (a[1] - c[1])
+
+    point = (x, y)
+    d1 = sign(point, points[0], points[1])
+    d2 = sign(point, points[1], points[2])
+    d3 = sign(point, points[2], points[0])
+    inside = not ((d1 < 0 or d2 < 0 or d3 < 0) and (d1 > 0 or d2 > 0 or d3 > 0))
+    if inside:
+        edge_distance = min(abs(d1), abs(d2), abs(d3))
+        return smoothstep(0.0, 0.08, edge_distance)
+    return 0.0
 
 
 def write_rgba_png(path: Path, width: int, height: int, pixels: bytes) -> None:
@@ -689,6 +723,8 @@ def inferred_emissive_strength(spec: dict) -> float:
     visual_profile = spec.get("visual_profile", {})
     bright = float(visual_profile.get("bright_pixel_ratio", 0.08) or 0.08)
     vertical = float(visual_profile.get("vertical_energy", 0.3) or 0.3)
+    if visual_profile.get("style_hint") == "white_gold_glowing_shards":
+        return round(18.0 + bright * 24.0, 2)
     if is_fire_spec(spec):
         return round(8.0 + bright * 28.0 + vertical * 8.0, 2)
     return round(12.0 + bright * 38.0 + vertical * 10.0, 2)
