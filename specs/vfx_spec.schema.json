@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hibari.local/schemas/vfx_spec.schema.json",
+  "title": "VFX Spec",
+  "description": "A portable visual-effects intent document that can be generated from images or URLs and then consumed by Unreal tooling.",
+  "type": "object",
+  "required": [
+    "name",
+    "source",
+    "effect_type",
+    "motion",
+    "color_palette",
+    "render_mode",
+    "timing",
+    "particles"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "object",
+      "required": ["kind", "uri"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["image", "folder", "url", "manual"]
+        },
+        "uri": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "effect_type": {
+      "type": "string",
+      "enum": [
+        "fire_or_flame",
+        "smoke_or_mist",
+        "magic_energy",
+        "electric_arc",
+        "impact_burst",
+        "unknown"
+      ]
+    },
+    "motion": {
+      "type": "string",
+      "enum": [
+        "rise_and_fade",
+        "drift_and_dissipate",
+        "radial_expand_then_fade",
+        "branch_and_flicker",
+        "pulse_loop",
+        "unknown"
+      ]
+    },
+    "color_palette": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^#[0-9A-Fa-f]{6}$"
+      }
+    },
+    "render_mode": {
+      "type": "string",
+      "enum": ["sprite", "ribbon", "mesh", "flipbook"]
+    },
+    "timing": {
+      "type": "object",
+      "required": ["duration_seconds", "looping"],
+      "properties": {
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 0.05
+        },
+        "looping": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "particles": {
+      "type": "object",
+      "required": ["spawn_rate", "lifetime_seconds", "start_size", "end_size"],
+      "properties": {
+        "spawn_rate": {
+          "type": "number",
+          "minimum": 0
+        },
+        "lifetime_seconds": {
+          "type": "number",
+          "minimum": 0.05
+        },
+        "start_size": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end_size": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}
