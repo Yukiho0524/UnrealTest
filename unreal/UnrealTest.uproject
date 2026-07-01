@@ -1,0 +1,20 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.7",
+  "Category": "VFX",
+  "Description": "Unreal MCP VFX research project pinned to Unreal Engine 5.7.4.",
+  "Plugins": [
+    {
+      "Name": "VFXMCP",
+      "Enabled": true
+    },
+    {
+      "Name": "PythonScriptPlugin",
+      "Enabled": true
+    },
+    {
+      "Name": "Niagara",
+      "Enabled": true
+    }
+  ]
+}

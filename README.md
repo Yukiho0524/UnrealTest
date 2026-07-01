@@ -36,7 +36,23 @@ samples/
   references/                Put source images here for local tests
 
 unreal/
+  UnrealTest.uproject        Unreal project descriptor pinned to UE 5.7
+  engine.version.json        Exact local UE 5.7.4 installation metadata
   Plugins/VFXMCP/            Unreal plugin prototype
+```
+
+## Unreal Version
+
+This workspace is pinned to the local Unreal Engine 5.7.4 install:
+
+```text
+D:\Program Files\UE_5.7\Engine\Binaries\Win64\UnrealEditor.exe
+```
+
+Open the Unreal project with:
+
+```powershell
+.\unreal\Scripts\Open-UnrealTest.ps1
 ```
 
 ## First Local Test

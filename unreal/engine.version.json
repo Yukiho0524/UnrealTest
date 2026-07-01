@@ -1,0 +1,12 @@
+{
+  "engineAssociation": "5.7",
+  "requiredVersion": {
+    "major": 5,
+    "minor": 7,
+    "patch": 4,
+    "changelist": 51494982,
+    "branchName": "++UE5+Release-5.7"
+  },
+  "windowsEditorPath": "D:\\Program Files\\UE_5.7\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
+  "installLocation": "D:\\Program Files\\UE_5.7"
+}
