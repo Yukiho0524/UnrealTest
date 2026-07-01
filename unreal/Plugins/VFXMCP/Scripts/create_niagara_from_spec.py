@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
+import struct
+import zlib
 from pathlib import Path
 
 
@@ -15,6 +18,9 @@ REQUIRED_TOP_LEVEL_KEYS = {
     "timing",
     "particles",
 }
+
+
+WORKSPACE_ROOT = Path(__file__).resolve().parents[4]
 
 
 def parse_args(argv: list[str]) -> tuple[str | None, str | None]:
@@ -210,20 +216,24 @@ def annotate_asset(unreal_module, asset, spec: dict) -> None:
 def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str) -> dict:
     material_name = f"M_{spec['name']}_VFX"
     instance_name = f"MI_{spec['name']}_VFX"
+    texture_name = f"T_{spec['name']}_VFX_Sprite"
     material_path = f"{destination_path}/{material_name}"
     instance_path = f"{destination_path}/{instance_name}"
+    texture_path = f"{destination_path}/{texture_name}"
 
     result = {
         "material_path": material_path,
         "material_instance_path": instance_path,
+        "texture_path": texture_path,
         "palette": spec["color_palette"],
         "errors": [],
         "created": False,
     }
 
     try:
-        material = create_or_replace_material(unreal_module, material_name, destination_path, spec)
-        material_instance = create_or_replace_material_instance(unreal_module, instance_name, destination_path, material, spec)
+        texture = create_or_replace_sprite_texture(unreal_module, texture_name, destination_path, spec)
+        material = create_or_replace_material(unreal_module, material_name, destination_path, spec, texture)
+        material_instance = create_or_replace_material_instance(unreal_module, instance_name, destination_path, material, spec, texture)
         result["created"] = bool(material and material_instance)
         return result
     except Exception as exc:
@@ -231,7 +241,135 @@ def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str)
         return result
 
 
-def create_or_replace_material(unreal_module, material_name: str, destination_path: str, spec: dict):
+def create_or_replace_sprite_texture(unreal_module, texture_name: str, destination_path: str, spec: dict):
+    texture_path = f"{destination_path}/{texture_name}"
+    if unreal_module.EditorAssetLibrary.does_asset_exist(texture_path):
+        unreal_module.EditorAssetLibrary.delete_asset(texture_path)
+
+    source_path = generated_texture_source_path(spec["name"], texture_name)
+    write_sprite_png(source_path, spec)
+
+    task = unreal_module.AssetImportTask()
+    task.set_editor_property("filename", str(source_path))
+    task.set_editor_property("destination_path", destination_path)
+    task.set_editor_property("destination_name", texture_name)
+    task.set_editor_property("automated", True)
+    task.set_editor_property("replace_existing", True)
+    task.set_editor_property("save", True)
+    unreal_module.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
+
+    texture = unreal_module.EditorAssetLibrary.load_asset(texture_path)
+    if not texture:
+        raise RuntimeError(f"Could not import sprite texture: {texture_path}")
+    configure_texture_asset(unreal_module, texture)
+    annotate_asset(unreal_module, texture, spec)
+    unreal_module.EditorAssetLibrary.save_loaded_asset(texture)
+    return texture
+
+
+def generated_texture_source_path(effect_name: str, texture_name: str) -> Path:
+    safe_effect_name = "".join(character if character.isalnum() else "_" for character in effect_name).strip("_") or "effect"
+    output_dir = WORKSPACE_ROOT / "generated" / "unreal-imports" / safe_effect_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir / f"{texture_name}.png"
+
+
+def write_sprite_png(path: Path, spec: dict) -> None:
+    width = 256
+    height = 256
+    if is_fire_spec(spec):
+        pixels = fire_sprite_pixels(width, height, spec)
+    else:
+        pixels = soft_disc_pixels(width, height, spec)
+    write_rgba_png(path, width, height, pixels)
+
+
+def fire_sprite_pixels(width: int, height: int, spec: dict) -> bytes:
+    palette = [hex_to_rgba_tuple(color) for color in spec["color_palette"]]
+    core = palette[0] if palette else (255, 248, 200, 255)
+    mid = palette[1] if len(palette) > 1 else (255, 155, 45, 255)
+    edge = palette[2] if len(palette) > 2 else (240, 80, 32, 255)
+    pixels = bytearray()
+    for y in range(height):
+        ny = y / (height - 1)
+        up = 1.0 - ny
+        for x in range(width):
+            nx = (x / (width - 1) - 0.5) * 2.0
+            height_fade = smoothstep(0.0, 0.1, up) * (1.0 - smoothstep(0.96, 1.0, up))
+            main_center = 0.035 * wave(up * 1.2 + 0.1)
+            main_width = 0.06 + 0.56 * ((1.0 - up) ** 1.18)
+            main = gaussian(nx, main_center, main_width) * height_fade
+
+            left_center = -0.24 + 0.08 * wave(up * 1.8 + 0.35)
+            right_center = 0.24 + 0.08 * wave(up * 1.7 + 0.8)
+            side_width = 0.045 + 0.22 * ((1.0 - up) ** 1.4)
+            side_window = smoothstep(0.08, 0.22, up) * (1.0 - smoothstep(0.62, 0.88, up))
+            left = gaussian(nx, left_center, side_width) * side_window * 0.7
+            right = gaussian(nx, right_center, side_width) * side_window * 0.62
+
+            tip_center = 0.06 * wave(up * 2.4 + 0.55)
+            tip_width = 0.035 + 0.12 * (1.0 - up)
+            tip_window = smoothstep(0.52, 0.74, up) * (1.0 - smoothstep(0.92, 1.0, up))
+            tip = gaussian(nx, tip_center, tip_width) * tip_window
+
+            alpha = clamp(main + left + right + tip)
+
+            core_width = max(0.035, main_width * 0.34)
+            core_alpha = gaussian(nx, main_center * 0.45, core_width)
+            core_alpha *= smoothstep(0.06, 0.2, up) * (1.0 - smoothstep(0.7, 0.92, up))
+
+            body_amount = clamp(alpha * 0.85 + main * 0.35)
+            color = mix_color(edge, mid, body_amount)
+            color = mix_color(color, core, min(1.0, core_alpha * 1.35))
+            pixels.extend((color[0], color[1], color[2], int(clamp(alpha + core_alpha * 0.35) * 255)))
+    return bytes(pixels)
+
+
+def soft_disc_pixels(width: int, height: int, spec: dict) -> bytes:
+    color = hex_to_rgba_tuple(spec["color_palette"][0] if spec.get("color_palette") else "#FFFFFF")
+    pixels = bytearray()
+    for y in range(height):
+        ny = (y / (height - 1) - 0.5) * 2.0
+        for x in range(width):
+            nx = (x / (width - 1) - 0.5) * 2.0
+            distance = (nx * nx + ny * ny) ** 0.5
+            alpha = 1.0 - smoothstep(0.18, 0.92, distance)
+            pixels.extend((color[0], color[1], color[2], int(alpha * 255)))
+    return bytes(pixels)
+
+
+def write_rgba_png(path: Path, width: int, height: int, pixels: bytes) -> None:
+    raw_rows = bytearray()
+    stride = width * 4
+    for y in range(height):
+        raw_rows.append(0)
+        raw_rows.extend(pixels[y * stride : (y + 1) * stride])
+
+    def chunk(chunk_type: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + chunk_type
+            + data
+            + struct.pack(">I", zlib.crc32(chunk_type + data) & 0xFFFFFFFF)
+        )
+
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(bytes(raw_rows), 9))
+        + chunk(b"IEND", b"")
+    )
+
+
+def configure_texture_asset(unreal_module, texture) -> None:
+    try_set_editor_property(texture, "srgb", True)
+    if hasattr(unreal_module, "TextureCompressionSettings"):
+        try_set_editor_property(texture, "compression_settings", unreal_module.TextureCompressionSettings.TC_DEFAULT)
+    if hasattr(unreal_module, "TextureMipGenSettings"):
+        try_set_editor_property(texture, "mip_gen_settings", unreal_module.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+
+
+def create_or_replace_material(unreal_module, material_name: str, destination_path: str, spec: dict, sprite_texture=None):
     material_path = f"{destination_path}/{material_name}"
     if unreal_module.EditorAssetLibrary.does_asset_exist(material_path):
         unreal_module.EditorAssetLibrary.delete_asset(material_path)
@@ -243,13 +381,13 @@ def create_or_replace_material(unreal_module, material_name: str, destination_pa
         raise RuntimeError(f"Could not create material: {material_path}")
 
     configure_material_properties(unreal_module, material)
-    build_fire_material_graph(unreal_module, material, spec)
+    build_sprite_material_graph(unreal_module, material, spec, sprite_texture)
     annotate_asset(unreal_module, material, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(material)
     return material
 
 
-def create_or_replace_material_instance(unreal_module, instance_name: str, destination_path: str, material, spec: dict):
+def create_or_replace_material_instance(unreal_module, instance_name: str, destination_path: str, material, spec: dict, sprite_texture=None):
     instance_path = f"{destination_path}/{instance_name}"
     if unreal_module.EditorAssetLibrary.does_asset_exist(instance_path):
         unreal_module.EditorAssetLibrary.delete_asset(instance_path)
@@ -266,6 +404,8 @@ def create_or_replace_material_instance(unreal_module, instance_name: str, desti
     unreal_module.MaterialEditingLibrary.set_material_instance_vector_parameter_value(material_instance, "OuterColor", palette[2 if len(palette) > 2 else 0])
     unreal_module.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(material_instance, "EmissiveStrength", inferred_emissive_strength(spec))
     unreal_module.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(material_instance, "Opacity", 0.92)
+    if sprite_texture:
+        unreal_module.MaterialEditingLibrary.set_material_instance_texture_parameter_value(material_instance, "SpriteTexture", sprite_texture)
     annotate_asset(unreal_module, material_instance, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(material_instance)
     return material_instance
@@ -381,31 +521,48 @@ def configure_material_properties(unreal_module, material) -> None:
     material.set_editor_property("use_material_attributes", False)
 
 
-def build_fire_material_graph(unreal_module, material, spec: dict) -> None:
+def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_texture=None) -> None:
     library = unreal_module.MaterialEditingLibrary
     palette = palette_as_linear_colors(spec["color_palette"])
 
-    particle_color = library.create_material_expression(material, unreal_module.MaterialExpressionParticleColor, -800, -120)
-    core_color = library.create_material_expression(material, unreal_module.MaterialExpressionVectorParameter, -800, 80)
+    texture_sample = None
+    if sprite_texture and hasattr(unreal_module, "MaterialExpressionTextureSampleParameter2D"):
+        texture_sample = library.create_material_expression(material, unreal_module.MaterialExpressionTextureSampleParameter2D, -980, -160)
+        texture_sample.set_editor_property("parameter_name", "SpriteTexture")
+        texture_sample.set_editor_property("texture", sprite_texture)
+
+    particle_color = library.create_material_expression(material, unreal_module.MaterialExpressionParticleColor, -760, 40)
+    core_color = library.create_material_expression(material, unreal_module.MaterialExpressionVectorParameter, -760, 220)
     core_color.set_editor_property("parameter_name", "CoreColor")
     core_color.set_editor_property("default_value", palette[0])
 
-    strength = library.create_material_expression(material, unreal_module.MaterialExpressionScalarParameter, -580, 180)
+    strength = library.create_material_expression(material, unreal_module.MaterialExpressionScalarParameter, -520, 260)
     strength.set_editor_property("parameter_name", "EmissiveStrength")
     strength.set_editor_property("default_value", inferred_emissive_strength(spec))
 
-    color_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -380, 0)
-    emissive_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -160, 40)
-    opacity = library.create_material_expression(material, unreal_module.MaterialExpressionScalarParameter, -180, 220)
+    particle_tint_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -520, 60)
+    texture_color_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -300, 20)
+    emissive_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -80, 90)
+    opacity = library.create_material_expression(material, unreal_module.MaterialExpressionScalarParameter, -300, 300)
     opacity.set_editor_property("parameter_name", "Opacity")
     opacity.set_editor_property("default_value", 0.92)
+    opacity_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -60, 300)
 
-    library.connect_material_expressions(particle_color, "RGB", color_multiply, "A")
-    library.connect_material_expressions(core_color, "", color_multiply, "B")
-    library.connect_material_expressions(color_multiply, "", emissive_multiply, "A")
+    library.connect_material_expressions(particle_color, "RGB", particle_tint_multiply, "A")
+    library.connect_material_expressions(core_color, "", particle_tint_multiply, "B")
+    if texture_sample:
+        library.connect_material_expressions(texture_sample, "RGB", texture_color_multiply, "A")
+        library.connect_material_expressions(particle_tint_multiply, "", texture_color_multiply, "B")
+        library.connect_material_expressions(texture_sample, "A", opacity_multiply, "A")
+        library.connect_material_expressions(opacity, "", opacity_multiply, "B")
+        opacity_output = opacity_multiply
+    else:
+        library.connect_material_expressions(particle_tint_multiply, "", texture_color_multiply, "A")
+        opacity_output = opacity
+    library.connect_material_expressions(texture_color_multiply, "", emissive_multiply, "A")
     library.connect_material_expressions(strength, "", emissive_multiply, "B")
     library.connect_material_property(emissive_multiply, "", unreal_module.MaterialProperty.MP_EMISSIVE_COLOR)
-    library.connect_material_property(opacity, "", unreal_module.MaterialProperty.MP_OPACITY)
+    library.connect_material_property(opacity_output, "", unreal_module.MaterialProperty.MP_OPACITY)
     library.layout_material_expressions(material)
 
 
@@ -426,10 +583,63 @@ def hex_to_linear_color(unreal_module, color: str):
     return unreal_module.LinearColor(red, green, blue, 1.0)
 
 
+def hex_to_rgba_tuple(color: str) -> tuple[int, int, int, int]:
+    color = color.lstrip("#")
+    return (int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16), 255)
+
+
+def mix_color(a: tuple[int, int, int, int], b: tuple[int, int, int, int], amount: float) -> tuple[int, int, int, int]:
+    amount = clamp(amount)
+    return (
+        int(a[0] + (b[0] - a[0]) * amount),
+        int(a[1] + (b[1] - a[1]) * amount),
+        int(a[2] + (b[2] - a[2]) * amount),
+        255,
+    )
+
+
+def wave(value: float) -> float:
+    return math.sin(value * math.tau)
+
+
+def gaussian(value: float, center: float, width: float) -> float:
+    if width <= 0:
+        return 0.0
+    normalized = (value - center) / width
+    return math.exp(-(normalized * normalized) * 1.45)
+
+
+def smoothstep(edge0: float, edge1: float, value: float) -> float:
+    if edge0 == edge1:
+        return 0.0
+    x = clamp((value - edge0) / (edge1 - edge0))
+    return x * x * (3.0 - 2.0 * x)
+
+
+def clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def is_fire_spec(spec: dict) -> bool:
+    if spec.get("effect_type") == "fire_or_flame":
+        return True
+    visual_profile = spec.get("visual_profile", {})
+    return visual_profile.get("style_hint") in {"high_intensity_stylized_fire", "smoky_fire_impact"}
+
+
+def try_set_editor_property(asset, property_name: str, value) -> None:
+    try:
+        asset.set_editor_property(property_name, value)
+    except Exception:
+        pass
+
+
 def inferred_emissive_strength(spec: dict) -> float:
     visual_profile = spec.get("visual_profile", {})
     bright = float(visual_profile.get("bright_pixel_ratio", 0.08) or 0.08)
     vertical = float(visual_profile.get("vertical_energy", 0.3) or 0.3)
+    if is_fire_spec(spec):
+        return round(8.0 + bright * 28.0 + vertical * 8.0, 2)
     return round(12.0 + bright * 38.0 + vertical * 10.0, 2)
 
 

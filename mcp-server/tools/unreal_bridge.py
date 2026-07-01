@@ -168,6 +168,7 @@ def write_open_asset_runner(asset_path: str) -> Path:
                 "effect_name = asset_name[3:] if asset_name.startswith('NS_') else asset_name",
                 "related_paths = [",
                 "    asset_path,",
+                "    f'{asset_dir}/T_{effect_name}_VFX_Sprite',",
                 "    f'{asset_dir}/M_{effect_name}_VFX',",
                 "    f'{asset_dir}/MI_{effect_name}_VFX',",
                 "]",
