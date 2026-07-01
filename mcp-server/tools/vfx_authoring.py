@@ -14,6 +14,7 @@ def production_notes_for_plan(effect_type: str, visual_profile: dict[str, Any], 
     if "primary_body" in roles or effect_type == "fire_or_flame":
         notes.extend(
             [
+                "High-similarity mode: use sampled reference flipbooks as motion targets, then rebuild editable layers around that timing.",
                 "Fire impact: separate the vertical pillar, side tongues, ground ring, impact flash, smoke crown, and embers.",
                 "Primary fire pillar must carry the read; do not let embers or template particles become the main shape.",
                 "Ground ring/rune should anchor the effect before the pillar reaches full brightness.",
@@ -96,6 +97,8 @@ def composition_layers_for_plan(effect_type: str, emitters: list[dict[str, Any]]
 
 
 def purpose_for_role(role: str | None, effect_type: str) -> str:
+    if role == "reference_motion":
+        return "Sampled reference motion layer used to preserve timing and silhouette similarity."
     if role == "fire_pillar":
         return "Dominant vertical fire impact column."
     if role == "flame_slashes":
@@ -130,7 +133,7 @@ def purpose_for_role(role: str | None, effect_type: str) -> str:
 def renderer_for_emitter(emitter: dict[str, Any]) -> str:
     shape = emitter.get("sprite_shape")
     role = emitter.get("role")
-    if role in {"primary_particles", "detail_particles", "accent_particles", "supporting_glow", "primary_body", "secondary_body", "atmospheric_wisp", "primary_bolt", "secondary_bolts", "impact_core", "fire_pillar", "flame_slashes", "ground_energy_ring"}:
+    if role in {"primary_particles", "detail_particles", "accent_particles", "supporting_glow", "primary_body", "secondary_body", "atmospheric_wisp", "primary_bolt", "secondary_bolts", "impact_core", "fire_pillar", "flame_slashes", "ground_energy_ring", "reference_motion"}:
         return "Sprite Renderer"
     if shape == "ribbon":
         return "Ribbon Renderer"
@@ -142,6 +145,8 @@ def renderer_for_emitter(emitter: dict[str, Any]) -> str:
 def material_goal_for_emitter(emitter: dict[str, Any]) -> str:
     role = emitter.get("role")
     style = emitter.get("material_style", "additive")
+    if role == "reference_motion":
+        return f"{style}: sampled animated flipbook from the reference, used as a similarity guide and optional final overlay."
     if role == "fire_pillar":
         return f"{style}: overexposed white/yellow core with orange torn edges and additive bloom."
     if role == "flame_slashes":
@@ -191,6 +196,8 @@ def module_stack_for_emitter(effect_type: str, emitter: dict[str, Any]) -> list[
         stack.extend(["Sprite Rotation Rate: random angular velocity", "Scale Sprite Size: nonuniform size over life"])
     if role == "supporting_glow":
         stack.extend(["Color/Alpha Over Life: slow fade", "Scale Sprite Size: grow then dissolve"])
+    if role == "reference_motion":
+        stack.extend(["SubUV/Flipbook playback: sampled reference frames", "Material Time: frame index driven by FPS", "Opacity: tune as guide/final overlay"])
     if role == "fire_pillar":
         stack.extend(["Spawn Burst: one shaped pillar", "Scale Sprite Size: fast vertical stretch then collapse", "Color Over Life: white core to orange edge"])
     if role == "flame_slashes":
@@ -222,6 +229,8 @@ def tuning_for_emitter(emitter: dict[str, Any]) -> dict[str, Any]:
     }
     if role == "primary_particles":
         tuning.update({"size_variation": "0.45x-1.8x", "rotation_variation": "0-360 degrees", "opacity_variation": "0.55-1.0"})
+    elif role == "reference_motion":
+        tuning.update({"similarity": "highest priority", "opacity": "0.45-0.75", "usage": "motion target plus optional final overlay"})
     elif role == "fire_pillar":
         tuning.update({"spawn_density": "single burst", "opacity": "0.75-0.95", "shape": "vertical torn column with hot white center"})
     elif role == "flame_slashes":

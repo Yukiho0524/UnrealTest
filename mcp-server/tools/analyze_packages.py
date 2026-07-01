@@ -8,7 +8,7 @@ from typing import Any
 from schemas import VFXEmitterPlan, VFXParticles, VFXPlan, VFXSource, VFXSpec, VFXTiming
 from tools.analyze_images import IMAGE_EXTENSIONS, _classify_from_filename
 from tools.image_features import analyze_media_files
-from tools.reference_sprites import create_reference_card_source, create_reference_sprite_source
+from tools.reference_sprites import create_reference_card_source, create_reference_flipbook_source, create_reference_sprite_source
 from tools.vfx_authoring import composition_layers_for_plan, production_notes_for_plan
 
 
@@ -84,6 +84,9 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
     reference_card_config = config.get("reference_card", {})
     if isinstance(reference_card_config, dict) and reference_card_config.get("enabled") is False:
         reference_card_source = None
+    reference_flipbook = None
+    if config.get("high_similarity"):
+        reference_flipbook = create_reference_flipbook_source(package_dir.name, media_files, effect_type, visual_profile)
 
     return VFXSpec(
         name=config.get("name", package_dir.name),
@@ -96,7 +99,7 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
         particles=particles,
         notes=notes,
         visual_profile=visual_profile,
-        vfx_plan=build_vfx_plan(effect_type, motion, palette, particles, visual_profile, reference_sprite_source, reference_card_source, config),
+        vfx_plan=build_vfx_plan(effect_type, motion, palette, particles, visual_profile, reference_sprite_source, reference_card_source, config, reference_flipbook),
     )
 
 
@@ -178,6 +181,7 @@ def build_vfx_plan(
     reference_sprite_source: str | None,
     reference_card_source: str | None,
     config: dict[str, Any] | None = None,
+    reference_flipbook: dict[str, Any] | None = None,
 ) -> VFXPlan:
     if visual_profile.get("shape_hint") == "glowing_shard_particles":
         emitters = [
@@ -261,7 +265,54 @@ def build_vfx_plan(
 
     if effect_type == "fire_or_flame":
         fire_palette_values = fire_palette(palette)
-        emitters = [
+        emitters = []
+        if reference_flipbook:
+            emitters.append(
+                VFXEmitterPlan(
+                    name="reference_motion_flipbook",
+                    role="reference_motion",
+                    sprite_shape="reference_flipbook",
+                    material_style="reference_flipbook_additive",
+                    motion="sampled_reference_sequence",
+                    spawn_rate=1.0,
+                    lifetime_seconds=max(0.9, particles.lifetime_seconds),
+                    start_size=220.0,
+                    end_size=260.0,
+                    color_palette=fire_palette_values,
+                    sprite_source=reference_flipbook["source"],
+                    notes=["High-similarity layer sampled from reference timing; use as the visual target, then tune native layers against it."],
+                    unreal_settings={
+                        "enabled": True,
+                        "material": {
+                            "opacity": 0.68,
+                            "emissive_strength": 4.8,
+                            "blend_mode": "additive",
+                            "flipbook": {
+                                "columns": reference_flipbook["columns"],
+                                "rows": reference_flipbook["rows"],
+                                "frame_count": reference_flipbook["frame_count"],
+                                "fps": reference_flipbook["fps"],
+                            },
+                        },
+                        "preview": {
+                            "card": {
+                                "enabled": True,
+                                "location": [0.0, -4.0, 120.0],
+                                "rotation": [90.0, 0.0, 0.0],
+                                "scale": [2.7, 2.7, 1.0],
+                            },
+                            "niagara": {"enabled": False},
+                        },
+                        "niagara": {
+                            "spawn_rate": 1.0,
+                            "lifetime_seconds": max(0.9, particles.lifetime_seconds),
+                            "start_size": 220.0,
+                            "end_size": 260.0,
+                        },
+                    },
+                )
+            )
+        emitters.extend([
             VFXEmitterPlan(
                 name="central_fire_pillar",
                 role="fire_pillar",
@@ -342,11 +393,11 @@ def build_vfx_plan(
                 color_palette=fire_palette_values[1:3],
                 notes=["Sparse hot sparks only; never let this become the main silhouette."],
             ),
-        ]
+        ])
         emitters = apply_unreal_settings(emitters, config)
         return VFXPlan(
-            visual_intent="Stylized fire impact pillar with a hot vertical core, side flame slashes, molten ground ring, dark smoke crown, and sparse embers.",
-            primary_emitter="central_fire_pillar",
+            visual_intent="High-similarity fire impact: sampled reference motion layer plus native fire pillar, side slashes, molten ring, smoke crown, and sparse embers.",
+            primary_emitter="reference_motion_flipbook" if reference_flipbook else "central_fire_pillar",
             emitters=emitters,
             reference_card_source=reference_card_source,
             composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
@@ -468,6 +519,8 @@ def apply_unreal_settings(emitters: list[VFXEmitterPlan], config: dict[str, Any]
     result: list[VFXEmitterPlan] = []
     for index, emitter in enumerate(emitters, start=1):
         settings = default_unreal_settings_for_emitter(emitter, index)
+        if emitter.unreal_settings:
+            settings = deep_merge(settings, emitter.unreal_settings)
         override = overrides.get(emitter.name, {}) if isinstance(overrides, dict) else {}
         settings = deep_merge(settings, override)
         result.append(replace(emitter, unreal_settings=settings))
@@ -496,6 +549,8 @@ def default_unreal_settings_for_emitter(emitter: VFXEmitterPlan, index: int) -> 
 
 def default_material_settings_for_emitter(emitter: VFXEmitterPlan) -> dict[str, Any]:
     style = emitter.material_style
+    if "reference_flipbook" in style:
+        return {"opacity": 0.68, "emissive_strength": 4.8, "blend_mode": "additive"}
     if "fire_pillar_core" in style:
         return {"opacity": 0.82, "emissive_strength": 18.0, "blend_mode": "additive"}
     if "fire_side_slashes" in style:
@@ -531,6 +586,8 @@ def default_material_settings_for_emitter(emitter: VFXEmitterPlan) -> dict[str, 
 
 def default_preview_card_settings_for_emitter(emitter: VFXEmitterPlan, index: int) -> dict[str, Any]:
     role = emitter.role
+    if role == "reference_motion":
+        return {"enabled": True, "location": [0.0, -4.0, 120.0], "rotation": [90.0, 0.0, 0.0], "scale": [2.7, 2.7, 1.0]}
     if role == "fire_pillar":
         return {"enabled": True, "location": [0.0, 0.0, 170.0], "rotation": [90.0, 0.0, 0.0], "scale": [1.2, 2.65, 1.2]}
     if role == "flame_slashes":

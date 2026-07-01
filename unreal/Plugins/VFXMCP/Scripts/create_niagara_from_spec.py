@@ -1255,6 +1255,7 @@ def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_text
         texture_sample = library.create_material_expression(material, unreal_module.MaterialExpressionTextureSampleParameter2D, -980, -160)
         texture_sample.set_editor_property("parameter_name", "SpriteTexture")
         texture_sample.set_editor_property("texture", sprite_texture)
+        connect_flipbook_uv_if_needed(unreal_module, material, texture_sample, spec)
 
     particle_color = library.create_material_expression(material, unreal_module.MaterialExpressionParticleColor, -760, 40)
     core_color = library.create_material_expression(material, unreal_module.MaterialExpressionVectorParameter, -760, 220)
@@ -1293,6 +1294,99 @@ def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_text
     library.connect_material_property(emissive_multiply, "", unreal_module.MaterialProperty.MP_EMISSIVE_COLOR)
     library.connect_material_property(opacity_output, "", unreal_module.MaterialProperty.MP_OPACITY)
     library.layout_material_expressions(material)
+
+
+def connect_flipbook_uv_if_needed(unreal_module, material, texture_sample, spec: dict) -> None:
+    settings = material_setting(spec, "flipbook")
+    if not isinstance(settings, dict):
+        return
+
+    required = [
+        "MaterialExpressionTextureCoordinate",
+        "MaterialExpressionTime",
+        "MaterialExpressionConstant",
+        "MaterialExpressionConstant2Vector",
+        "MaterialExpressionMultiply",
+        "MaterialExpressionDivide",
+        "MaterialExpressionFloor",
+        "MaterialExpressionFmod",
+        "MaterialExpressionAppendVector",
+        "MaterialExpressionAdd",
+    ]
+    missing = [name for name in required if not hasattr(unreal_module, name)]
+    if missing:
+        try:
+            unreal_module.log_warning(f"VFX MCP flipbook material fallback: missing nodes {missing}")
+        except Exception:
+            pass
+        return
+
+    library = unreal_module.MaterialEditingLibrary
+    columns = max(1.0, float(settings.get("columns", 1)))
+    rows = max(1.0, float(settings.get("rows", 1)))
+    frame_count = max(1.0, float(settings.get("frame_count", columns * rows)))
+    fps = max(0.01, float(settings.get("fps", 12.0)))
+
+    try:
+        texcoord = library.create_material_expression(material, unreal_module.MaterialExpressionTextureCoordinate, -1510, -480)
+        time = library.create_material_expression(material, unreal_module.MaterialExpressionTime, -1510, -300)
+        fps_const = create_material_constant(unreal_module, material, fps, -1510, -190)
+        columns_const = create_material_constant(unreal_module, material, columns, -1290, -80)
+        rows_const = create_material_constant(unreal_module, material, rows, -1290, 40)
+        frame_count_const = create_material_constant(unreal_module, material, frame_count, -1290, -210)
+        tile_size = create_material_constant2(unreal_module, material, 1.0 / columns, 1.0 / rows, -1290, -460)
+
+        time_scaled = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -1280, -290)
+        frame_floor = library.create_material_expression(material, unreal_module.MaterialExpressionFloor, -1080, -290)
+        frame_loop = library.create_material_expression(material, unreal_module.MaterialExpressionFmod, -890, -290)
+        column_mod = library.create_material_expression(material, unreal_module.MaterialExpressionFmod, -690, -250)
+        row_divide = library.create_material_expression(material, unreal_module.MaterialExpressionDivide, -690, -120)
+        row_floor = library.create_material_expression(material, unreal_module.MaterialExpressionFloor, -500, -120)
+        column_offset = library.create_material_expression(material, unreal_module.MaterialExpressionDivide, -500, -250)
+        row_offset = library.create_material_expression(material, unreal_module.MaterialExpressionDivide, -310, -120)
+        offset = library.create_material_expression(material, unreal_module.MaterialExpressionAppendVector, -110, -200)
+        uv_scaled = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -1080, -460)
+        atlas_uv = library.create_material_expression(material, unreal_module.MaterialExpressionAdd, 90, -350)
+
+        library.connect_material_expressions(time, "", time_scaled, "A")
+        library.connect_material_expressions(fps_const, "", time_scaled, "B")
+        library.connect_material_expressions(time_scaled, "", frame_floor, "")
+        library.connect_material_expressions(frame_floor, "", frame_loop, "A")
+        library.connect_material_expressions(frame_count_const, "", frame_loop, "B")
+        library.connect_material_expressions(frame_loop, "", column_mod, "A")
+        library.connect_material_expressions(columns_const, "", column_mod, "B")
+        library.connect_material_expressions(frame_loop, "", row_divide, "A")
+        library.connect_material_expressions(columns_const, "", row_divide, "B")
+        library.connect_material_expressions(row_divide, "", row_floor, "")
+        library.connect_material_expressions(column_mod, "", column_offset, "A")
+        library.connect_material_expressions(columns_const, "", column_offset, "B")
+        library.connect_material_expressions(row_floor, "", row_offset, "A")
+        library.connect_material_expressions(rows_const, "", row_offset, "B")
+        library.connect_material_expressions(column_offset, "", offset, "A")
+        library.connect_material_expressions(row_offset, "", offset, "B")
+        library.connect_material_expressions(texcoord, "", uv_scaled, "A")
+        library.connect_material_expressions(tile_size, "", uv_scaled, "B")
+        library.connect_material_expressions(uv_scaled, "", atlas_uv, "A")
+        library.connect_material_expressions(offset, "", atlas_uv, "B")
+        library.connect_material_expressions(atlas_uv, "", texture_sample, "Coordinates")
+    except Exception as exc:
+        try:
+            unreal_module.log_warning(f"VFX MCP could not build flipbook UV graph; using static atlas: {exc}")
+        except Exception:
+            pass
+
+
+def create_material_constant(unreal_module, material, value: float, x: int, y: int):
+    node = unreal_module.MaterialEditingLibrary.create_material_expression(material, unreal_module.MaterialExpressionConstant, x, y)
+    try_set_editor_property(node, "r", float(value))
+    return node
+
+
+def create_material_constant2(unreal_module, material, x_value: float, y_value: float, x: int, y: int):
+    node = unreal_module.MaterialEditingLibrary.create_material_expression(material, unreal_module.MaterialExpressionConstant2Vector, x, y)
+    try_set_editor_property(node, "r", float(x_value))
+    try_set_editor_property(node, "g", float(y_value))
+    return node
 
 
 def palette_as_linear_colors(palette: list[str]) -> list:

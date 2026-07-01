@@ -1,19 +1,36 @@
 {
   "effect_type": "fire_or_flame",
   "motion": "ignite_burst_rise_and_collapse",
-  "render_mode": "sprite",
+  "render_mode": "flipbook",
   "duration_seconds": 0.9,
   "looping": false,
+  "high_similarity": true,
   "lock_color_palette": true,
   "color_palette": ["#FFF4B0", "#FFB22E", "#FF4A12", "#2A0703"],
   "reference_card": {
     "enabled": false
   },
   "layer_overrides": {
+    "reference_motion_flipbook": {
+      "material": {
+        "opacity": 0.72,
+        "emissive_strength": 5.5
+      },
+      "preview": {
+        "card": {
+          "location": [0, -4, 124],
+          "rotation": [90, 0, 0],
+          "scale": [2.85, 2.85, 1]
+        },
+        "niagara": {
+          "enabled": false
+        }
+      }
+    },
     "central_fire_pillar": {
       "material": {
-        "opacity": 0.84,
-        "emissive_strength": 21.0
+        "opacity": 0.54,
+        "emissive_strength": 14.0
       },
       "preview": {
         "card": {
@@ -28,8 +45,8 @@
     },
     "side_flame_slashes": {
       "material": {
-        "opacity": 0.68,
-        "emissive_strength": 12.5
+        "opacity": 0.5,
+        "emissive_strength": 8.5
       },
       "preview": {
         "card": {

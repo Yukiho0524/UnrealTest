@@ -9,6 +9,8 @@ from PIL import Image, ImageFilter, ImageOps, ImageSequence
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
 SPRITE_SIZE = 256
+FLIPBOOK_FRAME_COUNT = 12
+FLIPBOOK_COLUMNS = 4
 
 
 def create_reference_sprite_source(
@@ -60,6 +62,48 @@ def create_reference_card_source(
     return str(output_path)
 
 
+def create_reference_flipbook_source(
+    package_name: str,
+    media_files: list[Path],
+    effect_type: str,
+    visual_profile: dict[str, Any],
+    frame_count: int = FLIPBOOK_FRAME_COUNT,
+) -> dict[str, Any] | None:
+    if not media_files:
+        return None
+
+    source = choose_motion_source_media(media_files, visual_profile)
+    if not source:
+        return None
+
+    with Image.open(source) as image:
+        frames = sample_motion_frames(image, frame_count)
+        if not frames:
+            return None
+        sprites = [extract_flipbook_frame_sprite(frame, effect_type, visual_profile) for frame in frames]
+
+    columns = min(FLIPBOOK_COLUMNS, len(sprites))
+    rows = (len(sprites) + columns - 1) // columns
+    atlas = Image.new("RGBA", (columns * SPRITE_SIZE, rows * SPRITE_SIZE), (0, 0, 0, 0))
+    for index, sprite in enumerate(sprites):
+        x = (index % columns) * SPRITE_SIZE
+        y = (index // columns) * SPRITE_SIZE
+        atlas.alpha_composite(sprite, (x, y))
+
+    output_dir = WORKSPACE_ROOT / "generated" / "reference-sprites" / package_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{package_name}_reference_flipbook.png"
+    atlas.save(output_path)
+    return {
+        "source": str(output_path),
+        "source_media": str(source),
+        "columns": columns,
+        "rows": rows,
+        "frame_count": len(sprites),
+        "fps": 12.0,
+    }
+
+
 def choose_source_media(media_files: list[Path], visual_profile: dict[str, Any]) -> Path | None:
     file_profiles = visual_profile.get("files", [])
     if not file_profiles:
@@ -78,6 +122,26 @@ def choose_source_media(media_files: list[Path], visual_profile: dict[str, Any])
         scores.append((score, path))
 
     return max(scores, key=lambda item: item[0])[1] if scores else None
+
+
+def choose_motion_source_media(media_files: list[Path], visual_profile: dict[str, Any]) -> Path | None:
+    animated = [path for path in media_files if path.suffix.lower() in {".gif", ".webp"}]
+    if animated:
+        return max(animated, key=lambda path: path.stat().st_size)
+    return choose_source_media(media_files, visual_profile)
+
+
+def sample_motion_frames(image: Image.Image, frame_count: int) -> list[Image.Image]:
+    frames = [ImageOps.exif_transpose(frame.copy()).convert("RGBA") for frame in ImageSequence.Iterator(image)]
+    if not frames:
+        return [image.convert("RGBA")]
+    if len(frames) == 1:
+        return [frames[0]]
+    target_count = min(frame_count, len(frames))
+    if target_count <= 1:
+        return [choose_frame(image)]
+    sample_indices = sorted({round(index * (len(frames) - 1) / (target_count - 1)) for index in range(target_count)})
+    return [frames[index] for index in sample_indices]
 
 
 def choose_frame(image: Image.Image) -> Image.Image:
@@ -134,6 +198,25 @@ def extract_card_sprite(frame: Image.Image, effect_type: str, visual_profile: di
     image.putalpha(mask)
 
     canvas = Image.new("RGBA", (SPRITE_SIZE, SPRITE_SIZE), (0, 0, 0, 0))
+    image.thumbnail((SPRITE_SIZE, SPRITE_SIZE), Image.Resampling.LANCZOS)
+    offset = ((SPRITE_SIZE - image.width) // 2, (SPRITE_SIZE - image.height) // 2)
+    canvas.alpha_composite(image, offset)
+    return canvas
+
+
+def extract_flipbook_frame_sprite(frame: Image.Image, effect_type: str, visual_profile: dict[str, Any]) -> Image.Image:
+    image = ImageOps.exif_transpose(frame).convert("RGBA")
+    mask = build_card_foreground_mask(image, effect_type, visual_profile)
+    bbox = mask.getbbox()
+    canvas = Image.new("RGBA", (SPRITE_SIZE, SPRITE_SIZE), (0, 0, 0, 0))
+    if not bbox:
+        return canvas
+
+    expanded_bbox = expand_bbox(bbox, image.size, 0.08)
+    image = image.crop(expanded_bbox)
+    mask = mask.crop(expanded_bbox)
+    image.putalpha(mask)
+
     image.thumbnail((SPRITE_SIZE, SPRITE_SIZE), Image.Resampling.LANCZOS)
     offset = ((SPRITE_SIZE - image.width) // 2, (SPRITE_SIZE - image.height) // 2)
     canvas.alpha_composite(image, offset)
@@ -303,7 +386,8 @@ def build_card_foreground_mask(image: Image.Image, effect_type: str, visual_prof
         local_pop = max(0, lum_value - background - 8)
         hot = max(0, lum_value - 210)
         if effect_type == "fire_or_flame":
-            alpha = max(local_pop * 2.2, hot * 3.0, 120 if warm and lum_value > 80 else 0)
+            warm_pop = local_pop * 2.4 if warm else 0
+            alpha = max(warm_pop, hot * 3.0, 120 if warm and lum_value > 80 else 0)
         else:
             alpha = max(local_pop * 2.6, hot * 3.4)
         alpha_values.append(int(max(0, min(255, alpha))))
