@@ -189,6 +189,8 @@ def annotate_asset(unreal_module, asset, spec: dict) -> None:
         unreal_module.EditorAssetLibrary.set_metadata_tag(asset, "VFXMCP_Motion", spec["motion"])
         unreal_module.EditorAssetLibrary.set_metadata_tag(asset, "VFXMCP_ColorPalette", ",".join(spec["color_palette"]))
         unreal_module.EditorAssetLibrary.set_metadata_tag(asset, "VFXMCP_Source", spec["source"]["uri"])
+        if spec.get("visual_profile"):
+            unreal_module.EditorAssetLibrary.set_metadata_tag(asset, "VFXMCP_VisualProfile", json.dumps(compact_visual_profile(spec["visual_profile"])))
     except Exception as exc:
         unreal_module.log_warning(f"VFX MCP could not write metadata: {exc}")
 
@@ -223,6 +225,24 @@ def summarize_spec(spec: dict) -> dict:
         "color_palette": spec["color_palette"],
         "duration_seconds": spec["timing"]["duration_seconds"],
         "looping": spec["timing"]["looping"],
+        "visual_profile": compact_visual_profile(spec.get("visual_profile", {})),
+    }
+
+
+def compact_visual_profile(visual_profile: dict) -> dict:
+    if not visual_profile:
+        return {}
+    return {
+        "shape_hint": visual_profile.get("shape_hint"),
+        "motion_hint": visual_profile.get("motion_hint"),
+        "style_hint": visual_profile.get("style_hint"),
+        "palette": visual_profile.get("palette"),
+        "bright_pixel_ratio": visual_profile.get("bright_pixel_ratio"),
+        "warm_pixel_ratio": visual_profile.get("warm_pixel_ratio"),
+        "vertical_energy": visual_profile.get("vertical_energy"),
+        "base_energy": visual_profile.get("base_energy"),
+        "dark_smoke_ratio": visual_profile.get("dark_smoke_ratio"),
+        "sparks_hint": visual_profile.get("sparks_hint"),
     }
 
 

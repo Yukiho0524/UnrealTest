@@ -6,6 +6,7 @@ from typing import Any
 
 from schemas import VFXParticles, VFXSource, VFXSpec, VFXTiming
 from tools.analyze_images import IMAGE_EXTENSIONS, _classify_from_filename
+from tools.image_features import analyze_media_files
 
 
 CONFIG_FILE = "config.json"
@@ -39,16 +40,26 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
     config = read_package_config(package_dir)
     prompt = read_package_prompt(package_dir)
     media_files = find_package_media(package_dir)
+    visual_profile = analyze_media_files(media_files)
 
     effect_type, motion, palette, notes = infer_package_defaults(package_dir, media_files, prompt)
+    if visual_profile.get("palette"):
+        palette = visual_profile["palette"]
+    if visual_profile.get("motion_hint") == "vertical_column_rise":
+        motion = "rise_and_fade"
+    if visual_profile.get("shape_hint") in {"bright_core_column_with_outer_flames", "ground_ring_with_upward_flare"}:
+        effect_type = "fire_or_flame"
+
     effect_type = config.get("effect_type", effect_type)
     motion = config.get("motion", motion)
-    palette = config.get("color_palette", palette)
+    if config.get("lock_color_palette"):
+        palette = config.get("color_palette", palette)
     render_mode = config.get("render_mode", "ribbon" if effect_type == "electric_arc" else "sprite")
     duration_seconds = float(config.get("duration_seconds", 1.25))
     looping = bool(config.get("looping", False))
 
     notes.extend(package_notes(package_dir, prompt, media_files, config))
+    notes.extend(visual_profile_notes(visual_profile))
 
     return VFXSpec(
         name=config.get("name", package_dir.name),
@@ -59,12 +70,13 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
         render_mode=render_mode,
         timing=VFXTiming(duration_seconds=duration_seconds, looping=looping),
         particles=VFXParticles(
-            spawn_rate=float(config.get("spawn_rate", 90.0)),
-            lifetime_seconds=float(config.get("lifetime_seconds", 0.8)),
-            start_size=float(config.get("start_size", 18.0)),
-            end_size=float(config.get("end_size", 96.0)),
+            spawn_rate=float(config.get("spawn_rate", inferred_spawn_rate(visual_profile)) if config.get("lock_particles") else inferred_spawn_rate(visual_profile)),
+            lifetime_seconds=float(config.get("lifetime_seconds", inferred_lifetime(visual_profile)) if config.get("lock_particles") else inferred_lifetime(visual_profile)),
+            start_size=float(config.get("start_size", inferred_start_size(visual_profile)) if config.get("lock_particles") else inferred_start_size(visual_profile)),
+            end_size=float(config.get("end_size", inferred_end_size(visual_profile)) if config.get("lock_particles") else inferred_end_size(visual_profile)),
         ),
         notes=notes,
+        visual_profile=visual_profile,
     )
 
 
@@ -124,3 +136,40 @@ def package_notes(package_dir: Path, prompt: str, media_files: list[Path], confi
     if any(path.suffix.lower() == ".gif" for path in media_files):
         notes.append("Animated GIF reference detected; future pass should sample timing and motion.")
     return notes
+
+
+def visual_profile_notes(visual_profile: dict[str, Any]) -> list[str]:
+    if not visual_profile:
+        return []
+    return [
+        f"Image analysis shape hint: {visual_profile.get('shape_hint', 'unknown')}",
+        f"Image analysis motion hint: {visual_profile.get('motion_hint', 'unknown')}",
+        f"Image analysis style hint: {visual_profile.get('style_hint', 'unknown')}",
+        f"Image analysis palette: {', '.join(visual_profile.get('palette', []))}",
+    ]
+
+
+def inferred_spawn_rate(visual_profile: dict[str, Any]) -> float:
+    if visual_profile.get("style_hint") == "high_intensity_stylized_fire":
+        return 170.0
+    if visual_profile.get("bright_pixel_ratio", 0) > 0.12:
+        return 160.0
+    return 90.0
+
+
+def inferred_lifetime(visual_profile: dict[str, Any]) -> float:
+    if visual_profile.get("motion_hint") == "vertical_column_rise":
+        return 0.72
+    return 0.8
+
+
+def inferred_start_size(visual_profile: dict[str, Any]) -> float:
+    if visual_profile.get("base_energy", 0) > 0.34:
+        return 28.0
+    return 18.0
+
+
+def inferred_end_size(visual_profile: dict[str, Any]) -> float:
+    if visual_profile.get("shape_hint") == "bright_core_column_with_outer_flames":
+        return 150.0
+    return 96.0

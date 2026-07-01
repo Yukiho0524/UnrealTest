@@ -109,6 +109,10 @@
       "items": {
         "type": "string"
       }
+    },
+    "visual_profile": {
+      "type": "object",
+      "additionalProperties": true
     }
   },
   "additionalProperties": false

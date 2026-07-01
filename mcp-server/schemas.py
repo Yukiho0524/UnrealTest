@@ -57,6 +57,7 @@ class VFXSpec:
     timing: VFXTiming
     particles: VFXParticles
     notes: list[str] = field(default_factory=list)
+    visual_profile: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
