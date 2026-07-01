@@ -99,8 +99,13 @@ UI 目前可以選擇：
 - Effect package：`fire`
 - Destination path：`/Game/VFX/Generated/fire`
 
-按下 `Analyze` 會預覽 `VFXSpec`。  
-按下 `Generate` 會輸出 `generated/specs/fire.vfxspec.json`，並回傳後續接 Unreal bridge 的命令資訊。
+UI 目前有三個主要動作：
+
+- `Analyze Package`：只分析素材包，預覽工具理解出來的 `VFXSpec`。
+- `Generate Spec`：輸出 `generated/specs/fire.vfxspec.json`，但不啟動 Unreal。
+- `Generate Unreal Assets`：啟動本機 UE 5.7.4，讀取 `fire.vfxspec.json`，嘗試在 `/Game/VFX/Generated/fire` 建立 `NS_fire`。
+
+目前 `Generate Unreal Assets` 已經會呼叫 Unreal Python bridge。Niagara asset 建立會依 UE Python API 是否有暴露對應 factory 而定；如果目前版本無法直接建立，UI 會回傳 `partial` 狀態，代表 spec 已驗證、目的資料夾已處理，但 Niagara 生成細節還需要下一步補齊。
 
 ## CLI 測試
 

@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from project_registry import find_unreal_projects
 from tools.analyze_packages import analyze_effect_package, list_effect_packages
-from tools.unreal_bridge import create_niagara_from_spec_command, write_package_spec
+from tools.unreal_bridge import create_niagara_from_spec_command, run_unreal_generation, write_package_spec
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +50,31 @@ def run_ui(host: str, port: int, references_root: Path, output_root: Path) -> No
                         "destinationPath": destination_path,
                         "unrealCommand": command,
                         "message": "Generated VFXSpec. Unreal asset creation is ready for the Unreal bridge step.",
+                    }
+                )
+                return
+            if path == "/api/generate-unreal":
+                payload = self.read_json()
+                package_path = package_path_from_payload(references_root, payload)
+                destination_path = payload.get("destinationPath") or f"/Game/VFX/Generated/{package_path.name}"
+                project = project_from_payload(payload)
+                spec = analyze_effect_package(package_path)
+                spec_path = write_package_spec(spec, output_root)
+                editor_cmd_path = editor_cmd_from_editor_path(Path(project["editorPath"]))
+                script_path = WORKSPACE_ROOT / "unreal" / "Plugins" / "VFXMCP" / "Scripts" / "create_niagara_from_spec.py"
+                result = run_unreal_generation(
+                    editor_cmd_path,
+                    Path(project["path"]),
+                    script_path,
+                    spec_path,
+                    destination_path,
+                )
+                self.respond_json(
+                    {
+                        "spec": spec.to_dict(),
+                        "specFile": str(spec_path),
+                        "destinationPath": destination_path,
+                        "unreal": result,
                     }
                 )
                 return
@@ -108,6 +133,23 @@ def package_path_from_payload(references_root: Path, payload: dict) -> Path:
     if not package_name:
         raise ValueError("packageName is required")
     return references_root / package_name
+
+
+def project_from_payload(payload: dict) -> dict[str, str]:
+    project_path = payload.get("projectPath")
+    if not project_path:
+        raise ValueError("projectPath is required")
+    projects = find_unreal_projects(WORKSPACE_ROOT)
+    for project in projects:
+        if project["path"] == project_path:
+            return project
+    raise ValueError(f"Unknown Unreal project: {project_path}")
+
+
+def editor_cmd_from_editor_path(editor_path: Path) -> Path:
+    if editor_path.name.lower() == "unrealeditor.exe":
+        return editor_path.with_name("UnrealEditor-Cmd.exe")
+    return editor_path
 
 
 def render_index_html() -> str:
@@ -223,8 +265,9 @@ def render_index_html() -> str:
         <label for="destination">Destination Path</label>
         <input id="destination" value="/Game/VFX/Generated/fire">
 
-        <button id="analyze">Analyze</button>
-        <button class="secondary" id="generate">Generate</button>
+        <button id="analyze">Analyze Package</button>
+        <button class="secondary" id="generate">Generate Spec</button>
+        <button class="secondary" id="generateUnreal">Generate Unreal Assets</button>
 
         <div class="meta" id="meta"></div>
       </aside>
@@ -285,6 +328,14 @@ def render_index_html() -> str:
 
     document.querySelector("#generate").addEventListener("click", async () => {
       show(await request("/api/generate", {
+        method: "POST",
+        body: JSON.stringify(selectedPayload())
+      }));
+    });
+
+    document.querySelector("#generateUnreal").addEventListener("click", async () => {
+      output.textContent = "Launching Unreal Engine 5.7.4. This can take a minute...";
+      show(await request("/api/generate-unreal", {
         method: "POST",
         body: JSON.stringify(selectedPayload())
       }));
