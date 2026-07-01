@@ -30,7 +30,8 @@
 
 - `Generate Unreal Assets` 會建立多個 layer asset：reference card、主 `NS_`、細節 `NS_`、各層 texture/material/material instance。
 - 先前的 `L_<name>_VFXPreview` map preview 已停用，生成時會嘗試清掉舊的 unsafe preview level。
-- `Open In Unreal` 只開主 `NS_`，並同步相關 bundle assets 到 Content Browser，不再由 Python 開啟 World/Map asset。
+- `Generate Unreal Assets` 會建立 `BP_<name>_VFXPreview` Blueprint Actor，內含 reference card、各層材質平面與 Niagara components。
+- `Open In Unreal` 優先開 `BP_<name>_VFXPreview`，並同步相關 bundle assets 到 Content Browser，不再由 Python 開啟 World/Map asset。
 
 ## 後續真正要再強化的地方
 

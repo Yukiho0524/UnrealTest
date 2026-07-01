@@ -94,7 +94,9 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
 
     single_result = build_single_niagara_system(unreal, spec, destination_path)
     cleanup_unsafe_preview_level(unreal, spec, destination_path)
-    single_result["preview"] = safe_preview_summary(spec, destination_path, [single_result], {"created": False})
+    single_result["preview"] = create_preview_blueprint_from_bundle(unreal, spec, destination_path, [single_result], {"created": False})
+    if single_result["preview"].get("created"):
+        single_result["asset_path"] = single_result["preview"]["asset_path"]
     unreal.EditorAssetLibrary.save_directory(destination_path, only_if_is_dirty=False, recursive=True)
     return single_result
 
@@ -112,12 +114,12 @@ def build_niagara_bundle_from_spec(unreal_module, spec: dict, destination_path: 
 
     primary_system = next((system for system in systems if system.get("is_primary")), systems[0] if systems else None)
     cleanup_unsafe_preview_level(unreal_module, spec, destination_path)
-    preview = safe_preview_summary(spec, destination_path, systems, reference_card)
+    preview = create_preview_blueprint_from_bundle(unreal_module, spec, destination_path, systems, reference_card)
     unreal_module.EditorAssetLibrary.save_directory(destination_path, only_if_is_dirty=False, recursive=True)
     return {
         "mode": "unreal-editor",
         "status": "created_bundle" if primary_system and primary_system.get("status") != "partial" else "partial_bundle",
-        "asset_path": primary_system.get("asset_path") if primary_system else f"{destination_path}/NS_{spec['name']}",
+        "asset_path": preview.get("asset_path") if preview.get("created") else (primary_system.get("asset_path") if primary_system else f"{destination_path}/NS_{spec['name']}"),
         "bundle": {
             "enabled": True,
             "primary_emitter": primary_emitter,
@@ -127,7 +129,7 @@ def build_niagara_bundle_from_spec(unreal_module, spec: dict, destination_path: 
             "preview": preview,
         },
         "spec_summary": summarize_spec(spec),
-        "message": "Created a VFX bundle from vfx_plan emitters. Unsafe map preview generation is disabled; Open In Unreal focuses the primary Niagara system and syncs all related layer assets.",
+        "message": "Created a VFX bundle and a stable Blueprint preview actor. Open the BP preview first; individual Niagara systems remain available for layer debugging.",
     }
 
 
@@ -249,6 +251,202 @@ def safe_preview_summary(spec: dict, destination_path: str, systems: list[dict],
         "errors": [],
     }
     return result
+
+
+def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_path: str, systems: list[dict], reference_card: dict) -> dict:
+    blueprint_path = preview_blueprint_path(spec, destination_path)
+    result = safe_preview_summary(spec, destination_path, systems, reference_card)
+    result.update(
+        {
+            "asset_path": blueprint_path,
+            "created": False,
+            "strategy": "blueprint_actor_composite",
+            "components": [],
+        }
+    )
+
+    if not all(hasattr(unreal_module, name) for name in ("BlueprintEditorLibrary", "SubobjectDataSubsystem", "SubobjectDataBlueprintFunctionLibrary")):
+        result["errors"].append("Blueprint component authoring API is not available in this Unreal Python environment.")
+        return result
+
+    try:
+        if unreal_module.EditorAssetLibrary.does_asset_exist(blueprint_path):
+            unreal_module.EditorAssetLibrary.delete_asset(blueprint_path)
+
+        blueprint = unreal_module.BlueprintEditorLibrary.create_blueprint_asset_with_parent(blueprint_path, unreal_module.Actor)
+        if not blueprint:
+            result["errors"].append(f"Could not create preview Blueprint: {blueprint_path}")
+            return result
+
+        root_handle = blueprint_root_handle(unreal_module, blueprint)
+        plane_mesh = unreal_module.EditorAssetLibrary.load_asset("/Engine/BasicShapes/Plane")
+        if not plane_mesh:
+            result["errors"].append("Could not load /Engine/BasicShapes/Plane for Blueprint preview cards.")
+
+        if plane_mesh and reference_card and reference_card.get("material_instance_path"):
+            component = add_static_mesh_component_to_blueprint(
+                unreal_module,
+                blueprint,
+                root_handle,
+                "ReferenceCard",
+                plane_mesh,
+                reference_card.get("material_instance_path"),
+                location=(0.0, 0.0, 155.0),
+                rotation=(90.0, 0.0, 0.0),
+                scale=(2.6, 2.6, 2.6),
+            )
+            result["components"].append(component)
+
+        for index, system in enumerate(systems, start=1):
+            emitter = system.get("emitter_plan") or {}
+            material_path = (system.get("materials") or {}).get("material_instance_path")
+            if plane_mesh and material_path:
+                component = add_static_mesh_component_to_blueprint(
+                    unreal_module,
+                    blueprint,
+                    root_handle,
+                    f"LayerCard_{index}_{safe_asset_token(emitter.get('name', 'layer'))}",
+                    plane_mesh,
+                    material_path,
+                    location=(index * 3.0, 0.0, 155.0 + index * 7.0),
+                    rotation=(90.0, 0.0, 0.0),
+                    scale=(preview_card_scale_for_emitter(emitter), preview_card_scale_for_emitter(emitter), preview_card_scale_for_emitter(emitter)),
+                )
+                result["components"].append(component)
+            component = add_niagara_component_to_blueprint(
+                unreal_module,
+                blueprint,
+                root_handle,
+                f"NiagaraLayer_{index}_{safe_asset_token(emitter.get('name', 'layer'))}",
+                system.get("asset_path"),
+                location=(-36.0, (index - 1) * 34.0, 118.0),
+                scale=(1.0, 1.0, 1.0),
+            )
+            result["components"].append(component)
+
+        unreal_module.BlueprintEditorLibrary.compile_blueprint(blueprint)
+        annotate_asset(unreal_module, blueprint, spec)
+        unreal_module.EditorAssetLibrary.save_loaded_asset(blueprint, only_if_is_dirty=False)
+        result["created"] = unreal_module.EditorAssetLibrary.does_asset_exist(blueprint_path)
+        return result
+    except Exception as exc:
+        result["errors"].append(str(exc))
+        return result
+
+
+def preview_blueprint_path(spec: dict, destination_path: str) -> str:
+    return f"{destination_path}/BP_{spec['name']}_VFXPreview"
+
+
+def blueprint_root_handle(unreal_module, blueprint):
+    subsystem = unreal_module.get_engine_subsystem(unreal_module.SubobjectDataSubsystem)
+    library = unreal_module.SubobjectDataBlueprintFunctionLibrary
+    handles = subsystem.k2_gather_subobject_data_for_blueprint(blueprint)
+    root_handle = handles[0] if handles else None
+    for handle in handles:
+        data = library.get_data(handle)
+        if library.is_root_component(data):
+            return handle
+    return root_handle
+
+
+def add_static_mesh_component_to_blueprint(
+    unreal_module,
+    blueprint,
+    parent_handle,
+    name: str,
+    mesh,
+    material_path: str | None,
+    location: tuple[float, float, float],
+    rotation: tuple[float, float, float],
+    scale: tuple[float, float, float],
+) -> dict:
+    component, fail_reason = add_component_to_blueprint(unreal_module, blueprint, parent_handle, name, unreal_module.StaticMeshComponent)
+    result = {"name": name, "type": "StaticMeshComponent", "material": material_path, "created": bool(component), "errors": []}
+    if str(fail_reason):
+        result["errors"].append(str(fail_reason))
+    if not component:
+        return result
+    try:
+        component.set_static_mesh(mesh)
+        if material_path:
+            material = unreal_module.EditorAssetLibrary.load_asset(material_path)
+            if material:
+                component.set_material(0, material)
+            else:
+                result["errors"].append(f"Material does not exist: {material_path}")
+        set_component_transform(unreal_module, component, location, rotation, scale)
+    except Exception as exc:
+        result["errors"].append(str(exc))
+    return result
+
+
+def add_niagara_component_to_blueprint(
+    unreal_module,
+    blueprint,
+    parent_handle,
+    name: str,
+    system_path: str | None,
+    location: tuple[float, float, float],
+    scale: tuple[float, float, float],
+) -> dict:
+    component, fail_reason = add_component_to_blueprint(unreal_module, blueprint, parent_handle, name, unreal_module.NiagaraComponent)
+    result = {"name": name, "type": "NiagaraComponent", "system": system_path, "created": bool(component), "errors": []}
+    if str(fail_reason):
+        result["errors"].append(str(fail_reason))
+    if not component:
+        return result
+    try:
+        if system_path:
+            system = unreal_module.EditorAssetLibrary.load_asset(system_path)
+            if system:
+                if hasattr(component, "set_asset"):
+                    component.set_asset(system)
+                else:
+                    component.set_editor_property("asset", system)
+            else:
+                result["errors"].append(f"Niagara system does not exist: {system_path}")
+        set_component_transform(unreal_module, component, location, (0.0, 0.0, 0.0), scale)
+    except Exception as exc:
+        result["errors"].append(str(exc))
+    return result
+
+
+def add_component_to_blueprint(unreal_module, blueprint, parent_handle, name: str, component_class):
+    subsystem = unreal_module.get_engine_subsystem(unreal_module.SubobjectDataSubsystem)
+    library = unreal_module.SubobjectDataBlueprintFunctionLibrary
+    params = unreal_module.AddNewSubobjectParams()
+    params.set_editor_property("blueprint_context", blueprint)
+    params.set_editor_property("parent_handle", parent_handle)
+    params.set_editor_property("new_class", component_class)
+    params.set_editor_property("conform_transform_to_parent", False)
+    handle, fail_reason = subsystem.add_new_subobject(params)
+    if not handle:
+        return None, fail_reason
+    subsystem.rename_subobject_member_variable(blueprint, handle, name)
+    data = library.get_data(handle)
+    return library.get_object_for_blueprint(data, blueprint), fail_reason
+
+
+def set_component_transform(unreal_module, component, location, rotation, scale) -> None:
+    try_set_editor_property(component, "relative_location", unreal_module.Vector(*location))
+    try_set_editor_property(component, "relative_rotation", unreal_module.Rotator(*rotation))
+    try_set_editor_property(component, "relative_scale3d", unreal_module.Vector(*scale))
+
+
+def preview_card_scale_for_emitter(emitter: dict) -> float:
+    role = emitter.get("role")
+    if role == "supporting_glow":
+        return 1.9
+    if role == "primary_body":
+        return 1.55
+    if role == "primary_particles":
+        return 1.2
+    if role == "detail_particles":
+        return 0.8
+    if role == "accent_particles":
+        return 0.55
+    return 1.0
 
 
 def preview_level_path(spec: dict, destination_path: str) -> str:
