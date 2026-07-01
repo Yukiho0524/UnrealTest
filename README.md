@@ -72,6 +72,26 @@ samples/references/fire/
 - `prompt.md`：補充設計意圖，例如火焰、方形發光粒子、煙霧、衝擊波。
 - `config.json`：可指定或覆寫 effect type、motion、顏色與粒子參數。
 
+`config.json` 也可以用 `layer_overrides` 覆寫 Unreal 內的細部參數。例如：
+
+```json
+{
+  "layer_overrides": {
+    "base_glow": {
+      "material": {"opacity": 0.28, "emissive_strength": 4.0},
+      "preview": {
+        "card": {"location": [0, 0, 2], "rotation": [0, 0, 0], "scale": [3.4, 3.4, 1]}
+      }
+    },
+    "smoke_heat_wisp": {
+      "material": {"opacity": 0.16, "emissive_strength": 0.35, "blend_mode": "translucent"}
+    }
+  }
+}
+```
+
+目前支援的常用欄位包含 `material.opacity`、`material.emissive_strength`、`material.blend_mode`、`preview.card.location/rotation/scale`、`preview.card.enabled`、`preview.niagara.location/rotation/scale`。
+
 ## vfx_plan 是什麼
 
 早期版本只產生單一 `effect_type`，例如 `fire_or_flame`。這會讓生成結果太粗，常常只像「同類型特效」，不像原圖。

@@ -320,8 +320,7 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
                 root_handle,
                 f"NiagaraLayer_{index}_{safe_asset_token(emitter.get('name', 'layer'))}",
                 system.get("asset_path"),
-                location=(-36.0, (index - 1) * 34.0, 118.0),
-                scale=(1.0, 1.0, 1.0),
+                transform=preview_niagara_transform_for_emitter(emitter, index),
             )
             result["components"].append(component)
 
@@ -363,7 +362,7 @@ def add_static_mesh_component_to_blueprint(
     scale: tuple[float, float, float],
 ) -> dict:
     component, fail_reason = add_component_to_blueprint(unreal_module, blueprint, parent_handle, name, unreal_module.StaticMeshComponent)
-    result = {"name": name, "type": "StaticMeshComponent", "material": material_path, "created": bool(component), "errors": []}
+    result = {"name": name, "type": "StaticMeshComponent", "material": material_path, "transform": {"location": location, "rotation": rotation, "scale": scale}, "created": bool(component), "errors": []}
     if str(fail_reason):
         result["errors"].append(str(fail_reason))
     if not component:
@@ -388,11 +387,10 @@ def add_niagara_component_to_blueprint(
     parent_handle,
     name: str,
     system_path: str | None,
-    location: tuple[float, float, float],
-    scale: tuple[float, float, float],
+    transform: dict,
 ) -> dict:
     component, fail_reason = add_component_to_blueprint(unreal_module, blueprint, parent_handle, name, unreal_module.NiagaraComponent)
-    result = {"name": name, "type": "NiagaraComponent", "system": system_path, "created": bool(component), "errors": []}
+    result = {"name": name, "type": "NiagaraComponent", "system": system_path, "transform": transform, "created": bool(component), "errors": []}
     if str(fail_reason):
         result["errors"].append(str(fail_reason))
     if not component:
@@ -407,7 +405,7 @@ def add_niagara_component_to_blueprint(
                     component.set_editor_property("asset", system)
             else:
                 result["errors"].append(f"Niagara system does not exist: {system_path}")
-        set_component_transform(unreal_module, component, location, (0.0, 0.0, 0.0), scale)
+        set_component_transform(unreal_module, component, transform["location"], transform["rotation"], transform["scale"])
     except Exception as exc:
         result["errors"].append(str(exc))
     return result
@@ -436,6 +434,13 @@ def set_component_transform(unreal_module, component, location, rotation, scale)
 
 
 def preview_card_transform_for_emitter(emitter: dict, index: int) -> dict | None:
+    settings = emitter.get("unreal_settings", {})
+    card = settings.get("preview", {}).get("card", {}) if isinstance(settings, dict) else {}
+    if card:
+        if card.get("enabled") is False:
+            return None
+        return normalize_transform(card, default_rotation=(90.0, 0.0, 0.0))
+
     role = emitter.get("role")
     if role == "supporting_glow":
         return {"location": (0.0, 0.0, 4.0), "rotation": (0.0, 0.0, 0.0), "scale": (3.0, 3.0, 1.0)}
@@ -450,6 +455,41 @@ def preview_card_transform_for_emitter(emitter: dict, index: int) -> dict | None
     if role in {"detail_particles", "accent_particles"}:
         return None
     return {"location": (index * 3.0, 0.0, 145.0 + index * 5.0), "rotation": (90.0, 0.0, 0.0), "scale": (1.0, 1.0, 1.0)}
+
+
+def preview_niagara_transform_for_emitter(emitter: dict, index: int) -> dict:
+    settings = emitter.get("unreal_settings", {})
+    niagara = settings.get("preview", {}).get("niagara", {}) if isinstance(settings, dict) else {}
+    if niagara:
+        return normalize_transform(
+            niagara,
+            default_location=(-36.0, (index - 1) * 34.0, 118.0),
+            default_rotation=(0.0, 0.0, 0.0),
+            default_scale=(1.0, 1.0, 1.0),
+        )
+    return {"location": (-36.0, (index - 1) * 34.0, 118.0), "rotation": (0.0, 0.0, 0.0), "scale": (1.0, 1.0, 1.0)}
+
+
+def normalize_transform(
+    transform: dict,
+    default_location: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    default_rotation: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    default_scale: tuple[float, float, float] = (1.0, 1.0, 1.0),
+) -> dict:
+    return {
+        "location": tuple3(transform.get("location"), default_location),
+        "rotation": tuple3(transform.get("rotation"), default_rotation),
+        "scale": tuple3(transform.get("scale"), default_scale),
+    }
+
+
+def tuple3(value, fallback: tuple[float, float, float]) -> tuple[float, float, float]:
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        return fallback
+    try:
+        return (float(value[0]), float(value[1]), float(value[2]))
+    except (TypeError, ValueError):
+        return fallback
 
 
 def preview_level_path(spec: dict, destination_path: str) -> str:
@@ -988,7 +1028,8 @@ def set_renderer_material(unreal_module, renderer, material_instance) -> None:
 
 def configure_material_properties(unreal_module, material, spec: dict) -> None:
     material_style = primary_material_style(spec)
-    blend_mode = unreal_module.BlendMode.BLEND_TRANSLUCENT if "smoke" in material_style else unreal_module.BlendMode.BLEND_ADDITIVE
+    blend_mode_name = material_setting(spec, "blend_mode")
+    blend_mode = unreal_blend_mode(unreal_module, blend_mode_name, material_style)
     material.set_editor_property("blend_mode", blend_mode)
     material.set_editor_property("shading_model", unreal_module.MaterialShadingModel.MSM_UNLIT)
     material.set_editor_property("two_sided", True)
@@ -1146,6 +1187,9 @@ def try_set_editor_property(asset, property_name: str, value) -> None:
 
 
 def inferred_emissive_strength(spec: dict) -> float:
+    override = material_setting(spec, "emissive_strength", "emissive")
+    if override is not None:
+        return float(override)
     visual_profile = spec.get("visual_profile", {})
     bright = float(visual_profile.get("bright_pixel_ratio", 0.08) or 0.08)
     vertical = float(visual_profile.get("vertical_energy", 0.3) or 0.3)
@@ -1166,6 +1210,9 @@ def inferred_emissive_strength(spec: dict) -> float:
 
 
 def inferred_opacity(spec: dict) -> float:
+    override = material_setting(spec, "opacity")
+    if override is not None:
+        return float(override)
     style = primary_material_style(spec)
     if "reference_card" in style:
         return 0.38
@@ -1178,6 +1225,37 @@ def inferred_opacity(spec: dict) -> float:
     if "glow" in style:
         return 0.42
     return 0.82
+
+
+def primary_unreal_settings(spec: dict) -> dict:
+    plan = spec.get("vfx_plan") or {}
+    primary_name = plan.get("primary_emitter")
+    for emitter in plan.get("emitters", []):
+        if emitter.get("name") == primary_name:
+            settings = emitter.get("unreal_settings") or {}
+            return settings if isinstance(settings, dict) else {}
+    return {}
+
+
+def material_setting(spec: dict, *keys: str):
+    material = primary_unreal_settings(spec).get("material", {})
+    if not isinstance(material, dict):
+        return None
+    for key in keys:
+        if key in material:
+            return material[key]
+    return None
+
+
+def unreal_blend_mode(unreal_module, blend_mode_name, material_style: str):
+    normalized = str(blend_mode_name or "").lower()
+    if normalized in {"translucent", "blend_translucent"}:
+        return unreal_module.BlendMode.BLEND_TRANSLUCENT
+    if normalized in {"masked", "blend_masked"}:
+        return unreal_module.BlendMode.BLEND_MASKED
+    if normalized in {"opaque", "blend_opaque"}:
+        return unreal_module.BlendMode.BLEND_OPAQUE
+    return unreal_module.BlendMode.BLEND_TRANSLUCENT if "smoke" in material_style else unreal_module.BlendMode.BLEND_ADDITIVE
 
 
 def create_niagara_system_asset(unreal_module, asset_name: str, destination_path: str) -> dict:
@@ -1257,6 +1335,7 @@ def compact_vfx_plan(plan: dict | None) -> dict:
                 "end_size": emitter.get("end_size"),
                 "color_palette": emitter.get("color_palette"),
                 "sprite_source": emitter.get("sprite_source"),
+                "unreal_settings": emitter.get("unreal_settings", {}),
             }
             for emitter in plan.get("emitters", [])
         ],
@@ -1276,6 +1355,7 @@ def compact_emitter_plan(emitter: dict) -> dict:
         "end_size": emitter.get("end_size"),
         "color_palette": emitter.get("color_palette"),
         "sprite_source": emitter.get("sprite_source"),
+        "unreal_settings": emitter.get("unreal_settings", {}),
     }
 
 

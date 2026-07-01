@@ -61,6 +61,7 @@ class VFXEmitterPlan:
     color_palette: list[str]
     sprite_source: str | None = None
     notes: list[str] = field(default_factory=list)
+    unreal_settings: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

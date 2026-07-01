@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -89,7 +90,7 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
         particles=particles,
         notes=notes,
         visual_profile=visual_profile,
-        vfx_plan=build_vfx_plan(effect_type, motion, palette, particles, visual_profile, reference_sprite_source, reference_card_source),
+        vfx_plan=build_vfx_plan(effect_type, motion, palette, particles, visual_profile, reference_sprite_source, reference_card_source, config),
     )
 
 
@@ -170,6 +171,7 @@ def build_vfx_plan(
     visual_profile: dict[str, Any],
     reference_sprite_source: str | None,
     reference_card_source: str | None,
+    config: dict[str, Any] | None = None,
 ) -> VFXPlan:
     if visual_profile.get("shape_hint") == "glowing_shard_particles":
         emitters = [
@@ -201,6 +203,7 @@ def build_vfx_plan(
                 notes=["Adds small hot flashes between shard particles."],
             ),
         ]
+        emitters = apply_unreal_settings(emitters, config)
         return VFXPlan(
             visual_intent="Gold-white glowing shard particles swirling upward with varied small triangular silhouettes and a faint bloom core.",
             primary_emitter="glowing_shards",
@@ -240,6 +243,7 @@ def build_vfx_plan(
                 notes=["Adds the overexposed vertical glow visible behind the square particles."],
             ),
         ]
+        emitters = apply_unreal_settings(emitters, config)
         return VFXPlan(
             visual_intent="White emissive square particles drifting upward in a loose vertical column with soft bloom.",
             primary_emitter="glowing_squares",
@@ -318,6 +322,7 @@ def build_vfx_plan(
                 notes=["Adds small hot particles separated from the main flame silhouette."],
             ),
         ]
+        emitters = apply_unreal_settings(emitters, config)
         return VFXPlan(
             visual_intent="Layered stylized flame with a bright core, orange outer tongues, and small ember accents.",
             primary_emitter="core_flame",
@@ -342,6 +347,7 @@ def build_vfx_plan(
             sprite_source=reference_sprite_source,
         )
     ]
+    emitters = apply_unreal_settings(emitters, config)
     return VFXPlan(
         visual_intent="Single sprite-based energy effect inferred from the reference package.",
         primary_emitter="primary_sprite",
@@ -350,6 +356,87 @@ def build_vfx_plan(
         composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
         production_notes=production_notes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
     )
+
+
+def apply_unreal_settings(emitters: list[VFXEmitterPlan], config: dict[str, Any] | None) -> list[VFXEmitterPlan]:
+    overrides = (config or {}).get("layer_overrides", {})
+    result: list[VFXEmitterPlan] = []
+    for index, emitter in enumerate(emitters, start=1):
+        settings = default_unreal_settings_for_emitter(emitter, index)
+        override = overrides.get(emitter.name, {}) if isinstance(overrides, dict) else {}
+        settings = deep_merge(settings, override)
+        result.append(replace(emitter, unreal_settings=settings))
+    return result
+
+
+def default_unreal_settings_for_emitter(emitter: VFXEmitterPlan, index: int) -> dict[str, Any]:
+    material = default_material_settings_for_emitter(emitter)
+    preview_card = default_preview_card_settings_for_emitter(emitter, index)
+    niagara_transform = default_niagara_transform_for_emitter(emitter, index)
+    return {
+        "enabled": True,
+        "material": material,
+        "preview": {
+            "card": preview_card,
+            "niagara": niagara_transform,
+        },
+        "niagara": {
+            "spawn_rate": emitter.spawn_rate,
+            "lifetime_seconds": emitter.lifetime_seconds,
+            "start_size": emitter.start_size,
+            "end_size": emitter.end_size,
+        },
+    }
+
+
+def default_material_settings_for_emitter(emitter: VFXEmitterPlan) -> dict[str, Any]:
+    style = emitter.material_style
+    if "smoke" in style:
+        return {"opacity": 0.22, "emissive_strength": 0.65, "blend_mode": "translucent"}
+    if "base_glow" in style:
+        return {"opacity": 0.36, "emissive_strength": 5.25, "blend_mode": "additive"}
+    if "reference_card" in style:
+        return {"opacity": 0.38, "emissive_strength": 2.4, "blend_mode": "additive"}
+    if "outer_flame" in style:
+        return {"opacity": 0.55, "emissive_strength": 7.5, "blend_mode": "additive"}
+    if emitter.role == "detail_particles":
+        return {"opacity": 0.78, "emissive_strength": 10.0, "blend_mode": "additive"}
+    return {"opacity": 0.82, "emissive_strength": 12.0, "blend_mode": "additive"}
+
+
+def default_preview_card_settings_for_emitter(emitter: VFXEmitterPlan, index: int) -> dict[str, Any]:
+    role = emitter.role
+    if role == "supporting_glow":
+        return {"enabled": True, "location": [0.0, 0.0, 4.0], "rotation": [0.0, 0.0, 0.0], "scale": [3.0, 3.0, 1.0]}
+    if role == "primary_body":
+        return {"enabled": True, "location": [0.0, -1.0, 135.0], "rotation": [90.0, 0.0, 0.0], "scale": [1.55, 1.55, 1.55]}
+    if role == "secondary_body":
+        return {"enabled": True, "location": [5.0, 1.5, 128.0], "rotation": [90.0, 0.0, -7.0], "scale": [1.85, 1.85, 1.85]}
+    if role == "atmospheric_wisp":
+        return {"enabled": True, "location": [-6.0, 2.0, 178.0], "rotation": [90.0, 0.0, 8.0], "scale": [2.0, 2.0, 2.0]}
+    if role == "primary_particles":
+        return {"enabled": True, "location": [0.0, 0.0, 135.0 + index * 3.0], "rotation": [90.0, 0.0, 0.0], "scale": [1.2, 1.2, 1.2]}
+    if role in {"detail_particles", "accent_particles"}:
+        return {"enabled": False}
+    return {"enabled": True, "location": [index * 3.0, 0.0, 145.0 + index * 5.0], "rotation": [90.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0]}
+
+
+def default_niagara_transform_for_emitter(emitter: VFXEmitterPlan, index: int) -> dict[str, Any]:
+    return {
+        "location": [-36.0, (index - 1) * 34.0, 118.0],
+        "rotation": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0],
+    }
+
+
+def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
 
 
 def inferred_spawn_rate(visual_profile: dict[str, Any]) -> float:

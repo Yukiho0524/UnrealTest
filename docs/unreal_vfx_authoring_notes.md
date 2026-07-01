@@ -52,6 +52,18 @@
 
 材質上也要分層：core 可以高 emissive；outer flame 比 core 低；base glow 低透明廣域；smoke/heat 使用低 emissive translucent；reference card 只能當剪影輔助，不應整張爆亮。
 
+## Unreal 參數覆寫
+
+每個 emitter 會帶 `unreal_settings`，讓 Unreal 端能設定材質與 Blueprint 預覽細節。設計師可在資料包 `config.json` 用 `layer_overrides` 覆寫：
+
+- `material.opacity`
+- `material.emissive_strength`
+- `material.blend_mode`
+- `preview.card.enabled`
+- `preview.card.location / rotation / scale`
+- `preview.niagara.location / rotation / scale`
+- `niagara.spawn_rate / lifetime_seconds / start_size / end_size` 作為 metadata 與後續 Niagara module authoring 依據
+
 參考來源：
 
 - Epic Niagara Overview: https://dev.epicgames.com/documentation/unreal-engine/overview-of-niagara-effects-for-unreal-engine

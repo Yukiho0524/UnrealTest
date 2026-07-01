@@ -180,6 +180,10 @@
               "notes": {
                 "type": "array",
                 "items": {"type": "string"}
+              },
+              "unreal_settings": {
+                "type": "object",
+                "additionalProperties": true
               }
             },
             "additionalProperties": false

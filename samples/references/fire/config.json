@@ -8,5 +8,58 @@
   "lifetime_seconds": 0.65,
   "start_size": 14,
   "end_size": 120,
-  "color_palette": ["#FFD36A", "#FF6A21", "#371008"]
+  "color_palette": ["#FFD36A", "#FF6A21", "#371008"],
+  "layer_overrides": {
+    "core_flame": {
+      "material": {
+        "opacity": 0.78,
+        "emissive_strength": 12.0
+      },
+      "preview": {
+        "card": {
+          "location": [0, -1, 135],
+          "rotation": [90, 0, 0],
+          "scale": [1.55, 1.55, 1.55]
+        }
+      }
+    },
+    "outer_flame_wisps": {
+      "material": {
+        "opacity": 0.5,
+        "emissive_strength": 7.0
+      }
+    },
+    "base_glow": {
+      "material": {
+        "opacity": 0.32,
+        "emissive_strength": 4.5
+      },
+      "preview": {
+        "card": {
+          "location": [0, 0, 3],
+          "rotation": [0, 0, 0],
+          "scale": [3.2, 3.2, 1]
+        }
+      }
+    },
+    "smoke_heat_wisp": {
+      "material": {
+        "opacity": 0.18,
+        "emissive_strength": 0.4,
+        "blend_mode": "translucent"
+      }
+    },
+    "ember_sparks": {
+      "preview": {
+        "card": {
+          "enabled": false
+        },
+        "niagara": {
+          "location": [-34, 36, 118],
+          "rotation": [0, 0, 0],
+          "scale": [1, 1, 1]
+        }
+      }
+    }
+  }
 }
