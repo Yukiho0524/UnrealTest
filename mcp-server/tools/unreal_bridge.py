@@ -135,10 +135,11 @@ def open_unreal_asset(
         raise FileNotFoundError(f"Unreal project was not found: {project_path}")
 
     runner_path = write_open_asset_runner(asset_path)
+    runner_arg = str(runner_path).replace("\\", "/")
     command = [
         str(editor_path),
         str(project_path),
-        f"-ExecutePythonScript={runner_path}",
+        f"-ExecCmds=py {runner_arg}",
         "-nop4",
     ]
     process = subprocess.Popen(command)
