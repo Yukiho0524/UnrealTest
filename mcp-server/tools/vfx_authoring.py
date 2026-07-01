@@ -30,6 +30,14 @@ def production_notes_for_plan(effect_type: str, visual_profile: dict[str, Any], 
                 "Use a few bright glints instead of raising all particle brightness equally.",
             ]
         )
+    if "primary_bolt" in roles or effect_type == "electric_arc":
+        notes.extend(
+            [
+                "Lightning: the main bolt silhouette must dominate; ion sparks are only accents.",
+                "Use branching bolt cards/ribbons for structure, then add a small impact core and ground energy ring.",
+                "Keep spark density sparse so the result does not become a white particle fountain.",
+            ]
+        )
 
     if visual_profile.get("motion_hint") == "vertical_column_rise":
         notes.append("Motion: bias velocity upward, but add turbulence/noise so the column does not look like a fountain preset.")
@@ -90,6 +98,12 @@ def composition_layers_for_plan(effect_type: str, emitters: list[dict[str, Any]]
 def purpose_for_role(role: str | None, effect_type: str) -> str:
     if role == "primary_body":
         return "Main visual read and silhouette."
+    if role == "primary_bolt":
+        return "Dominant lightning strike silhouette."
+    if role == "secondary_bolts":
+        return "Branching side arcs around the main bolt."
+    if role == "impact_core":
+        return "Bright contact point at the strike target."
     if role == "secondary_body":
         return "Outer silhouette breakup and secondary flame tongues."
     if role == "primary_particles":
@@ -110,7 +124,7 @@ def purpose_for_role(role: str | None, effect_type: str) -> str:
 def renderer_for_emitter(emitter: dict[str, Any]) -> str:
     shape = emitter.get("sprite_shape")
     role = emitter.get("role")
-    if role in {"primary_particles", "detail_particles", "accent_particles", "supporting_glow", "primary_body", "secondary_body", "atmospheric_wisp"}:
+    if role in {"primary_particles", "detail_particles", "accent_particles", "supporting_glow", "primary_body", "secondary_body", "atmospheric_wisp", "primary_bolt", "secondary_bolts", "impact_core"}:
         return "Sprite Renderer"
     if shape == "ribbon":
         return "Ribbon Renderer"
@@ -124,6 +138,12 @@ def material_goal_for_emitter(emitter: dict[str, Any]) -> str:
     style = emitter.get("material_style", "additive")
     if role == "primary_body":
         return f"{style}: alpha-shaped unlit emissive material for the main silhouette."
+    if role == "primary_bolt":
+        return f"{style}: thin white-blue emissive core with cyan/purple outer glow."
+    if role == "secondary_bolts":
+        return f"{style}: branching fork sprites with lower opacity than the main bolt."
+    if role == "impact_core":
+        return f"{style}: concentrated electric contact flash."
     if role == "secondary_body":
         return f"{style}: offset flame tongues with lower opacity than the core."
     if role == "supporting_glow":
@@ -159,6 +179,10 @@ def module_stack_for_emitter(effect_type: str, emitter: dict[str, Any]) -> list[
         stack.extend(["Color/Alpha Over Life: slow fade", "Scale Sprite Size: grow then dissolve"])
     if role in {"primary_body", "secondary_body"}:
         stack.extend(["Color Over Life: core-to-edge value shift", "Alpha Over Life: preserve silhouette then fade"])
+    if role in {"primary_bolt", "secondary_bolts"}:
+        stack.extend(["Spawn Burst: low count", "Alpha Over Life: hard flicker", "Color Over Life: white core to blue/purple edge"])
+    if role == "impact_core":
+        stack.extend(["Spawn Burst: contact flash", "Scale Sprite Size: expand then collapse", "Alpha Over Life: fast decay"])
     if role == "atmospheric_wisp":
         stack.extend(["Curl Noise Force: slow rolling motion", "Alpha Over Life: delayed fade-in then dissolve"])
     if role == "detail_particles":
@@ -182,6 +206,12 @@ def tuning_for_emitter(emitter: dict[str, Any]) -> dict[str, Any]:
         tuning.update({"spawn_density": "low", "opacity": "0.18-0.45", "sort": "behind primary particles"})
     elif role == "secondary_body":
         tuning.update({"opacity": "0.35-0.65", "offset": "slightly wider than core", "motion": "slower curl than core"})
+    elif role == "primary_bolt":
+        tuning.update({"spawn_density": "single/low burst", "opacity": "0.85-1.0", "width": "thin core, strong glow"})
+    elif role == "secondary_bolts":
+        tuning.update({"spawn_density": "low", "opacity": "0.45-0.75", "branch_count": "2-5 visible forks"})
+    elif role == "impact_core":
+        tuning.update({"spawn_density": "single pulse", "opacity": "0.45-0.7", "scale": "small bright contact point"})
     elif role == "atmospheric_wisp":
         tuning.update({"opacity": "0.08-0.28", "emissive": "very low", "motion": "slow curl/noise"})
     elif role == "accent_particles":

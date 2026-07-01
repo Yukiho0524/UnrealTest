@@ -314,15 +314,17 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
                     scale=transform["scale"],
                 )
                 result["components"].append(component)
-            component = add_niagara_component_to_blueprint(
-                unreal_module,
-                blueprint,
-                root_handle,
-                f"NiagaraLayer_{index}_{safe_asset_token(emitter.get('name', 'layer'))}",
-                system.get("asset_path"),
-                transform=preview_niagara_transform_for_emitter(emitter, index),
-            )
-            result["components"].append(component)
+            niagara_transform = preview_niagara_transform_for_emitter(emitter, index)
+            if niagara_transform:
+                component = add_niagara_component_to_blueprint(
+                    unreal_module,
+                    blueprint,
+                    root_handle,
+                    f"NiagaraLayer_{index}_{safe_asset_token(emitter.get('name', 'layer'))}",
+                    system.get("asset_path"),
+                    transform=niagara_transform,
+                )
+                result["components"].append(component)
 
         unreal_module.BlueprintEditorLibrary.compile_blueprint(blueprint)
         annotate_asset(unreal_module, blueprint, spec)
@@ -444,6 +446,12 @@ def preview_card_transform_for_emitter(emitter: dict, index: int) -> dict | None
     role = emitter.get("role")
     if role == "supporting_glow":
         return {"location": (0.0, 0.0, 4.0), "rotation": (0.0, 0.0, 0.0), "scale": (3.0, 3.0, 1.0)}
+    if role == "primary_bolt":
+        return {"location": (0.0, 0.0, 152.0), "rotation": (90.0, 0.0, 0.0), "scale": (1.05, 2.25, 1.05)}
+    if role == "secondary_bolts":
+        return {"location": (0.0, 0.0, 120.0), "rotation": (90.0, 0.0, -8.0), "scale": (1.85, 1.65, 1.0)}
+    if role == "impact_core":
+        return {"location": (0.0, 0.0, 18.0), "rotation": (90.0, 0.0, 0.0), "scale": (1.45, 1.45, 1.45)}
     if role == "primary_body":
         return {"location": (0.0, -1.0, 135.0), "rotation": (90.0, 0.0, 0.0), "scale": (1.55, 1.55, 1.55)}
     if role == "secondary_body":
@@ -457,9 +465,11 @@ def preview_card_transform_for_emitter(emitter: dict, index: int) -> dict | None
     return {"location": (index * 3.0, 0.0, 145.0 + index * 5.0), "rotation": (90.0, 0.0, 0.0), "scale": (1.0, 1.0, 1.0)}
 
 
-def preview_niagara_transform_for_emitter(emitter: dict, index: int) -> dict:
+def preview_niagara_transform_for_emitter(emitter: dict, index: int) -> dict | None:
     settings = emitter.get("unreal_settings", {})
     niagara = settings.get("preview", {}).get("niagara", {}) if isinstance(settings, dict) else {}
+    if niagara.get("enabled") is False:
+        return None
     if niagara:
         return normalize_transform(
             niagara,
@@ -700,6 +710,10 @@ def write_sprite_png(path: Path, spec: dict) -> None:
         pixels = square_sprite_pixels(width, height, spec)
     elif sprite_shape == "shard":
         pixels = shard_sprite_pixels(width, height, spec)
+    elif sprite_shape == "lightning_bolt":
+        pixels = lightning_bolt_pixels(width, height, spec)
+    elif sprite_shape == "lightning_branch":
+        pixels = lightning_branch_pixels(width, height, spec)
     elif sprite_shape == "ground_glow":
         pixels = ground_glow_pixels(width, height, spec)
     elif sprite_shape == "smoke_wisp":
@@ -780,6 +794,88 @@ def ground_glow_pixels(width: int, height: int, spec: dict) -> bytes:
             color = mix_color(core, edge, clamp(distance + ring * 0.25))
             pixels.extend((color[0], color[1], color[2], int(clamp(alpha) * 255)))
     return bytes(pixels)
+
+
+def lightning_bolt_pixels(width: int, height: int, spec: dict) -> bytes:
+    palette = [hex_to_rgba_tuple(color) for color in spec.get("color_palette", [])]
+    core = palette[0] if palette else (245, 255, 255, 255)
+    glow = palette[1] if len(palette) > 1 else (72, 220, 255, 255)
+    purple = palette[3] if len(palette) > 3 else (128, 69, 255, 255)
+    main_points = [
+        (0.52, 0.02),
+        (0.47, 0.18),
+        (0.55, 0.33),
+        (0.43, 0.49),
+        (0.50, 0.66),
+        (0.46, 0.82),
+        (0.50, 0.98),
+    ]
+    branches = [
+        [(0.55, 0.34), (0.70, 0.42), (0.76, 0.55)],
+        [(0.43, 0.50), (0.29, 0.58), (0.22, 0.70)],
+        [(0.50, 0.66), (0.63, 0.74), (0.72, 0.86)],
+    ]
+    return lightning_pixels(width, height, main_points, branches, core, glow, purple, core_width=0.014, glow_width=0.058)
+
+
+def lightning_branch_pixels(width: int, height: int, spec: dict) -> bytes:
+    palette = [hex_to_rgba_tuple(color) for color in spec.get("color_palette", [])]
+    core = palette[0] if palette else (245, 255, 255, 255)
+    glow = palette[1] if len(palette) > 1 else (72, 220, 255, 255)
+    purple = palette[2] if len(palette) > 2 else (70, 110, 255, 255)
+    main_points = [(0.18, 0.62), (0.35, 0.51), (0.48, 0.55), (0.64, 0.42), (0.82, 0.35)]
+    branches = [
+        [(0.35, 0.51), (0.28, 0.36), (0.18, 0.25)],
+        [(0.48, 0.55), (0.53, 0.72), (0.61, 0.83)],
+        [(0.64, 0.42), (0.76, 0.55), (0.88, 0.60)],
+    ]
+    return lightning_pixels(width, height, main_points, branches, core, glow, purple, core_width=0.012, glow_width=0.045)
+
+
+def lightning_pixels(
+    width: int,
+    height: int,
+    main_points: list[tuple[float, float]],
+    branches: list[list[tuple[float, float]]],
+    core: tuple[int, int, int, int],
+    glow: tuple[int, int, int, int],
+    purple: tuple[int, int, int, int],
+    core_width: float,
+    glow_width: float,
+) -> bytes:
+    segments = [(main_points[index], main_points[index + 1], 1.0) for index in range(len(main_points) - 1)]
+    for branch in branches:
+        segments.extend((branch[index], branch[index + 1], 0.72) for index in range(len(branch) - 1))
+
+    pixels = bytearray()
+    for y in range(height):
+        py = y / (height - 1)
+        for x in range(width):
+            px = x / (width - 1)
+            nearest = min((distance_to_segment(px, py, start, end), weight) for start, end, weight in segments)
+            distance, weight = nearest
+            core_alpha = (1.0 - smoothstep(core_width * weight, core_width * 2.1, distance)) * weight
+            glow_alpha = (1.0 - smoothstep(core_width, glow_width, distance)) * 0.68 * weight
+            outer_alpha = (1.0 - smoothstep(glow_width * 0.45, glow_width * 1.8, distance)) * 0.25 * weight
+            alpha = clamp(core_alpha + glow_alpha + outer_alpha)
+            color = mix_color(purple, glow, clamp(glow_alpha + core_alpha))
+            color = mix_color(color, core, clamp(core_alpha * 1.4))
+            pixels.extend((color[0], color[1], color[2], int(alpha * 255)))
+    return bytes(pixels)
+
+
+def distance_to_segment(px: float, py: float, start: tuple[float, float], end: tuple[float, float]) -> float:
+    sx, sy = start
+    ex, ey = end
+    dx = ex - sx
+    dy = ey - sy
+    length_squared = dx * dx + dy * dy
+    if length_squared <= 0.000001:
+        return ((px - sx) ** 2 + (py - sy) ** 2) ** 0.5
+    amount = clamp(((px - sx) * dx + (py - sy) * dy) / length_squared)
+    closest_x = sx + dx * amount
+    closest_y = sy + dy * amount
+    return ((px - closest_x) ** 2 + (py - closest_y) ** 2) ** 0.5
 
 
 def smoke_wisp_pixels(width: int, height: int, spec: dict) -> bytes:
@@ -1194,6 +1290,16 @@ def inferred_emissive_strength(spec: dict) -> float:
     bright = float(visual_profile.get("bright_pixel_ratio", 0.08) or 0.08)
     vertical = float(visual_profile.get("vertical_energy", 0.3) or 0.3)
     style = primary_material_style(spec)
+    if "electric_core_bolt" in style:
+        return 22.0
+    if "electric_branch" in style:
+        return 15.0
+    if "electric_impact" in style:
+        return 14.0
+    if "electric_ground" in style:
+        return 7.0
+    if "blue_white_sparks" in style:
+        return 13.0
     if "smoke" in style:
         return 0.65
     if "base_glow" in style:
@@ -1214,6 +1320,16 @@ def inferred_opacity(spec: dict) -> float:
     if override is not None:
         return float(override)
     style = primary_material_style(spec)
+    if "electric_core_bolt" in style:
+        return 0.9
+    if "electric_branch" in style:
+        return 0.72
+    if "electric_impact" in style:
+        return 0.56
+    if "electric_ground" in style:
+        return 0.34
+    if "blue_white_sparks" in style:
+        return 0.7
     if "reference_card" in style:
         return 0.38
     if "base_glow" in style:

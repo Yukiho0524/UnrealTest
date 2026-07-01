@@ -1,0 +1,92 @@
+{
+  "effect_type": "electric_arc",
+  "motion": "branch_and_flicker",
+  "render_mode": "sprite",
+  "duration_seconds": 0.75,
+  "looping": false,
+  "lock_color_palette": true,
+  "color_palette": ["#F2FFFF", "#4FDFFF", "#2B76FF", "#7F45FF"],
+  "layer_overrides": {
+    "main_bolt": {
+      "material": {
+        "opacity": 0.92,
+        "emissive_strength": 24.0
+      },
+      "preview": {
+        "card": {
+          "location": [0, 0, 155],
+          "rotation": [90, 0, 0],
+          "scale": [1.05, 2.35, 1]
+        },
+        "niagara": {
+          "enabled": false
+        }
+      }
+    },
+    "branch_arcs": {
+      "material": {
+        "opacity": 0.66,
+        "emissive_strength": 13.5
+      },
+      "preview": {
+        "card": {
+          "location": [0, 0, 115],
+          "rotation": [90, 0, -10],
+          "scale": [1.95, 1.65, 1]
+        },
+        "niagara": {
+          "enabled": false
+        }
+      }
+    },
+    "impact_core": {
+      "material": {
+        "opacity": 0.58,
+        "emissive_strength": 15.0
+      },
+      "preview": {
+        "card": {
+          "location": [0, 0, 20],
+          "rotation": [90, 0, 0],
+          "scale": [1.45, 1.45, 1.45]
+        },
+        "niagara": {
+          "enabled": false
+        }
+      }
+    },
+    "ground_energy_ring": {
+      "material": {
+        "opacity": 0.3,
+        "emissive_strength": 6.0
+      },
+      "preview": {
+        "card": {
+          "location": [0, 0, 3],
+          "rotation": [0, 0, 0],
+          "scale": [2.65, 2.65, 1]
+        },
+        "niagara": {
+          "enabled": false
+        }
+      }
+    },
+    "ion_sparks": {
+      "material": {
+        "opacity": 0.62,
+        "emissive_strength": 11.0
+      },
+      "preview": {
+        "card": {
+          "enabled": false
+        },
+        "niagara": {
+          "enabled": false,
+          "location": [-28, 18, 102],
+          "rotation": [0, 0, 0],
+          "scale": [0.72, 0.72, 0.72]
+        }
+      }
+    }
+  }
+}

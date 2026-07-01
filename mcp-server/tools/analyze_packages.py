@@ -50,7 +50,10 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
         palette = visual_profile["palette"]
     if visual_profile.get("motion_hint") == "vertical_column_rise":
         motion = "rise_and_fade"
-    if visual_profile.get("shape_hint") in {"glowing_square_particles", "glowing_shard_particles"}:
+    if effect_type == "electric_arc":
+        motion = "branch_and_flicker"
+        palette = electric_palette(palette)
+    elif visual_profile.get("shape_hint") in {"glowing_square_particles", "glowing_shard_particles"}:
         effect_type = "glowing_particles"
         motion = "rise_and_fade"
     if visual_profile.get("shape_hint") in {"bright_core_column_with_outer_flames", "ground_ring_with_upward_flare"}:
@@ -213,7 +216,7 @@ def build_vfx_plan(
             production_notes=production_notes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
         )
 
-    if effect_type == "glowing_particles" or visual_profile.get("shape_hint") == "glowing_square_particles":
+    if effect_type == "glowing_particles" or (effect_type != "electric_arc" and visual_profile.get("shape_hint") == "glowing_square_particles"):
         emitters = [
             VFXEmitterPlan(
                 name="glowing_squares",
@@ -332,6 +335,90 @@ def build_vfx_plan(
             production_notes=production_notes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
         )
 
+    if effect_type == "electric_arc":
+        electric_palette_values = electric_palette(palette)
+        emitters = [
+            VFXEmitterPlan(
+                name="main_bolt",
+                role="primary_bolt",
+                sprite_shape="lightning_bolt",
+                material_style="electric_core_bolt",
+                motion="branch_and_flicker",
+                spawn_rate=1.0,
+                lifetime_seconds=0.32,
+                start_size=42.0,
+                end_size=220.0,
+                color_palette=electric_palette_values,
+                sprite_source=None,
+                notes=["Readable vertical bolt must dominate the effect; sparks are secondary."],
+            ),
+            VFXEmitterPlan(
+                name="branch_arcs",
+                role="secondary_bolts",
+                sprite_shape="lightning_branch",
+                material_style="electric_branch_arcs",
+                motion="branch_and_flicker",
+                spawn_rate=8.0,
+                lifetime_seconds=0.26,
+                start_size=26.0,
+                end_size=175.0,
+                color_palette=electric_palette_values,
+                sprite_source=None,
+                notes=["Adds side forks around the main bolt instead of random particle spray."],
+            ),
+            VFXEmitterPlan(
+                name="impact_core",
+                role="impact_core",
+                sprite_shape="soft_disc",
+                material_style="electric_impact_core",
+                motion="pulse_loop",
+                spawn_rate=1.0,
+                lifetime_seconds=0.42,
+                start_size=72.0,
+                end_size=150.0,
+                color_palette=electric_palette_values[:3],
+                sprite_source=None,
+                notes=["Bright contact point where the bolt hits the ground."],
+            ),
+            VFXEmitterPlan(
+                name="ground_energy_ring",
+                role="supporting_glow",
+                sprite_shape="ground_glow",
+                material_style="electric_ground_ring",
+                motion="radial_expand_then_fade",
+                spawn_rate=1.0,
+                lifetime_seconds=0.55,
+                start_size=130.0,
+                end_size=240.0,
+                color_palette=[electric_palette_values[1], electric_palette_values[2], "#171B4A"],
+                sprite_source=None,
+                notes=["Grounded blue/purple energy ring anchors the bolt."],
+            ),
+            VFXEmitterPlan(
+                name="ion_sparks",
+                role="detail_particles",
+                sprite_shape="small_disc",
+                material_style="blue_white_sparks",
+                motion="quick_scatter_and_fade",
+                spawn_rate=22.0,
+                lifetime_seconds=0.28,
+                start_size=4.0,
+                end_size=1.4,
+                color_palette=[electric_palette_values[0], electric_palette_values[1]],
+                sprite_source=None,
+                notes=["Sparse ion sparks only; do not let this layer become the main read."],
+            ),
+        ]
+        emitters = apply_unreal_settings(emitters, config)
+        return VFXPlan(
+            visual_intent="Stylized lightning strike with a dominant vertical bolt, branching side arcs, bright impact core, blue ground energy ring, and sparse ion sparks.",
+            primary_emitter="main_bolt",
+            emitters=emitters,
+            reference_card_source=reference_card_source,
+            composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
+            production_notes=production_notes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+        )
+
     emitters = [
         VFXEmitterPlan(
             name="primary_sprite",
@@ -391,6 +478,16 @@ def default_unreal_settings_for_emitter(emitter: VFXEmitterPlan, index: int) -> 
 
 def default_material_settings_for_emitter(emitter: VFXEmitterPlan) -> dict[str, Any]:
     style = emitter.material_style
+    if "electric_core_bolt" in style:
+        return {"opacity": 0.9, "emissive_strength": 22.0, "blend_mode": "additive"}
+    if "electric_branch" in style:
+        return {"opacity": 0.72, "emissive_strength": 15.0, "blend_mode": "additive"}
+    if "electric_impact" in style:
+        return {"opacity": 0.56, "emissive_strength": 14.0, "blend_mode": "additive"}
+    if "electric_ground" in style:
+        return {"opacity": 0.34, "emissive_strength": 7.0, "blend_mode": "additive"}
+    if "blue_white_sparks" in style:
+        return {"opacity": 0.7, "emissive_strength": 13.0, "blend_mode": "additive"}
     if "smoke" in style:
         return {"opacity": 0.22, "emissive_strength": 0.65, "blend_mode": "translucent"}
     if "base_glow" in style:
@@ -406,6 +503,12 @@ def default_material_settings_for_emitter(emitter: VFXEmitterPlan) -> dict[str, 
 
 def default_preview_card_settings_for_emitter(emitter: VFXEmitterPlan, index: int) -> dict[str, Any]:
     role = emitter.role
+    if role == "primary_bolt":
+        return {"enabled": True, "location": [0.0, 0.0, 152.0], "rotation": [90.0, 0.0, 0.0], "scale": [1.05, 2.25, 1.05]}
+    if role == "secondary_bolts":
+        return {"enabled": True, "location": [0.0, 0.0, 120.0], "rotation": [90.0, 0.0, -8.0], "scale": [1.85, 1.65, 1.0]}
+    if role == "impact_core":
+        return {"enabled": True, "location": [0.0, 0.0, 18.0], "rotation": [90.0, 0.0, 0.0], "scale": [1.45, 1.45, 1.45]}
     if role == "supporting_glow":
         return {"enabled": True, "location": [0.0, 0.0, 4.0], "rotation": [0.0, 0.0, 0.0], "scale": [3.0, 3.0, 1.0]}
     if role == "primary_body":
@@ -427,6 +530,13 @@ def default_niagara_transform_for_emitter(emitter: VFXEmitterPlan, index: int) -
         "rotation": [0.0, 0.0, 0.0],
         "scale": [1.0, 1.0, 1.0],
     }
+
+
+def electric_palette(palette: list[str]) -> list[str]:
+    blue_or_purple = [color for color in palette if color.upper() not in {"#FFFFFF", "#FFFCE8", "#FFF8C8"}]
+    if blue_or_purple:
+        return ["#F2FFFF", "#4FDFFF", blue_or_purple[0], "#7F45FF"]
+    return ["#F2FFFF", "#4FDFFF", "#2B76FF", "#7F45FF"]
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
