@@ -87,6 +87,43 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
             "message": "Run this script inside Unreal Editor Python to create assets.",
         }
 
+    emitters = planned_emitters(spec)
+    if len(emitters) > 1:
+        return build_niagara_bundle_from_spec(unreal, spec, destination_path, emitters)
+
+    single_result = build_single_niagara_system(unreal, spec, destination_path)
+    unreal.EditorAssetLibrary.save_directory(destination_path, only_if_is_dirty=False, recursive=True)
+    return single_result
+
+
+def build_niagara_bundle_from_spec(unreal_module, spec: dict, destination_path: str, emitters: list[dict]) -> dict:
+    systems = []
+    primary_emitter = primary_emitter_name(spec)
+    for emitter in emitters:
+        emitter_spec = spec_for_emitter(spec, emitter, emitter.get("name") == primary_emitter)
+        system_result = build_single_niagara_system(unreal_module, emitter_spec, destination_path)
+        system_result["emitter_plan"] = compact_emitter_plan(emitter)
+        system_result["is_primary"] = emitter.get("name") == primary_emitter
+        systems.append(system_result)
+
+    primary_system = next((system for system in systems if system.get("is_primary")), systems[0] if systems else None)
+    unreal_module.EditorAssetLibrary.save_directory(destination_path, only_if_is_dirty=False, recursive=True)
+    return {
+        "mode": "unreal-editor",
+        "status": "created_bundle" if primary_system and primary_system.get("status") != "partial" else "partial_bundle",
+        "asset_path": primary_system.get("asset_path") if primary_system else f"{destination_path}/NS_{spec['name']}",
+        "bundle": {
+            "enabled": True,
+            "primary_emitter": primary_emitter,
+            "system_count": len(systems),
+            "systems": systems,
+        },
+        "spec_summary": summarize_spec(spec),
+        "message": "Created a VFX bundle from vfx_plan emitters. Each planned emitter has its own Niagara System, texture, material, and material instance.",
+    }
+
+
+def build_single_niagara_system(unreal, spec: dict, destination_path: str) -> dict:
     asset_name = f"NS_{spec['name']}"
     asset_path = f"{destination_path}/{asset_name}"
     template_result = create_niagara_system_from_template(unreal, spec, asset_path)
@@ -97,7 +134,6 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
         material_result.get("material_instance_path"),
     )
     if template_result["created"]:
-        unreal.EditorAssetLibrary.save_directory(destination_path, only_if_is_dirty=False, recursive=True)
         return {
             "mode": "unreal-editor",
             "status": template_result["status"],
@@ -111,7 +147,6 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
 
     factory_result = create_niagara_system_asset(unreal, asset_name, destination_path)
     if factory_result["created"]:
-        unreal.EditorAssetLibrary.save_directory(destination_path, only_if_is_dirty=False, recursive=True)
         return {
             "mode": "unreal-editor",
             "status": "created",
@@ -134,6 +169,44 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
         "renderer_material_assignment": renderer_result,
         "message": "Created destination folder and validated spec, but Niagara factory creation did not succeed in this UE Python API.",
     }
+
+
+def planned_emitters(spec: dict) -> list[dict]:
+    plan = spec.get("vfx_plan") or {}
+    emitters = plan.get("emitters") or []
+    return [emitter for emitter in emitters if emitter.get("name")]
+
+
+def primary_emitter_name(spec: dict) -> str | None:
+    plan = spec.get("vfx_plan") or {}
+    return plan.get("primary_emitter")
+
+
+def spec_for_emitter(base_spec: dict, emitter: dict, is_primary: bool) -> dict:
+    emitter_name = safe_asset_token(emitter.get("name", "emitter"))
+    spec = json.loads(json.dumps(base_spec))
+    spec["name"] = base_spec["name"] if is_primary else f"{base_spec['name']}_{emitter_name}"
+    spec["motion"] = emitter.get("motion") or base_spec.get("motion", "unknown")
+    spec["color_palette"] = emitter.get("color_palette") or base_spec.get("color_palette", ["#FFFFFF"])
+    spec["particles"] = {
+        "spawn_rate": float(emitter.get("spawn_rate", base_spec["particles"]["spawn_rate"])),
+        "lifetime_seconds": float(emitter.get("lifetime_seconds", base_spec["particles"]["lifetime_seconds"])),
+        "start_size": float(emitter.get("start_size", base_spec["particles"]["start_size"])),
+        "end_size": float(emitter.get("end_size", base_spec["particles"]["end_size"])),
+    }
+    spec["vfx_plan"] = {
+        "visual_intent": (base_spec.get("vfx_plan") or {}).get("visual_intent", ""),
+        "primary_emitter": emitter.get("name"),
+        "emitters": [emitter],
+    }
+    spec.setdefault("notes", [])
+    spec["notes"] = [*spec["notes"], f"Generated as VFX bundle emitter: {emitter.get('name')}"]
+    return spec
+
+
+def safe_asset_token(value: str) -> str:
+    token = "".join(character if character.isalnum() else "_" for character in value)
+    return token.strip("_") or "emitter"
 
 
 def create_niagara_system_from_template(unreal_module, spec: dict, asset_path: str) -> dict:
@@ -807,6 +880,22 @@ def compact_vfx_plan(plan: dict | None) -> dict:
             }
             for emitter in plan.get("emitters", [])
         ],
+    }
+
+
+def compact_emitter_plan(emitter: dict) -> dict:
+    return {
+        "name": emitter.get("name"),
+        "role": emitter.get("role"),
+        "sprite_shape": emitter.get("sprite_shape"),
+        "material_style": emitter.get("material_style"),
+        "motion": emitter.get("motion"),
+        "spawn_rate": emitter.get("spawn_rate"),
+        "lifetime_seconds": emitter.get("lifetime_seconds"),
+        "start_size": emitter.get("start_size"),
+        "end_size": emitter.get("end_size"),
+        "color_palette": emitter.get("color_palette"),
+        "sprite_source": emitter.get("sprite_source"),
     }
 
 

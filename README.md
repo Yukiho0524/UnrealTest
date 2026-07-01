@@ -128,6 +128,8 @@ UI 按鈕：
 - `Generate Unreal Assets`：呼叫 UE 5.7.4，生成 Niagara 與相關材質貼圖。
 - `Open In Unreal`：開啟 Unreal Editor，並同步到 `NS_`、`T_`、`M_`、`MI_` 相關資產。
 
+當 `vfx_plan.emitters` 有多個 emitter 時，Unreal 端會生成一組 bundle。主 emitter 會使用 `NS_<name>`，其他 emitter 會使用 `NS_<name>_<emitter>`，並各自產生對應的 `T_`、`M_`、`MI_` 資產。這讓火焰主體、火星、碎光、柔光可以先分開生成與檢查，而不是全部被壓成單一噴粒子。
+
 如果 Unreal Editor 已經開著同一個專案，`Generate Unreal Assets` 可能因資產鎖定而失敗或 partial。建議先關掉 Unreal Editor，再執行生成，生成完成後再用 `Open In Unreal` 檢視。
 
 ## CLI
