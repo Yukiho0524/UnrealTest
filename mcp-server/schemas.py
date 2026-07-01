@@ -59,6 +59,7 @@ class VFXEmitterPlan:
     start_size: float
     end_size: float
     color_palette: list[str]
+    sprite_source: str | None = None
     notes: list[str] = field(default_factory=list)
 
 

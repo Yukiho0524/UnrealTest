@@ -103,6 +103,8 @@ samples/references/fire/
 
 Unreal 端會先用 primary emitter 的 `sprite_shape` 產生對應貼圖。火焰會產生火舌 alpha texture，白色方片會產生方形 emissive texture，避免所有效果都變成滿版矩形 sprite。
 
+如果參考圖可被萃取，primary emitter 也會帶 `sprite_source`，指向 `generated/reference-sprites/<package>/` 內的 PNG。Unreal 端會優先匯入這張由原圖亮部/暖色前景裁切出的 sprite，只有沒有 `sprite_source` 時才使用程序貼圖。
+
 ## UI 使用
 
 啟動 UI：

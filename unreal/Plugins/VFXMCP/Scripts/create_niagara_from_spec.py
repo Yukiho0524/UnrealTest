@@ -253,8 +253,10 @@ def create_or_replace_sprite_texture(unreal_module, texture_name: str, destinati
     if unreal_module.EditorAssetLibrary.does_asset_exist(texture_path):
         unreal_module.EditorAssetLibrary.delete_asset(texture_path)
 
-    source_path = generated_texture_source_path(spec["name"], texture_name)
-    write_sprite_png(source_path, spec)
+    source_path = primary_sprite_source_path(spec)
+    if not source_path:
+        source_path = generated_texture_source_path(spec["name"], texture_name)
+        write_sprite_png(source_path, spec)
 
     task = unreal_module.AssetImportTask()
     task.set_editor_property("filename", str(source_path))
@@ -661,6 +663,21 @@ def primary_sprite_shape(spec: dict) -> str:
     return ""
 
 
+def primary_sprite_source_path(spec: dict) -> Path | None:
+    plan = spec.get("vfx_plan") or {}
+    primary_name = plan.get("primary_emitter")
+    for emitter in plan.get("emitters", []):
+        if emitter.get("name") != primary_name:
+            continue
+        source = emitter.get("sprite_source")
+        if not source:
+            return None
+        source_path = Path(source)
+        if source_path.exists():
+            return source_path
+    return None
+
+
 def try_set_editor_property(asset, property_name: str, value) -> None:
     try:
         asset.set_editor_property(property_name, value)
@@ -750,6 +767,7 @@ def compact_vfx_plan(plan: dict | None) -> dict:
                 "start_size": emitter.get("start_size"),
                 "end_size": emitter.get("end_size"),
                 "color_palette": emitter.get("color_palette"),
+                "sprite_source": emitter.get("sprite_source"),
             }
             for emitter in plan.get("emitters", [])
         ],

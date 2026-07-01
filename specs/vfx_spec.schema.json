@@ -158,6 +158,9 @@
                   "pattern": "^#[0-9A-Fa-f]{6}$"
                 }
               },
+              "sprite_source": {
+                "type": ["string", "null"]
+              },
               "notes": {
                 "type": "array",
                 "items": {"type": "string"}

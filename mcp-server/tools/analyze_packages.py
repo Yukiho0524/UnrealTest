@@ -7,6 +7,7 @@ from typing import Any
 from schemas import VFXEmitterPlan, VFXParticles, VFXPlan, VFXSource, VFXSpec, VFXTiming
 from tools.analyze_images import IMAGE_EXTENSIONS, _classify_from_filename
 from tools.image_features import analyze_media_files
+from tools.reference_sprites import create_reference_sprite_source
 
 
 CONFIG_FILE = "config.json"
@@ -71,6 +72,8 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
         end_size=float(config.get("end_size", inferred_end_size(visual_profile)) if config.get("lock_particles") else inferred_end_size(visual_profile)),
     )
 
+    reference_sprite_source = create_reference_sprite_source(package_dir.name, media_files, effect_type, visual_profile)
+
     return VFXSpec(
         name=config.get("name", package_dir.name),
         source=VFXSource(kind="folder", uri=str(package_dir)),
@@ -82,7 +85,7 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
         particles=particles,
         notes=notes,
         visual_profile=visual_profile,
-        vfx_plan=build_vfx_plan(effect_type, motion, palette, particles, visual_profile),
+        vfx_plan=build_vfx_plan(effect_type, motion, palette, particles, visual_profile, reference_sprite_source),
     )
 
 
@@ -155,7 +158,14 @@ def visual_profile_notes(visual_profile: dict[str, Any]) -> list[str]:
     ]
 
 
-def build_vfx_plan(effect_type: str, motion: str, palette: list[str], particles: VFXParticles, visual_profile: dict[str, Any]) -> VFXPlan:
+def build_vfx_plan(
+    effect_type: str,
+    motion: str,
+    palette: list[str],
+    particles: VFXParticles,
+    visual_profile: dict[str, Any],
+    reference_sprite_source: str | None,
+) -> VFXPlan:
     if effect_type == "glowing_particles" or visual_profile.get("shape_hint") == "glowing_square_particles":
         return VFXPlan(
             visual_intent="White emissive square particles drifting upward in a loose vertical column with soft bloom.",
@@ -172,6 +182,7 @@ def build_vfx_plan(effect_type: str, motion: str, palette: list[str], particles:
                     start_size=max(particles.start_size, 12.0),
                     end_size=max(particles.end_size, 28.0),
                     color_palette=palette[:3],
+                    sprite_source=reference_sprite_source,
                     notes=["Use hard-edged square sprites, random rotation, and additive bloom."],
                 ),
                 VFXEmitterPlan(
@@ -206,6 +217,7 @@ def build_vfx_plan(effect_type: str, motion: str, palette: list[str], particles:
                     start_size=particles.start_size,
                     end_size=particles.end_size,
                     color_palette=palette,
+                    sprite_source=reference_sprite_source,
                     notes=["Use alpha-shaped flame sprites instead of full rectangular billboards."],
                 ),
                 VFXEmitterPlan(
@@ -239,6 +251,7 @@ def build_vfx_plan(effect_type: str, motion: str, palette: list[str], particles:
                 start_size=particles.start_size,
                 end_size=particles.end_size,
                 color_palette=palette,
+                sprite_source=reference_sprite_source,
             )
         ],
     )
