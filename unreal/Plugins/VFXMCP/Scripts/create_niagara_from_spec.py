@@ -83,13 +83,16 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
 
     asset_name = f"NS_{spec['name']}"
     asset_path = f"{destination_path}/{asset_name}"
-    existing_asset = unreal.EditorAssetLibrary.load_asset(asset_path)
-    if existing_asset:
+    template_result = create_niagara_system_from_template(unreal, spec, asset_path)
+    if template_result["created"]:
+        unreal.EditorAssetLibrary.save_directory(destination_path, only_if_is_dirty=False, recursive=True)
         return {
             "mode": "unreal-editor",
-            "status": "exists",
+            "status": template_result["status"],
             "asset_path": asset_path,
-            "message": "Niagara asset already exists.",
+            "template": template_result["template"],
+            "spec_summary": summarize_spec(spec),
+            "message": "Created a non-empty Niagara System from an Unreal template.",
         }
 
     factory_result = create_niagara_system_asset(unreal, asset_name, destination_path)
@@ -100,7 +103,8 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
             "status": "created",
             "asset_path": asset_path,
             "spec_summary": summarize_spec(spec),
-            "message": "Created initial Niagara System asset from VFXSpec.",
+            "template_errors": template_result["errors"],
+            "message": "Created initial Niagara System asset from VFXSpec, but template duplication was unavailable.",
         }
 
     return {
@@ -108,9 +112,67 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
         "status": "partial",
         "asset_path": asset_path,
         "spec_summary": summarize_spec(spec),
+        "template_errors": template_result["errors"],
         "factory_errors": factory_result["errors"],
         "message": "Created destination folder and validated spec, but Niagara factory creation did not succeed in this UE Python API.",
     }
+
+
+def create_niagara_system_from_template(unreal_module, spec: dict, asset_path: str) -> dict:
+    errors: list[str] = []
+    template_paths = template_paths_for_effect(spec["effect_type"])
+
+    if unreal_module.EditorAssetLibrary.does_asset_exist(asset_path):
+        unreal_module.EditorAssetLibrary.delete_asset(asset_path)
+
+    for template_path in template_paths:
+        if not unreal_module.EditorAssetLibrary.does_asset_exist(template_path):
+            errors.append(f"Template does not exist: {template_path}")
+            continue
+        try:
+            duplicated_asset = unreal_module.EditorAssetLibrary.duplicate_asset(template_path, asset_path)
+            if duplicated_asset:
+                annotate_asset(unreal_module, duplicated_asset, spec)
+                return {
+                    "created": True,
+                    "status": "created_from_template",
+                    "template": template_path,
+                    "errors": errors,
+                }
+            errors.append(f"Duplicate returned no asset: {template_path}")
+        except Exception as exc:
+            errors.append(f"Duplicate failed for {template_path}: {exc}")
+
+    return {"created": False, "status": "template_failed", "template": None, "errors": errors}
+
+
+def template_paths_for_effect(effect_type: str) -> list[str]:
+    if effect_type in {"fire_or_flame", "impact_burst", "magic_energy"}:
+        return [
+            "/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion",
+            "/Niagara/DefaultAssets/DefaultSystem",
+        ]
+    if effect_type in {"smoke_or_mist"}:
+        return [
+            "/Niagara/DefaultAssets/Templates/Systems/FountainLightweight",
+            "/Niagara/DefaultAssets/DefaultSystem",
+        ]
+    if effect_type in {"electric_arc"}:
+        return [
+            "/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion",
+            "/Niagara/DefaultAssets/DefaultSystem",
+        ]
+    return ["/Niagara/DefaultAssets/DefaultSystem"]
+
+
+def annotate_asset(unreal_module, asset, spec: dict) -> None:
+    try:
+        unreal_module.EditorAssetLibrary.set_metadata_tag(asset, "VFXMCP_EffectType", spec["effect_type"])
+        unreal_module.EditorAssetLibrary.set_metadata_tag(asset, "VFXMCP_Motion", spec["motion"])
+        unreal_module.EditorAssetLibrary.set_metadata_tag(asset, "VFXMCP_ColorPalette", ",".join(spec["color_palette"]))
+        unreal_module.EditorAssetLibrary.set_metadata_tag(asset, "VFXMCP_Source", spec["source"]["uri"])
+    except Exception as exc:
+        unreal_module.log_warning(f"VFX MCP could not write metadata: {exc}")
 
 
 def create_niagara_system_asset(unreal_module, asset_name: str, destination_path: str) -> dict:
