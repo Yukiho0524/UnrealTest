@@ -128,6 +128,19 @@
         "reference_card_source": {
           "type": ["string", "null"]
         },
+        "composition_layers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "production_notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "emitters": {
           "type": "array",
           "items": {

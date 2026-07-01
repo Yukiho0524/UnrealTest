@@ -8,6 +8,7 @@ from schemas import VFXEmitterPlan, VFXParticles, VFXPlan, VFXSource, VFXSpec, V
 from tools.analyze_images import IMAGE_EXTENSIONS, _classify_from_filename
 from tools.image_features import analyze_media_files
 from tools.reference_sprites import create_reference_card_source, create_reference_sprite_source
+from tools.vfx_authoring import composition_layers_for_plan, production_notes_for_plan
 
 
 CONFIG_FILE = "config.json"
@@ -171,122 +172,90 @@ def build_vfx_plan(
     reference_card_source: str | None,
 ) -> VFXPlan:
     if visual_profile.get("shape_hint") == "glowing_shard_particles":
+        emitters = [
+            VFXEmitterPlan(
+                name="glowing_shards",
+                role="primary_particles",
+                sprite_shape="shard",
+                material_style="gold_white_emissive_shards",
+                motion="rise_with_turbulence",
+                spawn_rate=max(particles.spawn_rate, 150.0),
+                lifetime_seconds=max(particles.lifetime_seconds, 0.95),
+                start_size=max(particles.start_size, 8.0),
+                end_size=max(particles.end_size, 22.0),
+                color_palette=palette[:4],
+                sprite_source=reference_sprite_source,
+                notes=["Use a crisp triangular shard sprite, random rotation, and nonuniform sizes."],
+            ),
+            VFXEmitterPlan(
+                name="overexposed_glints",
+                role="accent_particles",
+                sprite_shape="soft_disc",
+                material_style="white_hot_glint",
+                motion="quick_rise_and_fade",
+                spawn_rate=36.0,
+                lifetime_seconds=0.42,
+                start_size=12.0,
+                end_size=4.0,
+                color_palette=["#FFFFFF", "#FFF0C8"],
+                notes=["Adds small hot flashes between shard particles."],
+            ),
+        ]
         return VFXPlan(
             visual_intent="Gold-white glowing shard particles swirling upward with varied small triangular silhouettes and a faint bloom core.",
             primary_emitter="glowing_shards",
-            emitters=[
-                VFXEmitterPlan(
-                    name="glowing_shards",
-                    role="primary_particles",
-                    sprite_shape="shard",
-                    material_style="gold_white_emissive_shards",
-                    motion="rise_with_turbulence",
-                    spawn_rate=max(particles.spawn_rate, 150.0),
-                    lifetime_seconds=max(particles.lifetime_seconds, 0.95),
-                    start_size=max(particles.start_size, 8.0),
-                    end_size=max(particles.end_size, 22.0),
-                    color_palette=palette[:4],
-                    sprite_source=reference_sprite_source,
-                    notes=["Use a crisp triangular shard sprite, random rotation, and nonuniform sizes."],
-                ),
-                VFXEmitterPlan(
-                    name="overexposed_glints",
-                    role="accent_particles",
-                    sprite_shape="soft_disc",
-                    material_style="white_hot_glint",
-                    motion="quick_rise_and_fade",
-                    spawn_rate=36.0,
-                    lifetime_seconds=0.42,
-                    start_size=12.0,
-                    end_size=4.0,
-                    color_palette=["#FFFFFF", "#FFF0C8"],
-                    notes=["Adds small hot flashes between shard particles."],
-                ),
-            ],
+            emitters=emitters,
             reference_card_source=reference_card_source,
+            composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
+            production_notes=production_notes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
         )
 
     if effect_type == "glowing_particles" or visual_profile.get("shape_hint") == "glowing_square_particles":
+        emitters = [
+            VFXEmitterPlan(
+                name="glowing_squares",
+                role="primary_particles",
+                sprite_shape="square",
+                material_style="white_emissive",
+                motion="rise_with_turbulence",
+                spawn_rate=max(particles.spawn_rate, 120.0),
+                lifetime_seconds=max(particles.lifetime_seconds, 0.9),
+                start_size=max(particles.start_size, 12.0),
+                end_size=max(particles.end_size, 28.0),
+                color_palette=palette[:3],
+                sprite_source=reference_sprite_source,
+                notes=["Use hard-edged square sprites, random rotation, and additive bloom."],
+            ),
+            VFXEmitterPlan(
+                name="soft_bloom_core",
+                role="supporting_glow",
+                sprite_shape="soft_disc",
+                material_style="warm_white_glow",
+                motion="slow_vertical_drift",
+                spawn_rate=24.0,
+                lifetime_seconds=0.7,
+                start_size=32.0,
+                end_size=72.0,
+                color_palette=["#FFFFFF", "#FFFCE8"],
+                notes=["Adds the overexposed vertical glow visible behind the square particles."],
+            ),
+        ]
         return VFXPlan(
             visual_intent="White emissive square particles drifting upward in a loose vertical column with soft bloom.",
             primary_emitter="glowing_squares",
-            emitters=[
-                VFXEmitterPlan(
-                    name="glowing_squares",
-                    role="primary_particles",
-                    sprite_shape="square",
-                    material_style="white_emissive",
-                    motion="rise_with_turbulence",
-                    spawn_rate=max(particles.spawn_rate, 120.0),
-                    lifetime_seconds=max(particles.lifetime_seconds, 0.9),
-                    start_size=max(particles.start_size, 12.0),
-                    end_size=max(particles.end_size, 28.0),
-                    color_palette=palette[:3],
-                    sprite_source=reference_sprite_source,
-                    notes=["Use hard-edged square sprites, random rotation, and additive bloom."],
-                ),
-                VFXEmitterPlan(
-                    name="soft_bloom_core",
-                    role="supporting_glow",
-                    sprite_shape="soft_disc",
-                    material_style="warm_white_glow",
-                    motion="slow_vertical_drift",
-                    spawn_rate=24.0,
-                    lifetime_seconds=0.7,
-                    start_size=32.0,
-                    end_size=72.0,
-                    color_palette=["#FFFFFF", "#FFFCE8"],
-                    notes=["Adds the overexposed vertical glow visible behind the square particles."],
-                ),
-            ],
+            emitters=emitters,
             reference_card_source=reference_card_source,
+            composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
+            production_notes=production_notes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
         )
 
     if effect_type == "fire_or_flame":
-        return VFXPlan(
-            visual_intent="Layered stylized flame with a bright core, orange outer tongues, and small ember accents.",
-            primary_emitter="core_flame",
-            emitters=[
-                VFXEmitterPlan(
-                    name="core_flame",
-                    role="primary_body",
-                    sprite_shape="flame_tongue",
-                    material_style="additive_flame_gradient",
-                    motion=motion,
-                    spawn_rate=particles.spawn_rate,
-                    lifetime_seconds=particles.lifetime_seconds,
-                    start_size=particles.start_size,
-                    end_size=particles.end_size,
-                    color_palette=palette,
-                    sprite_source=reference_sprite_source,
-                    notes=["Use alpha-shaped flame sprites instead of full rectangular billboards."],
-                ),
-                VFXEmitterPlan(
-                    name="ember_sparks",
-                    role="detail_particles",
-                    sprite_shape="small_disc",
-                    material_style="orange_emissive",
-                    motion="rise_and_scatter",
-                    spawn_rate=round(max(24.0, particles.spawn_rate * 0.18), 2),
-                    lifetime_seconds=round(max(0.35, particles.lifetime_seconds * 0.7), 2),
-                    start_size=round(max(3.0, particles.start_size * 0.18), 2),
-                    end_size=round(max(1.0, particles.start_size * 0.08), 2),
-                    color_palette=palette[1:3] or palette,
-                    notes=["Adds small hot particles separated from the main flame silhouette."],
-                ),
-            ],
-            reference_card_source=reference_card_source,
-        )
-
-    return VFXPlan(
-        visual_intent="Single sprite-based energy effect inferred from the reference package.",
-        primary_emitter="primary_sprite",
-        emitters=[
+        emitters = [
             VFXEmitterPlan(
-                name="primary_sprite",
+                name="core_flame",
                 role="primary_body",
-                sprite_shape="soft_disc",
-                material_style="additive_energy",
+                sprite_shape="flame_tongue",
+                material_style="additive_flame_gradient",
                 motion=motion,
                 spawn_rate=particles.spawn_rate,
                 lifetime_seconds=particles.lifetime_seconds,
@@ -294,9 +263,53 @@ def build_vfx_plan(
                 end_size=particles.end_size,
                 color_palette=palette,
                 sprite_source=reference_sprite_source,
-            )
-        ],
+                notes=["Use alpha-shaped flame sprites instead of full rectangular billboards."],
+            ),
+            VFXEmitterPlan(
+                name="ember_sparks",
+                role="detail_particles",
+                sprite_shape="small_disc",
+                material_style="orange_emissive",
+                motion="rise_and_scatter",
+                spawn_rate=round(max(24.0, particles.spawn_rate * 0.18), 2),
+                lifetime_seconds=round(max(0.35, particles.lifetime_seconds * 0.7), 2),
+                start_size=round(max(3.0, particles.start_size * 0.18), 2),
+                end_size=round(max(1.0, particles.start_size * 0.08), 2),
+                color_palette=palette[1:3] or palette,
+                notes=["Adds small hot particles separated from the main flame silhouette."],
+            ),
+        ]
+        return VFXPlan(
+            visual_intent="Layered stylized flame with a bright core, orange outer tongues, and small ember accents.",
+            primary_emitter="core_flame",
+            emitters=emitters,
+            reference_card_source=reference_card_source,
+            composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
+            production_notes=production_notes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+        )
+
+    emitters = [
+        VFXEmitterPlan(
+            name="primary_sprite",
+            role="primary_body",
+            sprite_shape="soft_disc",
+            material_style="additive_energy",
+            motion=motion,
+            spawn_rate=particles.spawn_rate,
+            lifetime_seconds=particles.lifetime_seconds,
+            start_size=particles.start_size,
+            end_size=particles.end_size,
+            color_palette=palette,
+            sprite_source=reference_sprite_source,
+        )
+    ]
+    return VFXPlan(
+        visual_intent="Single sprite-based energy effect inferred from the reference package.",
+        primary_emitter="primary_sprite",
+        emitters=emitters,
         reference_card_source=reference_card_source,
+        composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
+        production_notes=production_notes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
     )
 
 

@@ -107,6 +107,8 @@ Unreal 端會先用 primary emitter 的 `sprite_shape` 產生對應貼圖。火�
 
 對於大量小型亮片或三角碎光，工具會優先使用分析出的 palette 與乾淨的 shard sprite。這比直接把低解析度截圖中的單顆亮片放大更穩定，也能避免背景窗格或白牆被誤裁進貼圖。
 
+`vfx_plan.composition_layers` 會把特效拆成 reference card、主體、細節粒子、柔光與 glint 等製作層，並記錄每層預期的 Renderer、材質目的、Niagara module stack 與可調參數。`vfx_plan.production_notes` 則是整體製作提醒，例如先做剪影、再補粒子細節，避免只靠提高 spawn rate 讓畫面變「比較多粒子」。
+
 ## UI 使用
 
 啟動 UI：

@@ -918,6 +918,9 @@ def compact_vfx_plan(plan: dict | None) -> dict:
     return {
         "visual_intent": plan.get("visual_intent"),
         "primary_emitter": plan.get("primary_emitter"),
+        "reference_card_source": plan.get("reference_card_source"),
+        "composition_layers": plan.get("composition_layers", []),
+        "production_notes": plan.get("production_notes", []),
         "emitters": [
             {
                 "name": emitter.get("name"),
