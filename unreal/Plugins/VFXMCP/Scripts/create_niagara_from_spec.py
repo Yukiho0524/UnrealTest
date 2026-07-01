@@ -300,7 +300,8 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
         for index, system in enumerate(systems, start=1):
             emitter = system.get("emitter_plan") or {}
             material_path = (system.get("materials") or {}).get("material_instance_path")
-            if plane_mesh and material_path:
+            transform = preview_card_transform_for_emitter(emitter, index)
+            if plane_mesh and material_path and transform:
                 component = add_static_mesh_component_to_blueprint(
                     unreal_module,
                     blueprint,
@@ -308,9 +309,9 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
                     f"LayerCard_{index}_{safe_asset_token(emitter.get('name', 'layer'))}",
                     plane_mesh,
                     material_path,
-                    location=(index * 3.0, 0.0, 155.0 + index * 7.0),
-                    rotation=(90.0, 0.0, 0.0),
-                    scale=(preview_card_scale_for_emitter(emitter), preview_card_scale_for_emitter(emitter), preview_card_scale_for_emitter(emitter)),
+                    location=transform["location"],
+                    rotation=transform["rotation"],
+                    scale=transform["scale"],
                 )
                 result["components"].append(component)
             component = add_niagara_component_to_blueprint(
@@ -434,19 +435,21 @@ def set_component_transform(unreal_module, component, location, rotation, scale)
     try_set_editor_property(component, "relative_scale3d", unreal_module.Vector(*scale))
 
 
-def preview_card_scale_for_emitter(emitter: dict) -> float:
+def preview_card_transform_for_emitter(emitter: dict, index: int) -> dict | None:
     role = emitter.get("role")
     if role == "supporting_glow":
-        return 1.9
+        return {"location": (0.0, 0.0, 4.0), "rotation": (0.0, 0.0, 0.0), "scale": (3.0, 3.0, 1.0)}
     if role == "primary_body":
-        return 1.55
+        return {"location": (0.0, -1.0, 135.0), "rotation": (90.0, 0.0, 0.0), "scale": (1.55, 1.55, 1.55)}
+    if role == "secondary_body":
+        return {"location": (5.0, 1.5, 128.0), "rotation": (90.0, 0.0, -7.0), "scale": (1.85, 1.85, 1.85)}
+    if role == "atmospheric_wisp":
+        return {"location": (-6.0, 2.0, 178.0), "rotation": (90.0, 0.0, 8.0), "scale": (2.0, 2.0, 2.0)}
     if role == "primary_particles":
-        return 1.2
-    if role == "detail_particles":
-        return 0.8
-    if role == "accent_particles":
-        return 0.55
-    return 1.0
+        return {"location": (0.0, 0.0, 135.0 + index * 3.0), "rotation": (90.0, 0.0, 0.0), "scale": (1.2, 1.2, 1.2)}
+    if role in {"detail_particles", "accent_particles"}:
+        return None
+    return {"location": (index * 3.0, 0.0, 145.0 + index * 5.0), "rotation": (90.0, 0.0, 0.0), "scale": (1.0, 1.0, 1.0)}
 
 
 def preview_level_path(spec: dict, destination_path: str) -> str:
@@ -657,7 +660,11 @@ def write_sprite_png(path: Path, spec: dict) -> None:
         pixels = square_sprite_pixels(width, height, spec)
     elif sprite_shape == "shard":
         pixels = shard_sprite_pixels(width, height, spec)
-    elif is_fire_spec(spec) or sprite_shape == "flame_tongue":
+    elif sprite_shape == "ground_glow":
+        pixels = ground_glow_pixels(width, height, spec)
+    elif sprite_shape == "smoke_wisp":
+        pixels = smoke_wisp_pixels(width, height, spec)
+    elif sprite_shape in {"flame_tongue", "flame_wisp"} or (is_fire_spec(spec) and not sprite_shape):
         pixels = fire_sprite_pixels(width, height, spec)
     else:
         pixels = soft_disc_pixels(width, height, spec)
@@ -714,6 +721,44 @@ def soft_disc_pixels(width: int, height: int, spec: dict) -> bytes:
             nx = (x / (width - 1) - 0.5) * 2.0
             distance = (nx * nx + ny * ny) ** 0.5
             alpha = 1.0 - smoothstep(0.18, 0.92, distance)
+            pixels.extend((color[0], color[1], color[2], int(alpha * 255)))
+    return bytes(pixels)
+
+
+def ground_glow_pixels(width: int, height: int, spec: dict) -> bytes:
+    palette = [hex_to_rgba_tuple(color) for color in spec.get("color_palette", [])]
+    core = palette[0] if palette else (255, 240, 180, 255)
+    edge = palette[1] if len(palette) > 1 else (255, 105, 32, 255)
+    pixels = bytearray()
+    for y in range(height):
+        ny = (y / (height - 1) - 0.5) * 2.0
+        for x in range(width):
+            nx = (x / (width - 1) - 0.5) * 2.0
+            distance = ((nx * 0.82) ** 2 + (ny * 1.22) ** 2) ** 0.5
+            alpha = (1.0 - smoothstep(0.1, 0.92, distance)) * 0.82
+            ring = smoothstep(0.32, 0.58, distance) * (1.0 - smoothstep(0.62, 0.98, distance))
+            color = mix_color(core, edge, clamp(distance + ring * 0.25))
+            pixels.extend((color[0], color[1], color[2], int(clamp(alpha) * 255)))
+    return bytes(pixels)
+
+
+def smoke_wisp_pixels(width: int, height: int, spec: dict) -> bytes:
+    palette = [hex_to_rgba_tuple(color) for color in spec.get("color_palette", [])]
+    smoke = palette[0] if palette else (95, 82, 74, 255)
+    warm_edge = palette[2] if len(palette) > 2 else (190, 90, 48, 255)
+    pixels = bytearray()
+    for y in range(height):
+        ny01 = y / (height - 1)
+        up = 1.0 - ny01
+        for x in range(width):
+            nx = (x / (width - 1) - 0.5) * 2.0
+            center = 0.16 * wave(up * 1.7 + 0.2) + 0.08 * wave(up * 4.1)
+            width_at_y = 0.18 + 0.34 * (1.0 - up)
+            body = gaussian(nx, center, width_at_y)
+            breakup = 0.58 + 0.22 * wave(nx * 2.3 + up * 3.7) + 0.2 * wave(nx * 4.8 - up * 2.1)
+            height_mask = smoothstep(0.02, 0.18, up) * (1.0 - smoothstep(0.88, 1.0, up))
+            alpha = clamp(body * height_mask * breakup * 0.55)
+            color = mix_color(smoke, warm_edge, clamp(body * 0.32))
             pixels.extend((color[0], color[1], color[2], int(alpha * 255)))
     return bytes(pixels)
 
@@ -807,7 +852,7 @@ def create_or_replace_material(unreal_module, material_name: str, destination_pa
     if not material:
         raise RuntimeError(f"Could not create material: {material_path}")
 
-    configure_material_properties(unreal_module, material)
+    configure_material_properties(unreal_module, material, spec)
     build_sprite_material_graph(unreal_module, material, spec, sprite_texture)
     annotate_asset(unreal_module, material, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(material)
@@ -830,7 +875,7 @@ def create_or_replace_material_instance(unreal_module, instance_name: str, desti
     unreal_module.MaterialEditingLibrary.set_material_instance_vector_parameter_value(material_instance, "CoreColor", palette[0])
     unreal_module.MaterialEditingLibrary.set_material_instance_vector_parameter_value(material_instance, "OuterColor", palette[2 if len(palette) > 2 else 0])
     unreal_module.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(material_instance, "EmissiveStrength", inferred_emissive_strength(spec))
-    unreal_module.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(material_instance, "Opacity", 0.92)
+    unreal_module.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(material_instance, "Opacity", inferred_opacity(spec))
     if sprite_texture:
         unreal_module.MaterialEditingLibrary.set_material_instance_texture_parameter_value(material_instance, "SpriteTexture", sprite_texture)
     annotate_asset(unreal_module, material_instance, spec)
@@ -941,8 +986,10 @@ def set_renderer_material(unreal_module, renderer, material_instance) -> None:
         renderer.post_edit_change()
 
 
-def configure_material_properties(unreal_module, material) -> None:
-    material.set_editor_property("blend_mode", unreal_module.BlendMode.BLEND_ADDITIVE)
+def configure_material_properties(unreal_module, material, spec: dict) -> None:
+    material_style = primary_material_style(spec)
+    blend_mode = unreal_module.BlendMode.BLEND_TRANSLUCENT if "smoke" in material_style else unreal_module.BlendMode.BLEND_ADDITIVE
+    material.set_editor_property("blend_mode", blend_mode)
     material.set_editor_property("shading_model", unreal_module.MaterialShadingModel.MSM_UNLIT)
     material.set_editor_property("two_sided", True)
     material.set_editor_property("use_material_attributes", False)
@@ -972,7 +1019,7 @@ def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_text
     emissive_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -80, 90)
     opacity = library.create_material_expression(material, unreal_module.MaterialExpressionScalarParameter, -300, 300)
     opacity.set_editor_property("parameter_name", "Opacity")
-    opacity.set_editor_property("default_value", 0.92)
+    opacity.set_editor_property("default_value", inferred_opacity(spec))
     opacity_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -60, 300)
 
     library.connect_material_expressions(particle_color, "RGB", particle_tint_multiply, "A")
@@ -988,6 +1035,10 @@ def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_text
         opacity_output = opacity
     library.connect_material_expressions(texture_color_multiply, "", emissive_multiply, "A")
     library.connect_material_expressions(strength, "", emissive_multiply, "B")
+    try:
+        library.connect_material_property(texture_color_multiply, "", unreal_module.MaterialProperty.MP_BASE_COLOR)
+    except Exception:
+        pass
     library.connect_material_property(emissive_multiply, "", unreal_module.MaterialProperty.MP_EMISSIVE_COLOR)
     library.connect_material_property(opacity_output, "", unreal_module.MaterialProperty.MP_OPACITY)
     library.layout_material_expressions(material)
@@ -1063,6 +1114,15 @@ def primary_sprite_shape(spec: dict) -> str:
     return ""
 
 
+def primary_material_style(spec: dict) -> str:
+    plan = spec.get("vfx_plan") or {}
+    primary_name = plan.get("primary_emitter")
+    for emitter in plan.get("emitters", []):
+        if emitter.get("name") == primary_name:
+            return emitter.get("material_style", "")
+    return ""
+
+
 def primary_sprite_source_path(spec: dict) -> Path | None:
     plan = spec.get("vfx_plan") or {}
     primary_name = plan.get("primary_emitter")
@@ -1089,11 +1149,35 @@ def inferred_emissive_strength(spec: dict) -> float:
     visual_profile = spec.get("visual_profile", {})
     bright = float(visual_profile.get("bright_pixel_ratio", 0.08) or 0.08)
     vertical = float(visual_profile.get("vertical_energy", 0.3) or 0.3)
+    style = primary_material_style(spec)
+    if "smoke" in style:
+        return 0.65
+    if "base_glow" in style:
+        return 5.25
+    if "reference_card" in style:
+        return 2.4
+    if "outer_flame" in style:
+        return round(5.5 + bright * 12.0 + vertical * 3.0, 2)
     if visual_profile.get("style_hint") == "white_gold_glowing_shards":
         return round(18.0 + bright * 24.0, 2)
     if is_fire_spec(spec):
         return round(8.0 + bright * 28.0 + vertical * 8.0, 2)
     return round(12.0 + bright * 38.0 + vertical * 10.0, 2)
+
+
+def inferred_opacity(spec: dict) -> float:
+    style = primary_material_style(spec)
+    if "reference_card" in style:
+        return 0.38
+    if "base_glow" in style:
+        return 0.36
+    if "smoke" in style:
+        return 0.22
+    if "outer_flame" in style:
+        return 0.55
+    if "glow" in style:
+        return 0.42
+    return 0.82
 
 
 def create_niagara_system_asset(unreal_module, asset_name: str, destination_path: str) -> dict:

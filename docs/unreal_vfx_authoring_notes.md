@@ -39,3 +39,22 @@
 - 依 `module_stack` 實際設定 velocity、curl noise、color/alpha over life、sprite size over life、rotation rate。
 - 將 GIF/序列幀轉成 flipbook texture，讓主體不只是靜態 reference card。
 - 若要做場景預覽，改用 Editor Utility 或使用者手動開啟關卡，不從 `-ExecCmds=py` 直接呼叫 `open_editor_for_assets` 開 World。
+
+## 2026-07-01 網路資料補充後的製作規則
+
+參考 Epic Niagara 文件後，火焰類效果不應只使用一個 particle spray。新版生成器會把 `fire_or_flame` 預設拆成五層：
+
+- `core_flame`：主火舌，負責主要剪影。
+- `outer_flame_wisps`：外焰 breakup，避免主體像一張平面卡。
+- `base_glow`：底部熱光/落地光，先建立視覺重量。
+- `smoke_heat_wisp`：低透明煙/熱擾動，軟化邊緣。
+- `ember_sparks`：少量短生命火星，只作細節，不主導形狀。
+
+材質上也要分層：core 可以高 emissive；outer flame 比 core 低；base glow 低透明廣域；smoke/heat 使用低 emissive translucent；reference card 只能當剪影輔助，不應整張爆亮。
+
+參考來源：
+
+- Epic Niagara Overview: https://dev.epicgames.com/documentation/unreal-engine/overview-of-niagara-effects-for-unreal-engine
+- Epic Niagara Renderers: https://dev.epicgames.com/documentation/unreal-engine/render-module-reference-for-niagara-effects-in-unreal-engine
+- Epic Niagara Fluids: https://dev.epicgames.com/documentation/unreal-engine/niagara-fluids-in-unreal-engine
+- Epic Niagara Fluids Reference: https://dev.epicgames.com/documentation/unreal-engine/niagara-fluids-reference-in-unreal-engine

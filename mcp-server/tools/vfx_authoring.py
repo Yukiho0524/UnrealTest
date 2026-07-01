@@ -15,6 +15,9 @@ def production_notes_for_plan(effect_type: str, visual_profile: dict[str, Any], 
         notes.extend(
             [
                 "Primary body: use a reference card or alpha-shaped flame sprite for the main read.",
+                "Secondary body: add offset outer tongues/wisps so the flame has breakup instead of one solid billboard.",
+                "Base glow: ground the effect with a broad low-frequency glow/decal layer before adding sparks.",
+                "Atmosphere: add low-opacity smoke or heat wisps above the core to soften the silhouette.",
                 "Detail layer: sparks/embers should be smaller, shorter-lived, and visually separated from the body.",
                 "Timing: body should lead the effect; embers and glow should lag and fade after the main shape.",
             ]
@@ -87,12 +90,16 @@ def composition_layers_for_plan(effect_type: str, emitters: list[dict[str, Any]]
 def purpose_for_role(role: str | None, effect_type: str) -> str:
     if role == "primary_body":
         return "Main visual read and silhouette."
+    if role == "secondary_body":
+        return "Outer silhouette breakup and secondary flame tongues."
     if role == "primary_particles":
         return "Main readable particle fragments."
     if role == "detail_particles":
         return "Small secondary motion and breakup detail."
     if role == "supporting_glow":
         return "Soft bloom/value support behind hard sprites."
+    if role == "atmospheric_wisp":
+        return "Smoke, heat, or haze layer that softens the main body."
     if role == "accent_particles":
         return "Brief hot flashes and high-value accents."
     if effect_type == "fire_or_flame":
@@ -103,7 +110,7 @@ def purpose_for_role(role: str | None, effect_type: str) -> str:
 def renderer_for_emitter(emitter: dict[str, Any]) -> str:
     shape = emitter.get("sprite_shape")
     role = emitter.get("role")
-    if role in {"primary_particles", "detail_particles", "accent_particles", "supporting_glow", "primary_body"}:
+    if role in {"primary_particles", "detail_particles", "accent_particles", "supporting_glow", "primary_body", "secondary_body", "atmospheric_wisp"}:
         return "Sprite Renderer"
     if shape == "ribbon":
         return "Ribbon Renderer"
@@ -117,8 +124,12 @@ def material_goal_for_emitter(emitter: dict[str, Any]) -> str:
     style = emitter.get("material_style", "additive")
     if role == "primary_body":
         return f"{style}: alpha-shaped unlit emissive material for the main silhouette."
+    if role == "secondary_body":
+        return f"{style}: offset flame tongues with lower opacity than the core."
     if role == "supporting_glow":
         return f"{style}: soft additive bloom layer with low detail and broad alpha."
+    if role == "atmospheric_wisp":
+        return f"{style}: low-opacity translucent haze/smoke used as breakup, not brightness."
     if role == "accent_particles":
         return f"{style}: very bright short-life glints with tight alpha."
     if role == "detail_particles":
@@ -146,8 +157,10 @@ def module_stack_for_emitter(effect_type: str, emitter: dict[str, Any]) -> list[
         stack.extend(["Sprite Rotation Rate: random angular velocity", "Scale Sprite Size: nonuniform size over life"])
     if role == "supporting_glow":
         stack.extend(["Color/Alpha Over Life: slow fade", "Scale Sprite Size: grow then dissolve"])
-    if role == "primary_body":
+    if role in {"primary_body", "secondary_body"}:
         stack.extend(["Color Over Life: core-to-edge value shift", "Alpha Over Life: preserve silhouette then fade"])
+    if role == "atmospheric_wisp":
+        stack.extend(["Curl Noise Force: slow rolling motion", "Alpha Over Life: delayed fade-in then dissolve"])
     if role == "detail_particles":
         stack.extend(["Random Velocity Cone: scatter away from body", "Alpha Over Life: quick decay"])
 
@@ -167,6 +180,10 @@ def tuning_for_emitter(emitter: dict[str, Any]) -> dict[str, Any]:
         tuning.update({"size_variation": "0.45x-1.8x", "rotation_variation": "0-360 degrees", "opacity_variation": "0.55-1.0"})
     elif role == "supporting_glow":
         tuning.update({"spawn_density": "low", "opacity": "0.18-0.45", "sort": "behind primary particles"})
+    elif role == "secondary_body":
+        tuning.update({"opacity": "0.35-0.65", "offset": "slightly wider than core", "motion": "slower curl than core"})
+    elif role == "atmospheric_wisp":
+        tuning.update({"opacity": "0.08-0.28", "emissive": "very low", "motion": "slow curl/noise"})
     elif role == "accent_particles":
         tuning.update({"spawn_density": "sparse", "lifetime": "very short", "emissive": "highest layer value"})
     elif role == "detail_particles":
