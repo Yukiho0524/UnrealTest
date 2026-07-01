@@ -84,6 +84,7 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
     asset_name = f"NS_{spec['name']}"
     asset_path = f"{destination_path}/{asset_name}"
     template_result = create_niagara_system_from_template(unreal, spec, asset_path)
+    material_result = create_vfx_material_assets(unreal, spec, destination_path)
     if template_result["created"]:
         unreal.EditorAssetLibrary.save_directory(destination_path, only_if_is_dirty=False, recursive=True)
         return {
@@ -91,8 +92,9 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
             "status": template_result["status"],
             "asset_path": asset_path,
             "template": template_result["template"],
+            "materials": material_result,
             "spec_summary": summarize_spec(spec),
-            "message": "Created a non-empty Niagara System from an Unreal template.",
+            "message": "Created a non-empty Niagara System and generated VFX material assets from the analyzed reference images.",
         }
 
     factory_result = create_niagara_system_asset(unreal, asset_name, destination_path)
@@ -104,7 +106,8 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
             "asset_path": asset_path,
             "spec_summary": summarize_spec(spec),
             "template_errors": template_result["errors"],
-            "message": "Created initial Niagara System asset from VFXSpec, but template duplication was unavailable.",
+            "materials": material_result,
+            "message": "Created initial Niagara System asset and VFX material assets, but template duplication was unavailable.",
         }
 
     return {
@@ -114,6 +117,7 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
         "spec_summary": summarize_spec(spec),
         "template_errors": template_result["errors"],
         "factory_errors": factory_result["errors"],
+        "materials": material_result,
         "message": "Created destination folder and validated spec, but Niagara factory creation did not succeed in this UE Python API.",
     }
 
@@ -193,6 +197,129 @@ def annotate_asset(unreal_module, asset, spec: dict) -> None:
             unreal_module.EditorAssetLibrary.set_metadata_tag(asset, "VFXMCP_VisualProfile", json.dumps(compact_visual_profile(spec["visual_profile"])))
     except Exception as exc:
         unreal_module.log_warning(f"VFX MCP could not write metadata: {exc}")
+
+
+def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str) -> dict:
+    material_name = f"M_{spec['name']}_VFX"
+    instance_name = f"MI_{spec['name']}_VFX"
+    material_path = f"{destination_path}/{material_name}"
+    instance_path = f"{destination_path}/{instance_name}"
+
+    result = {
+        "material_path": material_path,
+        "material_instance_path": instance_path,
+        "palette": spec["color_palette"],
+        "errors": [],
+        "created": False,
+    }
+
+    try:
+        material = create_or_replace_material(unreal_module, material_name, destination_path, spec)
+        material_instance = create_or_replace_material_instance(unreal_module, instance_name, destination_path, material, spec)
+        result["created"] = bool(material and material_instance)
+        return result
+    except Exception as exc:
+        result["errors"].append(str(exc))
+        return result
+
+
+def create_or_replace_material(unreal_module, material_name: str, destination_path: str, spec: dict):
+    material_path = f"{destination_path}/{material_name}"
+    if unreal_module.EditorAssetLibrary.does_asset_exist(material_path):
+        unreal_module.EditorAssetLibrary.delete_asset(material_path)
+
+    asset_tools = unreal_module.AssetToolsHelpers.get_asset_tools()
+    factory = unreal_module.MaterialFactoryNew()
+    material = asset_tools.create_asset(material_name, destination_path, unreal_module.Material, factory)
+    if not material:
+        raise RuntimeError(f"Could not create material: {material_path}")
+
+    configure_material_properties(unreal_module, material)
+    build_fire_material_graph(unreal_module, material, spec)
+    annotate_asset(unreal_module, material, spec)
+    unreal_module.EditorAssetLibrary.save_loaded_asset(material)
+    return material
+
+
+def create_or_replace_material_instance(unreal_module, instance_name: str, destination_path: str, material, spec: dict):
+    instance_path = f"{destination_path}/{instance_name}"
+    if unreal_module.EditorAssetLibrary.does_asset_exist(instance_path):
+        unreal_module.EditorAssetLibrary.delete_asset(instance_path)
+
+    asset_tools = unreal_module.AssetToolsHelpers.get_asset_tools()
+    factory = unreal_module.MaterialInstanceConstantFactoryNew()
+    material_instance = asset_tools.create_asset(instance_name, destination_path, unreal_module.MaterialInstanceConstant, factory)
+    if not material_instance:
+        raise RuntimeError(f"Could not create material instance: {instance_path}")
+
+    material_instance.set_editor_property("parent", material)
+    palette = palette_as_linear_colors(spec["color_palette"])
+    unreal_module.MaterialEditingLibrary.set_material_instance_vector_parameter_value(material_instance, "CoreColor", palette[0])
+    unreal_module.MaterialEditingLibrary.set_material_instance_vector_parameter_value(material_instance, "OuterColor", palette[2 if len(palette) > 2 else 0])
+    unreal_module.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(material_instance, "EmissiveStrength", inferred_emissive_strength(spec))
+    unreal_module.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(material_instance, "Opacity", 0.92)
+    annotate_asset(unreal_module, material_instance, spec)
+    unreal_module.EditorAssetLibrary.save_loaded_asset(material_instance)
+    return material_instance
+
+
+def configure_material_properties(unreal_module, material) -> None:
+    material.set_editor_property("blend_mode", unreal_module.BlendMode.BLEND_ADDITIVE)
+    material.set_editor_property("shading_model", unreal_module.MaterialShadingModel.MSM_UNLIT)
+    material.set_editor_property("two_sided", True)
+    material.set_editor_property("use_material_attributes", False)
+
+
+def build_fire_material_graph(unreal_module, material, spec: dict) -> None:
+    library = unreal_module.MaterialEditingLibrary
+    palette = palette_as_linear_colors(spec["color_palette"])
+
+    particle_color = library.create_material_expression(material, unreal_module.MaterialExpressionParticleColor, -800, -120)
+    core_color = library.create_material_expression(material, unreal_module.MaterialExpressionVectorParameter, -800, 80)
+    core_color.set_editor_property("parameter_name", "CoreColor")
+    core_color.set_editor_property("default_value", palette[0])
+
+    strength = library.create_material_expression(material, unreal_module.MaterialExpressionScalarParameter, -580, 180)
+    strength.set_editor_property("parameter_name", "EmissiveStrength")
+    strength.set_editor_property("default_value", inferred_emissive_strength(spec))
+
+    color_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -380, 0)
+    emissive_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -160, 40)
+    opacity = library.create_material_expression(material, unreal_module.MaterialExpressionScalarParameter, -180, 220)
+    opacity.set_editor_property("parameter_name", "Opacity")
+    opacity.set_editor_property("default_value", 0.92)
+
+    library.connect_material_expressions(particle_color, "RGB", color_multiply, "A")
+    library.connect_material_expressions(core_color, "", color_multiply, "B")
+    library.connect_material_expressions(color_multiply, "", emissive_multiply, "A")
+    library.connect_material_expressions(strength, "", emissive_multiply, "B")
+    library.connect_material_property(emissive_multiply, "", unreal_module.MaterialProperty.MP_EMISSIVE_COLOR)
+    library.connect_material_property(opacity, "", unreal_module.MaterialProperty.MP_OPACITY)
+    library.layout_material_expressions(material)
+
+
+def palette_as_linear_colors(palette: list[str]) -> list:
+    try:
+        import unreal
+    except ImportError:
+        return []
+    colors = [hex_to_linear_color(unreal, color) for color in palette]
+    return colors or [unreal.LinearColor(1.0, 0.5, 0.1, 1.0)]
+
+
+def hex_to_linear_color(unreal_module, color: str):
+    color = color.lstrip("#")
+    red = int(color[0:2], 16) / 255.0
+    green = int(color[2:4], 16) / 255.0
+    blue = int(color[4:6], 16) / 255.0
+    return unreal_module.LinearColor(red, green, blue, 1.0)
+
+
+def inferred_emissive_strength(spec: dict) -> float:
+    visual_profile = spec.get("visual_profile", {})
+    bright = float(visual_profile.get("bright_pixel_ratio", 0.08) or 0.08)
+    vertical = float(visual_profile.get("vertical_energy", 0.3) or 0.3)
+    return round(12.0 + bright * 38.0 + vertical * 10.0, 2)
 
 
 def create_niagara_system_asset(unreal_module, asset_name: str, destination_path: str) -> dict:

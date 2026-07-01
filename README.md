@@ -107,6 +107,7 @@ UI 目前有三個主要動作：
 - `Open In Unreal`：開啟 `UnrealTest.uproject`，並嘗試在 Content Browser 內選取、開啟 `/Game/VFX/Generated/fire/NS_fire`；此流程會保持 Unreal Editor 開啟，方便直接檢視。
 
 如果要重新生成同一個特效，建議先關掉 Unreal Editor，再按 `Generate Unreal Assets`。目前 `fire` + `rise_and_fade` 會優先使用向上噴發型的 `FountainLightweight` template，讓初版結果比較接近火焰上竄，而不是單純爆炸。
+生成時也會建立 `M_fire_VFX` 與 `MI_fire_VFX`，材質顏色和 emissive 強度來自圖片/GIF 分析出的 `visual_profile`。`Open In Unreal` 會同步選取 Niagara、材質與材質實例，方便一起檢查。
 
 目前 `Generate Unreal Assets` 已經會呼叫 Unreal Python bridge。Niagara asset 建立會依 UE Python API 是否有暴露對應 factory 而定；如果目前版本無法直接建立，UI 會回傳 `partial` 狀態，代表 spec 已驗證、目的資料夾已處理，但 Niagara 生成細節還需要下一步補齊。
 
