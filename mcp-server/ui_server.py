@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from project_registry import find_unreal_projects
 from tools.analyze_packages import analyze_effect_package, list_effect_packages
-from tools.unreal_bridge import create_niagara_from_spec_command, run_unreal_generation, write_package_spec
+from tools.unreal_bridge import create_niagara_from_spec_command, open_unreal_asset, run_unreal_generation, write_package_spec
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
@@ -77,6 +77,20 @@ def run_ui(host: str, port: int, references_root: Path, output_root: Path) -> No
                         "unreal": result,
                     }
                 )
+                return
+            if path == "/api/open-unreal":
+                payload = self.read_json()
+                package_path = package_path_from_payload(references_root, payload)
+                destination_path = payload.get("destinationPath") or f"/Game/VFX/Generated/{package_path.name}"
+                project = project_from_payload(payload)
+                spec = analyze_effect_package(package_path)
+                asset_path = f"{destination_path}/NS_{spec.name}"
+                result = open_unreal_asset(
+                    Path(project["editorPath"]),
+                    Path(project["path"]),
+                    asset_path,
+                )
+                self.respond_json({"assetPath": asset_path, "unreal": result})
                 return
             self.send_error(404, "Not found")
 
@@ -268,6 +282,7 @@ def render_index_html() -> str:
         <button id="analyze">Analyze Package</button>
         <button class="secondary" id="generate">Generate Spec</button>
         <button class="secondary" id="generateUnreal">Generate Unreal Assets</button>
+        <button class="secondary" id="openUnreal">Open In Unreal</button>
 
         <div class="meta" id="meta"></div>
       </aside>
@@ -336,6 +351,14 @@ def render_index_html() -> str:
     document.querySelector("#generateUnreal").addEventListener("click", async () => {
       output.textContent = "Launching Unreal Engine 5.7.4. This can take a minute...";
       show(await request("/api/generate-unreal", {
+        method: "POST",
+        body: JSON.stringify(selectedPayload())
+      }));
+    });
+
+    document.querySelector("#openUnreal").addEventListener("click", async () => {
+      output.textContent = "Opening Unreal Editor and focusing the generated VFX asset...";
+      show(await request("/api/open-unreal", {
         method: "POST",
         body: JSON.stringify(selectedPayload())
       }));

@@ -122,3 +122,57 @@ def read_unreal_result(result_path: Path) -> dict | None:
     if not result_path.exists():
         return None
     return json.loads(result_path.read_text(encoding="utf-8"))
+
+
+def open_unreal_asset(
+    editor_path: Path,
+    project_path: Path,
+    asset_path: str,
+) -> dict:
+    if not editor_path.exists():
+        raise FileNotFoundError(f"UnrealEditor.exe was not found: {editor_path}")
+    if not project_path.exists():
+        raise FileNotFoundError(f"Unreal project was not found: {project_path}")
+
+    runner_path = write_open_asset_runner(asset_path)
+    command = [
+        str(editor_path),
+        str(project_path),
+        f"-ExecutePythonScript={runner_path}",
+        "-nop4",
+    ]
+    process = subprocess.Popen(command)
+    return {
+        "command": command,
+        "runner": str(runner_path),
+        "assetPath": asset_path,
+        "processId": process.pid,
+        "message": "Opening Unreal Editor and focusing the generated VFX asset.",
+    }
+
+
+def write_open_asset_runner(asset_path: str) -> Path:
+    runner_dir = Path("generated/unreal-runners").resolve()
+    runner_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = asset_path.strip("/").replace("/", "_").replace(".", "_") or "asset"
+    runner_path = runner_dir / f"open_{safe_name}.py"
+    runner_path.write_text(
+        "\n".join(
+            [
+                "import unreal",
+                "",
+                f"asset_path = {asset_path!r}",
+                "asset = unreal.EditorAssetLibrary.load_asset(asset_path)",
+                "if asset is None:",
+                "    unreal.log_error(f'VFX MCP could not find asset: {asset_path}')",
+                "else:",
+                "    unreal.EditorAssetLibrary.sync_browser_to_objects([asset_path])",
+                "    asset_editor = unreal.get_editor_subsystem(unreal.AssetEditorSubsystem)",
+                "    asset_editor.open_editor_for_assets([asset])",
+                "    unreal.log(f'VFX MCP opened generated asset: {asset_path}')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return runner_path
