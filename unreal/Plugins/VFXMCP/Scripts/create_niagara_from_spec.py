@@ -446,6 +446,12 @@ def preview_card_transform_for_emitter(emitter: dict, index: int) -> dict | None
     role = emitter.get("role")
     if role == "supporting_glow":
         return {"location": (0.0, 0.0, 4.0), "rotation": (0.0, 0.0, 0.0), "scale": (3.0, 3.0, 1.0)}
+    if role == "fire_pillar":
+        return {"location": (0.0, 0.0, 170.0), "rotation": (90.0, 0.0, 0.0), "scale": (1.2, 2.65, 1.2)}
+    if role == "flame_slashes":
+        return {"location": (0.0, 0.0, 78.0), "rotation": (90.0, 0.0, -8.0), "scale": (2.35, 1.55, 1.0)}
+    if role == "ground_energy_ring":
+        return {"location": (0.0, 0.0, 5.0), "rotation": (0.0, 0.0, 0.0), "scale": (3.35, 3.35, 1.0)}
     if role == "primary_bolt":
         return {"location": (0.0, 0.0, 152.0), "rotation": (90.0, 0.0, 0.0), "scale": (1.05, 2.25, 1.05)}
     if role == "secondary_bolts":
@@ -710,6 +716,14 @@ def write_sprite_png(path: Path, spec: dict) -> None:
         pixels = square_sprite_pixels(width, height, spec)
     elif sprite_shape == "shard":
         pixels = shard_sprite_pixels(width, height, spec)
+    elif sprite_shape == "fire_pillar":
+        pixels = fire_pillar_pixels(width, height, spec)
+    elif sprite_shape == "flame_slash":
+        pixels = flame_slash_pixels(width, height, spec)
+    elif sprite_shape == "fire_rune_ring":
+        pixels = fire_rune_ring_pixels(width, height, spec)
+    elif sprite_shape == "impact_flash":
+        pixels = impact_flash_pixels(width, height, spec)
     elif sprite_shape == "lightning_bolt":
         pixels = lightning_bolt_pixels(width, height, spec)
     elif sprite_shape == "lightning_branch":
@@ -763,6 +777,106 @@ def fire_sprite_pixels(width: int, height: int, spec: dict) -> bytes:
             color = mix_color(edge, mid, body_amount)
             color = mix_color(color, core, min(1.0, core_alpha * 1.35))
             pixels.extend((color[0], color[1], color[2], int(clamp(alpha + core_alpha * 0.35) * 255)))
+    return bytes(pixels)
+
+
+def fire_pillar_pixels(width: int, height: int, spec: dict) -> bytes:
+    palette = [hex_to_rgba_tuple(color) for color in spec.get("color_palette", [])]
+    core = palette[0] if palette else (255, 244, 176, 255)
+    mid = palette[1] if len(palette) > 1 else (255, 178, 46, 255)
+    edge = palette[2] if len(palette) > 2 else (255, 74, 18, 255)
+    smoke_dark = palette[3] if len(palette) > 3 else (42, 7, 3, 255)
+    pixels = bytearray()
+    for y in range(height):
+        ny = y / (height - 1)
+        up = 1.0 - ny
+        for x in range(width):
+            nx = (x / (width - 1) - 0.5) * 2.0
+            taper = 0.18 + 0.48 * ((1.0 - up) ** 1.7)
+            sway = 0.08 * wave(up * 1.4 + 0.15) + 0.04 * wave(up * 3.1)
+            ragged = 0.055 * wave(nx * 3.6 + up * 6.5) + 0.035 * wave(nx * 8.2 - up * 4.2)
+            height_mask = smoothstep(0.02, 0.16, up) * (1.0 - smoothstep(0.93, 1.0, up))
+            body = gaussian(nx, sway + ragged, taper) * height_mask
+            hot_core = gaussian(nx, sway * 0.35, max(0.045, taper * 0.28)) * smoothstep(0.06, 0.22, up) * (1.0 - smoothstep(0.7, 0.93, up))
+            torn_left = gaussian(nx, -0.36 + 0.12 * wave(up * 2.0), 0.1 + 0.18 * (1.0 - up)) * smoothstep(0.18, 0.35, up) * (1.0 - smoothstep(0.68, 0.92, up))
+            torn_right = gaussian(nx, 0.34 + 0.12 * wave(up * 2.3 + 0.4), 0.1 + 0.18 * (1.0 - up)) * smoothstep(0.12, 0.32, up) * (1.0 - smoothstep(0.64, 0.9, up))
+            raw_alpha = clamp(body * 0.86 + hot_core * 0.5 + torn_left * 0.34 + torn_right * 0.32)
+            alpha = smoothstep(0.08, 0.92, raw_alpha)
+            color = mix_color(edge, mid, clamp(body + torn_left * 0.25 + torn_right * 0.25))
+            color = mix_color(color, core, clamp(hot_core * 1.45))
+            smoke_amount = smoothstep(0.68, 0.95, up) * (1.0 - hot_core) * 0.32
+            color = mix_color(color, smoke_dark, smoke_amount)
+            pixels.extend((color[0], color[1], color[2], int(alpha * 255)))
+    return bytes(pixels)
+
+
+def flame_slash_pixels(width: int, height: int, spec: dict) -> bytes:
+    palette = [hex_to_rgba_tuple(color) for color in spec.get("color_palette", [])]
+    hot = palette[0] if palette else (255, 178, 46, 255)
+    orange = palette[1] if len(palette) > 1 else (255, 74, 18, 255)
+    red = palette[2] if len(palette) > 2 else (120, 18, 6, 255)
+    pixels = bytearray()
+    for y in range(height):
+        py = y / (height - 1)
+        for x in range(width):
+            px = x / (width - 1)
+            nx = (px - 0.5) * 2.0
+            ny = (py - 0.5) * 2.0
+            arc = abs(ny - (0.38 * (nx * nx) - 0.18 + 0.08 * wave(px * 2.0)))
+            left_tongue = gaussian(nx, -0.58 + 0.18 * wave(py * 1.4), 0.12) * smoothstep(0.24, 0.5, py) * (1.0 - smoothstep(0.78, 0.96, py))
+            right_tongue = gaussian(nx, 0.56 + 0.12 * wave(py * 1.8), 0.13) * smoothstep(0.18, 0.42, py) * (1.0 - smoothstep(0.74, 0.94, py))
+            arc_alpha = (1.0 - smoothstep(0.03, 0.14, arc)) * smoothstep(0.05, 0.22, px) * (1.0 - smoothstep(0.9, 1.0, px))
+            breakup = 0.72 + 0.16 * wave(px * 8.0 + py * 4.0) + 0.12 * wave(px * 17.0 - py * 6.0)
+            alpha = clamp((arc_alpha + left_tongue * 0.65 + right_tongue * 0.7) * breakup)
+            color = mix_color(red, orange, clamp(alpha * 0.9 + arc_alpha * 0.3))
+            color = mix_color(color, hot, clamp(arc_alpha * 0.85))
+            pixels.extend((color[0], color[1], color[2], int(alpha * 255)))
+    return bytes(pixels)
+
+
+def fire_rune_ring_pixels(width: int, height: int, spec: dict) -> bytes:
+    palette = [hex_to_rgba_tuple(color) for color in spec.get("color_palette", [])]
+    orange = palette[0] if palette else (255, 178, 46, 255)
+    hot = palette[1] if len(palette) > 1 else (255, 244, 176, 255)
+    dark = palette[2] if len(palette) > 2 else (74, 11, 4, 255)
+    pixels = bytearray()
+    for y in range(height):
+        ny = (y / (height - 1) - 0.5) * 2.0
+        for x in range(width):
+            nx = (x / (width - 1) - 0.5) * 2.0
+            distance = ((nx * 0.86) ** 2 + (ny * 1.18) ** 2) ** 0.5
+            angle = math.atan2(ny, nx)
+            broken = 0.58 + 0.22 * wave(nx * 2.7 + ny * 1.3) + 0.16 * wave(nx * 5.1 - ny * 2.4)
+            ring_outer = smoothstep(0.42, 0.54, distance) * (1.0 - smoothstep(0.57, 0.67, distance))
+            ring_inner = smoothstep(0.2, 0.27, distance) * (1.0 - smoothstep(0.3, 0.38, distance))
+            spiral_radius = 0.2 + 0.055 * wave(angle / math.tau + distance * 1.6)
+            spiral = (1.0 - smoothstep(0.012, 0.05, abs(distance - spiral_radius))) * smoothstep(0.08, 0.18, distance) * (1.0 - smoothstep(0.38, 0.52, distance))
+            glow = (1.0 - smoothstep(0.0, 0.88, distance)) * 0.22
+            alpha = clamp((ring_outer * broken + ring_inner * 0.72 + spiral * 0.48 + glow) * (1.0 - smoothstep(0.9, 1.1, distance)))
+            color = mix_color(dark, orange, clamp(alpha + ring_outer * 0.5))
+            color = mix_color(color, hot, clamp((ring_inner + spiral) * 0.9))
+            pixels.extend((color[0], color[1], color[2], int(alpha * 255)))
+    return bytes(pixels)
+
+
+def impact_flash_pixels(width: int, height: int, spec: dict) -> bytes:
+    palette = [hex_to_rgba_tuple(color) for color in spec.get("color_palette", [])]
+    hot = palette[0] if palette else (255, 244, 176, 255)
+    orange = palette[1] if len(palette) > 1 else (255, 178, 46, 255)
+    red = palette[2] if len(palette) > 2 else (255, 74, 18, 255)
+    pixels = bytearray()
+    for y in range(height):
+        ny = (y / (height - 1) - 0.5) * 2.0
+        for x in range(width):
+            nx = (x / (width - 1) - 0.5) * 2.0
+            distance = (nx * nx + (ny * 1.18) ** 2) ** 0.5
+            star = max(abs(nx), abs(ny)) * 0.72 + min(abs(nx), abs(ny)) * 0.28
+            core_alpha = 1.0 - smoothstep(0.05, 0.42, distance)
+            star_alpha = 1.0 - smoothstep(0.04, 0.72, star)
+            alpha = clamp(core_alpha * 0.9 + star_alpha * 0.34)
+            color = mix_color(red, orange, clamp(star_alpha))
+            color = mix_color(color, hot, clamp(core_alpha * 1.25))
+            pixels.extend((color[0], color[1], color[2], int(alpha * 255)))
     return bytes(pixels)
 
 
@@ -1290,6 +1404,16 @@ def inferred_emissive_strength(spec: dict) -> float:
     bright = float(visual_profile.get("bright_pixel_ratio", 0.08) or 0.08)
     vertical = float(visual_profile.get("vertical_energy", 0.3) or 0.3)
     style = primary_material_style(spec)
+    if "fire_pillar_core" in style:
+        return 18.0
+    if "fire_side_slashes" in style:
+        return 11.0
+    if "fire_ground_rune" in style:
+        return 9.0
+    if "fire_impact_flash" in style:
+        return 20.0
+    if "translucent_smoke_dust" in style:
+        return 0.35
     if "electric_core_bolt" in style:
         return 22.0
     if "electric_branch" in style:
@@ -1320,6 +1444,16 @@ def inferred_opacity(spec: dict) -> float:
     if override is not None:
         return float(override)
     style = primary_material_style(spec)
+    if "fire_pillar_core" in style:
+        return 0.82
+    if "fire_side_slashes" in style:
+        return 0.66
+    if "fire_ground_rune" in style:
+        return 0.68
+    if "fire_impact_flash" in style:
+        return 0.78
+    if "translucent_smoke_dust" in style:
+        return 0.24
     if "electric_core_bolt" in style:
         return 0.9
     if "electric_branch" in style:

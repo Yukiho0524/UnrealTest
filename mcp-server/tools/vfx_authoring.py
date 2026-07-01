@@ -14,12 +14,12 @@ def production_notes_for_plan(effect_type: str, visual_profile: dict[str, Any], 
     if "primary_body" in roles or effect_type == "fire_or_flame":
         notes.extend(
             [
-                "Primary body: use a reference card or alpha-shaped flame sprite for the main read.",
-                "Secondary body: add offset outer tongues/wisps so the flame has breakup instead of one solid billboard.",
-                "Base glow: ground the effect with a broad low-frequency glow/decal layer before adding sparks.",
-                "Atmosphere: add low-opacity smoke or heat wisps above the core to soften the silhouette.",
-                "Detail layer: sparks/embers should be smaller, shorter-lived, and visually separated from the body.",
-                "Timing: body should lead the effect; embers and glow should lag and fade after the main shape.",
+                "Fire impact: separate the vertical pillar, side tongues, ground ring, impact flash, smoke crown, and embers.",
+                "Primary fire pillar must carry the read; do not let embers or template particles become the main shape.",
+                "Ground ring/rune should anchor the effect before the pillar reaches full brightness.",
+                "Side flame slashes should be broad, shaped, and asymmetric rather than many identical sprites.",
+                "Smoke/dust crown belongs low around the blast base and should stay darker than the fire.",
+                "Timing: flash and ring lead, pillar peaks next, slashes and embers trail, smoke lingers last.",
             ]
         )
     if "primary_particles" in roles or effect_type == "glowing_particles":
@@ -96,6 +96,12 @@ def composition_layers_for_plan(effect_type: str, emitters: list[dict[str, Any]]
 
 
 def purpose_for_role(role: str | None, effect_type: str) -> str:
+    if role == "fire_pillar":
+        return "Dominant vertical fire impact column."
+    if role == "flame_slashes":
+        return "Large side flame tongues and broken slash silhouettes."
+    if role == "ground_energy_ring":
+        return "Molten ground ring or rune that anchors the blast."
     if role == "primary_body":
         return "Main visual read and silhouette."
     if role == "primary_bolt":
@@ -124,7 +130,7 @@ def purpose_for_role(role: str | None, effect_type: str) -> str:
 def renderer_for_emitter(emitter: dict[str, Any]) -> str:
     shape = emitter.get("sprite_shape")
     role = emitter.get("role")
-    if role in {"primary_particles", "detail_particles", "accent_particles", "supporting_glow", "primary_body", "secondary_body", "atmospheric_wisp", "primary_bolt", "secondary_bolts", "impact_core"}:
+    if role in {"primary_particles", "detail_particles", "accent_particles", "supporting_glow", "primary_body", "secondary_body", "atmospheric_wisp", "primary_bolt", "secondary_bolts", "impact_core", "fire_pillar", "flame_slashes", "ground_energy_ring"}:
         return "Sprite Renderer"
     if shape == "ribbon":
         return "Ribbon Renderer"
@@ -136,6 +142,12 @@ def renderer_for_emitter(emitter: dict[str, Any]) -> str:
 def material_goal_for_emitter(emitter: dict[str, Any]) -> str:
     role = emitter.get("role")
     style = emitter.get("material_style", "additive")
+    if role == "fire_pillar":
+        return f"{style}: overexposed white/yellow core with orange torn edges and additive bloom."
+    if role == "flame_slashes":
+        return f"{style}: broad orange-red flame tongues with sharp torn alpha."
+    if role == "ground_energy_ring":
+        return f"{style}: molten ring/rune strokes with broken hot arcs."
     if role == "primary_body":
         return f"{style}: alpha-shaped unlit emissive material for the main silhouette."
     if role == "primary_bolt":
@@ -143,6 +155,8 @@ def material_goal_for_emitter(emitter: dict[str, Any]) -> str:
     if role == "secondary_bolts":
         return f"{style}: branching fork sprites with lower opacity than the main bolt."
     if role == "impact_core":
+        if "fire" in style:
+            return f"{style}: overexposed warm ignition flash at the blast center."
         return f"{style}: concentrated electric contact flash."
     if role == "secondary_body":
         return f"{style}: offset flame tongues with lower opacity than the core."
@@ -177,6 +191,12 @@ def module_stack_for_emitter(effect_type: str, emitter: dict[str, Any]) -> list[
         stack.extend(["Sprite Rotation Rate: random angular velocity", "Scale Sprite Size: nonuniform size over life"])
     if role == "supporting_glow":
         stack.extend(["Color/Alpha Over Life: slow fade", "Scale Sprite Size: grow then dissolve"])
+    if role == "fire_pillar":
+        stack.extend(["Spawn Burst: one shaped pillar", "Scale Sprite Size: fast vertical stretch then collapse", "Color Over Life: white core to orange edge"])
+    if role == "flame_slashes":
+        stack.extend(["Spawn Burst: 2-4 broad tongues", "Sprite Rotation: asymmetric offsets", "Alpha Over Life: torn edges fade after pillar"])
+    if role == "ground_energy_ring":
+        stack.extend(["Spawn Burst: one ring", "Scale Sprite Size: radial expansion", "Alpha Over Life: hold briefly then burn out"])
     if role in {"primary_body", "secondary_body"}:
         stack.extend(["Color Over Life: core-to-edge value shift", "Alpha Over Life: preserve silhouette then fade"])
     if role in {"primary_bolt", "secondary_bolts"}:
@@ -202,6 +222,12 @@ def tuning_for_emitter(emitter: dict[str, Any]) -> dict[str, Any]:
     }
     if role == "primary_particles":
         tuning.update({"size_variation": "0.45x-1.8x", "rotation_variation": "0-360 degrees", "opacity_variation": "0.55-1.0"})
+    elif role == "fire_pillar":
+        tuning.update({"spawn_density": "single burst", "opacity": "0.75-0.95", "shape": "vertical torn column with hot white center"})
+    elif role == "flame_slashes":
+        tuning.update({"spawn_density": "2-4 large cards", "opacity": "0.45-0.75", "shape": "wide broken side arcs"})
+    elif role == "ground_energy_ring":
+        tuning.update({"spawn_density": "single ring", "opacity": "0.45-0.8", "shape": "broken molten circle/rune"})
     elif role == "supporting_glow":
         tuning.update({"spawn_density": "low", "opacity": "0.18-0.45", "sort": "behind primary particles"})
     elif role == "secondary_body":

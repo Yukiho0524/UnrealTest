@@ -81,6 +81,9 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
     if visual_profile.get("shape_hint") != "glowing_shard_particles":
         reference_sprite_source = create_reference_sprite_source(package_dir.name, media_files, effect_type, visual_profile)
     reference_card_source = create_reference_card_source(package_dir.name, media_files, effect_type, visual_profile)
+    reference_card_config = config.get("reference_card", {})
+    if isinstance(reference_card_config, dict) and reference_card_config.get("enabled") is False:
+        reference_card_source = None
 
     return VFXSpec(
         name=config.get("name", package_dir.name),
@@ -257,78 +260,93 @@ def build_vfx_plan(
         )
 
     if effect_type == "fire_or_flame":
+        fire_palette_values = fire_palette(palette)
         emitters = [
             VFXEmitterPlan(
-                name="core_flame",
-                role="primary_body",
-                sprite_shape="flame_tongue",
-                material_style="additive_flame_gradient",
-                motion=motion,
-                spawn_rate=particles.spawn_rate,
-                lifetime_seconds=particles.lifetime_seconds,
-                start_size=particles.start_size,
-                end_size=particles.end_size,
-                color_palette=palette,
-                sprite_source=reference_sprite_source,
-                notes=["Use alpha-shaped flame sprites instead of full rectangular billboards."],
-            ),
-            VFXEmitterPlan(
-                name="outer_flame_wisps",
-                role="secondary_body",
-                sprite_shape="flame_wisp",
-                material_style="additive_outer_flame",
-                motion="curl_up_and_fade",
-                spawn_rate=round(max(36.0, particles.spawn_rate * 0.28), 2),
-                lifetime_seconds=round(max(0.5, particles.lifetime_seconds * 1.1), 2),
-                start_size=round(max(18.0, particles.start_size * 0.8), 2),
-                end_size=round(max(96.0, particles.end_size * 1.05), 2),
-                color_palette=palette[1:] or palette,
-                notes=["Breaks the body silhouette with slower orange tongues around the core."],
-            ),
-            VFXEmitterPlan(
-                name="base_glow",
-                role="supporting_glow",
-                sprite_shape="ground_glow",
-                material_style="soft_base_glow",
-                motion="static_pulse",
+                name="central_fire_pillar",
+                role="fire_pillar",
+                sprite_shape="fire_pillar",
+                material_style="fire_pillar_core",
+                motion="ignite_burst_rise_and_collapse",
                 spawn_rate=1.0,
-                lifetime_seconds=max(1.0, particles.lifetime_seconds),
-                start_size=round(max(96.0, particles.end_size * 0.9), 2),
-                end_size=round(max(180.0, particles.end_size * 1.35), 2),
-                color_palette=[palette[0], palette[1] if len(palette) > 1 else "#FF8A30", "#4A1408"],
-                notes=["Provides the grounded hot base and broad value mass instead of relying on particles."],
+                lifetime_seconds=0.48,
+                start_size=72.0,
+                end_size=260.0,
+                color_palette=fire_palette_values,
+                sprite_source=None,
+                notes=["Dominant vertical fire column; this layer must read before sparks or smoke."],
             ),
             VFXEmitterPlan(
-                name="smoke_heat_wisp",
+                name="side_flame_slashes",
+                role="flame_slashes",
+                sprite_shape="flame_slash",
+                material_style="fire_side_slashes",
+                motion="curl_outward_then_lift",
+                spawn_rate=3.0,
+                lifetime_seconds=0.42,
+                start_size=54.0,
+                end_size=190.0,
+                color_palette=fire_palette_values[1:],
+                notes=["Large side flame tongues and broken slash shapes around the base."],
+            ),
+            VFXEmitterPlan(
+                name="ground_rune_ring",
+                role="ground_energy_ring",
+                sprite_shape="fire_rune_ring",
+                material_style="fire_ground_rune_ring",
+                motion="radial_ignite_then_decay",
+                spawn_rate=1.0,
+                lifetime_seconds=0.72,
+                start_size=160.0,
+                end_size=280.0,
+                color_palette=[fire_palette_values[1], fire_palette_values[0], "#4A0B04"],
+                notes=["Readable molten magic circle/ring at the ground contact point."],
+            ),
+            VFXEmitterPlan(
+                name="impact_flash",
+                role="impact_core",
+                sprite_shape="impact_flash",
+                material_style="fire_impact_flash",
+                motion="flash_expand_then_fade",
+                spawn_rate=1.0,
+                lifetime_seconds=0.24,
+                start_size=92.0,
+                end_size=185.0,
+                color_palette=fire_palette_values[:3],
+                sprite_source=None,
+                notes=["Overexposed hot center that sells the ignition moment."],
+            ),
+            VFXEmitterPlan(
+                name="smoke_dust_crown",
                 role="atmospheric_wisp",
                 sprite_shape="smoke_wisp",
-                material_style="translucent_smoke_heat",
-                motion="slow_curl_up",
-                spawn_rate=round(max(10.0, particles.spawn_rate * 0.08), 2),
-                lifetime_seconds=round(max(0.9, particles.lifetime_seconds * 1.45), 2),
-                start_size=round(max(30.0, particles.start_size * 1.2), 2),
-                end_size=round(max(120.0, particles.end_size * 1.1), 2),
-                color_palette=["#6A5A50", "#2A2420", palette[2] if len(palette) > 2 else "#D06030"],
-                notes=["Adds low-opacity smoky/heat breakup above the flame so the core is not a flat card."],
+                material_style="translucent_smoke_dust",
+                motion="low_crown_roll_and_fade",
+                spawn_rate=8.0,
+                lifetime_seconds=0.92,
+                start_size=80.0,
+                end_size=220.0,
+                color_palette=["#2A211C", "#6A5144", fire_palette_values[2]],
+                notes=["Dark low crown around the blast base; it should support the fire, not cover it."],
             ),
             VFXEmitterPlan(
                 name="ember_sparks",
                 role="detail_particles",
-                sprite_shape="small_disc",
+                sprite_shape="shard",
                 material_style="orange_emissive",
-                motion="rise_and_scatter",
-                spawn_rate=round(max(24.0, particles.spawn_rate * 0.18), 2),
-                lifetime_seconds=round(max(0.35, particles.lifetime_seconds * 0.7), 2),
-                start_size=round(max(3.0, particles.start_size * 0.18), 2),
-                end_size=round(max(1.0, particles.start_size * 0.08), 2),
-                color_palette=palette[1:3] or palette,
-                notes=["Adds small hot particles separated from the main flame silhouette."],
+                motion="short_radial_spark_scatter",
+                spawn_rate=18.0,
+                lifetime_seconds=0.32,
+                start_size=5.0,
+                end_size=1.2,
+                color_palette=fire_palette_values[1:3],
+                notes=["Sparse hot sparks only; never let this become the main silhouette."],
             ),
         ]
         emitters = apply_unreal_settings(emitters, config)
         return VFXPlan(
-            visual_intent="Layered stylized flame with a bright core, orange outer tongues, and small ember accents.",
-            primary_emitter="core_flame",
+            visual_intent="Stylized fire impact pillar with a hot vertical core, side flame slashes, molten ground ring, dark smoke crown, and sparse embers.",
+            primary_emitter="central_fire_pillar",
             emitters=emitters,
             reference_card_source=reference_card_source,
             composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
@@ -478,6 +496,16 @@ def default_unreal_settings_for_emitter(emitter: VFXEmitterPlan, index: int) -> 
 
 def default_material_settings_for_emitter(emitter: VFXEmitterPlan) -> dict[str, Any]:
     style = emitter.material_style
+    if "fire_pillar_core" in style:
+        return {"opacity": 0.82, "emissive_strength": 18.0, "blend_mode": "additive"}
+    if "fire_side_slashes" in style:
+        return {"opacity": 0.66, "emissive_strength": 11.0, "blend_mode": "additive"}
+    if "fire_ground_rune" in style:
+        return {"opacity": 0.68, "emissive_strength": 9.0, "blend_mode": "additive"}
+    if "fire_impact_flash" in style:
+        return {"opacity": 0.78, "emissive_strength": 20.0, "blend_mode": "additive"}
+    if "translucent_smoke_dust" in style:
+        return {"opacity": 0.24, "emissive_strength": 0.35, "blend_mode": "translucent"}
     if "electric_core_bolt" in style:
         return {"opacity": 0.9, "emissive_strength": 22.0, "blend_mode": "additive"}
     if "electric_branch" in style:
@@ -503,6 +531,12 @@ def default_material_settings_for_emitter(emitter: VFXEmitterPlan) -> dict[str, 
 
 def default_preview_card_settings_for_emitter(emitter: VFXEmitterPlan, index: int) -> dict[str, Any]:
     role = emitter.role
+    if role == "fire_pillar":
+        return {"enabled": True, "location": [0.0, 0.0, 170.0], "rotation": [90.0, 0.0, 0.0], "scale": [1.2, 2.65, 1.2]}
+    if role == "flame_slashes":
+        return {"enabled": True, "location": [0.0, 0.0, 78.0], "rotation": [90.0, 0.0, -8.0], "scale": [2.35, 1.55, 1.0]}
+    if role == "ground_energy_ring":
+        return {"enabled": True, "location": [0.0, 0.0, 5.0], "rotation": [0.0, 0.0, 0.0], "scale": [3.35, 3.35, 1.0]}
     if role == "primary_bolt":
         return {"enabled": True, "location": [0.0, 0.0, 152.0], "rotation": [90.0, 0.0, 0.0], "scale": [1.05, 2.25, 1.05]}
     if role == "secondary_bolts":
@@ -537,6 +571,13 @@ def electric_palette(palette: list[str]) -> list[str]:
     if blue_or_purple:
         return ["#F2FFFF", "#4FDFFF", blue_or_purple[0], "#7F45FF"]
     return ["#F2FFFF", "#4FDFFF", "#2B76FF", "#7F45FF"]
+
+
+def fire_palette(palette: list[str]) -> list[str]:
+    warm = [color for color in palette if color.upper() not in {"#000000", "#181818", "#303030"}]
+    if len(warm) >= 3:
+        return [warm[0], warm[1], warm[2], "#2A0703"]
+    return ["#FFF4B0", "#FFB22E", "#FF4A12", "#2A0703"]
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
