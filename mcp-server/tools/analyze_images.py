@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from schemas import VFXParticles, VFXSource, VFXSpec, VFXTiming
 
@@ -52,35 +53,35 @@ def _asset_name_from_path(path: Path) -> str:
 def _classify_from_filename(path: Path) -> tuple[str, str, list[str], list[str]]:
     name = path.stem.lower()
 
-    if any(token in name for token in ("fire", "flame", "burn", "lava")):
+    if any_keyword(name, ("fire", "flame", "burn", "lava")):
         return (
             "fire_or_flame",
             "rise_and_fade",
             ["#FFB14A", "#FF5A1F", "#2A1208"],
             ["Filename heuristic matched flame-like keywords."],
         )
-    if any(token in name for token in ("smoke", "mist", "fog", "cloud")):
+    if any_keyword(name, ("smoke", "mist", "fog", "cloud")):
         return (
             "smoke_or_mist",
             "drift_and_dissipate",
             ["#D8D7D2", "#8D918F", "#3C4142"],
             ["Filename heuristic matched smoke-like keywords."],
         )
-    if any(token in name for token in ("electric", "bolt", "lightning", "spark")):
+    if any_keyword(name, ("electric", "bolt", "lightning", "spark")):
         return (
             "electric_arc",
             "branch_and_flicker",
             ["#DDF8FF", "#54D7FF", "#294DFF"],
             ["Filename heuristic matched electric-like keywords."],
         )
-    if any(token in name for token in ("magic", "aura", "energy", "spell", "portal")):
+    if any_keyword(name, ("magic", "aura", "energy", "spell", "portal")):
         return (
             "magic_energy",
             "radial_expand_then_fade",
             ["#F7F3FF", "#7DE2FF", "#8B5CFF"],
             ["Filename heuristic matched magic or energy keywords."],
         )
-    if any(token in name for token in ("impact", "hit", "burst", "shock")):
+    if any_keyword(name, ("impact", "hit", "burst", "shock")):
         return (
             "impact_burst",
             "radial_expand_then_fade",
@@ -94,3 +95,8 @@ def _classify_from_filename(path: Path) -> tuple[str, str, list[str], list[str]]
         ["#FFFFFF", "#89CFF0", "#6A7FDB"],
         ["No filename keyword matched. Replace this with vision-model analysis in the next phase."],
     )
+
+
+def any_keyword(name: str, keywords: tuple[str, ...]) -> bool:
+    tokens = [token for token in re.split(r"[^a-z0-9]+", name) if token]
+    return any(keyword in tokens for keyword in keywords)

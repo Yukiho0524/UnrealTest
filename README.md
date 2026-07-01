@@ -1,64 +1,63 @@
 # UnrealTest
 
-這是一個用來研究 Unreal MCP 架構的原型專案，目標是把設計師提供的視覺參考素材，轉換成 Unreal Engine 內可生成、可迭代的 VFX 資產。
+這個專案用來研究 Unreal MCP 架構，目標是讓設計人員把特效參考圖、GIF 或網址整理成資料包後，由工具分析參考內容並在 Unreal Engine 5.7.4 中生成可檢視的 Niagara 特效雛形。
 
-## 目標
+## 目前目標
 
-1. 從專案內的參考素材資料夾讀取圖片或 GIF，推測特效應該有的動態，並產生對應的 Unreal VFX 規格。
-2. 未來支援輸入網址，從網頁或圖片中擷取視覺風格，產生同樣格式的 VFX 規格。
-3. 透過 Unreal 端 bridge，把 VFX 規格轉換成 Niagara System、材質與預覽 Actor。
+1. 設計人員把參考圖或 GIF 放進資料夾，例如 `samples/references/fire/images/`。
+2. UI 讀取資料包，分析圖片特徵、設計文字與 `config.json`。
+3. 工具產生 `VFXSpec`，其中包含 `visual_profile` 與 `vfx_plan`。
+4. Unreal bridge 讀取 spec，在專案內生成 Niagara System、材質、材質實例與 sprite texture。
+5. UI 可開啟 Unreal Editor 並聚焦到生成的特效資產。
 
-## 目前架構
+## 架構
 
 ```text
-設計師整理的特效素材包或網址
-  -> MCP intake tool
-  -> 圖片 / 網頁分析
+Reference package
+  -> image / GIF analysis
+  -> visual_profile
+  -> vfx_plan
   -> VFXSpec JSON
-  -> Unreal bridge
-  -> Niagara / 材質 / 預覽 Actor
+  -> Unreal Python bridge
+  -> Niagara System + Texture + Material + Material Instance
 ```
 
-## 資料夾結構
+## 重要資料夾
 
 ```text
 mcp-server/
-  server.py                  MCP MVP 工具的 CLI 入口
-  schemas.py                 VFXSpec 的 Python dataclass
+  server.py                  CLI 入口
+  ui_server.py               本機 UI server
+  schemas.py                 VFXSpec / VFXPlan dataclass
   tools/
-    analyze_images.py        圖片資料夾分析 stub
-    analyze_packages.py      特效素材包分析流程
-    unreal_bridge.py         匯出 spec 與 Unreal bridge 命令輔助
+    analyze_packages.py      資料包分析與 vfx_plan 產生
+    image_features.py        圖片亮度、色彩、形狀特徵分析
+    unreal_bridge.py         呼叫 Unreal 生成與開啟資產
 
 specs/
-  vfx_spec.schema.json       可攜式 VFX 意圖規格
+  vfx_spec.schema.json       VFXSpec JSON schema
 
 samples/
-  references/                設計師整理的特效素材包，例如 fire/
+  references/                設計參考資料包
 
 unreal/
-  UnrealTest.uproject        綁定 UE 5.7 的 Unreal 專案描述檔
-  engine.version.json        本機 UE 5.7.4 安裝資訊
-  Plugins/VFXMCP/            Unreal plugin 原型
+  UnrealTest.uproject
+  engine.version.json        指定 UE 5.7.4
+  Plugins/VFXMCP/
+    Scripts/create_niagara_from_spec.py
 ```
 
 ## Unreal 版本
 
-此 workspace 目前指定使用本機 Unreal Engine 5.7.4：
+目前指定使用 Unreal Engine 5.7.4：
 
 ```text
 D:\Program Files\UE_5.7\Engine\Binaries\Win64\UnrealEditor.exe
 ```
 
-可以用以下指令開啟 Unreal 專案：
+## 參考資料包格式
 
-```powershell
-.\unreal\Scripts\Open-UnrealTest.ps1
-```
-
-## 設計師素材包格式
-
-每個想生成的特效建議整理成一個資料夾，例如 `fire`：
+以 `fire` 為例：
 
 ```text
 samples/references/fire/
@@ -69,67 +68,79 @@ samples/references/fire/
   config.json
 ```
 
-- `images/`：放入圖片、GIF 或未來可支援的動態參考素材。
-- `prompt.md`：描述設計意圖，例如用途、節奏、風格、持續時間。
-- `config.json`：可選的明確設定，例如特效類型、顏色、粒子生命週期等。
+- `images/`：放參考圖、GIF、截圖。
+- `prompt.md`：補充設計意圖，例如火焰、方形發光粒子、煙霧、衝擊波。
+- `config.json`：可指定或覆寫 effect type、motion、顏色與粒子參數。
 
-## 本機 UI 測試
+## vfx_plan 是什麼
 
-先把圖片或 GIF 放進：
+早期版本只產生單一 `effect_type`，例如 `fire_or_flame`。這會讓生成結果太粗，常常只像「同類型特效」，不像原圖。
 
-```text
-samples/references/fire/images/
+現在 spec 會多一層 `vfx_plan`，把參考圖拆成多個 emitter 意圖。例如白色發光方片會變成：
+
+```json
+{
+  "visual_intent": "White emissive square particles drifting upward in a loose vertical column with soft bloom.",
+  "primary_emitter": "glowing_squares",
+  "emitters": [
+    {
+      "name": "glowing_squares",
+      "role": "primary_particles",
+      "sprite_shape": "square",
+      "material_style": "white_emissive",
+      "motion": "rise_with_turbulence"
+    },
+    {
+      "name": "soft_bloom_core",
+      "role": "supporting_glow",
+      "sprite_shape": "soft_disc",
+      "material_style": "warm_white_glow",
+      "motion": "slow_vertical_drift"
+    }
+  ]
+}
 ```
 
-接著啟動本機 UI：
+Unreal 端會先用 primary emitter 的 `sprite_shape` 產生對應貼圖。火焰會產生火舌 alpha texture，白色方片會產生方形 emissive texture，避免所有效果都變成滿版矩形 sprite。
+
+## UI 使用
+
+啟動 UI：
 
 ```powershell
 .\mcp-server\Start-VFXMCPUI.ps1
 ```
 
-打開：
+開啟：
 
 ```text
 http://127.0.0.1:8765
 ```
 
-UI 目前可以選擇：
+UI 按鈕：
 
-- Unreal project：`UnrealTest`
-- Effect package：`fire`
-- Destination path：`/Game/VFX/Generated/fire`
+- `Analyze Package`：只分析資料包，顯示 `VFXSpec`、`visual_profile`、`vfx_plan`。
+- `Generate Spec`：寫出 `generated/specs/<name>.vfxspec.json`。
+- `Generate Unreal Assets`：呼叫 UE 5.7.4，生成 Niagara 與相關材質貼圖。
+- `Open In Unreal`：開啟 Unreal Editor，並同步到 `NS_`、`T_`、`M_`、`MI_` 相關資產。
 
-UI 目前有三個主要動作：
+如果 Unreal Editor 已經開著同一個專案，`Generate Unreal Assets` 可能因資產鎖定而失敗或 partial。建議先關掉 Unreal Editor，再執行生成，生成完成後再用 `Open In Unreal` 檢視。
 
-- `Analyze Package`：只分析素材包，預覽工具理解出來的 `VFXSpec`。
-- `Generate Spec`：輸出 `generated/specs/fire.vfxspec.json`，但不啟動 Unreal。
-- `Generate Unreal Assets`：啟動本機 UE 5.7.4，讀取 `fire.vfxspec.json`，在 `/Game/VFX/Generated/fire` 建立 `NS_fire`。目前會優先從 Unreal 內建 Niagara template 複製出一個非空殼的初版 Niagara System，並寫入 VFX MCP metadata。
-- `Open In Unreal`：開啟 `UnrealTest.uproject`，並嘗試在 Content Browser 內選取、開啟 `/Game/VFX/Generated/fire/NS_fire`；此流程會保持 Unreal Editor 開啟，方便直接檢視。
-
-如果要重新生成同一個特效，建議先關掉 Unreal Editor，再按 `Generate Unreal Assets`。目前 `fire` + `rise_and_fade` 會優先使用向上噴發型的 `FountainLightweight` template，讓初版結果比較接近火焰上竄，而不是單純爆炸。
-生成時也會建立 `M_fire_VFX` 與 `MI_fire_VFX`，材質顏色和 emissive 強度來自圖片/GIF 分析出的 `visual_profile`。`Open In Unreal` 會同步選取 Niagara、材質與材質實例，方便一起檢查。
-
-目前 `Generate Unreal Assets` 已經會呼叫 Unreal Python bridge。Niagara asset 建立會依 UE Python API 是否有暴露對應 factory 而定；如果目前版本無法直接建立，UI 會回傳 `partial` 狀態，代表 spec 已驗證、目的資料夾已處理，但 Niagara 生成細節還需要下一步補齊。
-
-## CLI 測試
-
-也可以直接用 CLI 分析特效素材包：
+## CLI
 
 ```powershell
 py mcp-server/server.py analyze-package samples/references/fire --out generated/specs
 ```
 
-這會產生：
+輸出：
 
 ```text
 generated/specs/fire.vfxspec.json
 ```
 
-目前分析器會結合素材包名稱、檔名、`prompt.md` 與 `config.json` 來產生第一版規格。之後會把檔名 heuristic 替換成真正的圖片 / GIF / 網頁視覺分析。
-
 ## 下一步
 
-- 將檔名 heuristic 替換成圖片與 GIF 分析。
-- 新增 `analyze_reference_url(url)`。
-- 在 `unreal/Plugins/VFXMCP/Scripts/create_niagara_from_spec.py` 實作真正的 Niagara asset 建立流程。
-- 加入 Unreal 內 preview 與自然語言迭代調整工具。
+- 讓 UE 端依 `vfx_plan.emitters` 建立多個實際 Niagara emitter，而不只使用 primary emitter。
+- 從 GIF 生成 flipbook 或序列幀 texture。
+- 將網址擷取出的圖片走同一套資料包分析流程。
+- 加入 vision model，提升形狀、材質與動態拆解精度。

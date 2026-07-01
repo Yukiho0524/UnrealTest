@@ -39,6 +39,7 @@
         "fire_or_flame",
         "smoke_or_mist",
         "magic_energy",
+        "glowing_particles",
         "electric_arc",
         "impact_burst",
         "unknown"
@@ -113,6 +114,60 @@
     "visual_profile": {
       "type": "object",
       "additionalProperties": true
+    },
+    "vfx_plan": {
+      "type": ["object", "null"],
+      "required": ["visual_intent", "primary_emitter", "emitters"],
+      "properties": {
+        "visual_intent": {
+          "type": "string"
+        },
+        "primary_emitter": {
+          "type": "string"
+        },
+        "emitters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "role",
+              "sprite_shape",
+              "material_style",
+              "motion",
+              "spawn_rate",
+              "lifetime_seconds",
+              "start_size",
+              "end_size",
+              "color_palette"
+            ],
+            "properties": {
+              "name": {"type": "string"},
+              "role": {"type": "string"},
+              "sprite_shape": {"type": "string"},
+              "material_style": {"type": "string"},
+              "motion": {"type": "string"},
+              "spawn_rate": {"type": "number"},
+              "lifetime_seconds": {"type": "number"},
+              "start_size": {"type": "number"},
+              "end_size": {"type": "number"},
+              "color_palette": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^#[0-9A-Fa-f]{6}$"
+                }
+              },
+              "notes": {
+                "type": "array",
+                "items": {"type": "string"}
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

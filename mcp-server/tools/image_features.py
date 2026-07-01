@@ -23,6 +23,9 @@ def analyze_media_files(media_files: list[Path]) -> dict[str, Any]:
         "brightness": round(mean(profile["brightness"] for profile in image_profiles), 3),
         "bright_pixel_ratio": round(mean(profile["bright_pixel_ratio"] for profile in image_profiles), 3),
         "warm_pixel_ratio": round(mean(profile["warm_pixel_ratio"] for profile in image_profiles), 3),
+        "bright_component_count": round(mean(profile["bright_component_count"] for profile in image_profiles), 3),
+        "square_component_ratio": round(mean(profile["square_component_ratio"] for profile in image_profiles), 3),
+        "isolated_bright_ratio": round(mean(profile["isolated_bright_ratio"] for profile in image_profiles), 3),
         "vertical_energy": round(mean(profile["vertical_energy"] for profile in image_profiles), 3),
         "base_energy": round(mean(profile["base_energy"] for profile in image_profiles), 3),
         "center_energy": round(mean(profile["center_energy"] for profile in image_profiles), 3),
@@ -48,6 +51,9 @@ def analyze_media_file(path: Path) -> dict[str, Any]:
         "brightness": round(mean(profile["brightness"] for profile in frame_profiles), 3),
         "bright_pixel_ratio": round(mean(profile["bright_pixel_ratio"] for profile in frame_profiles), 3),
         "warm_pixel_ratio": round(mean(profile["warm_pixel_ratio"] for profile in frame_profiles), 3),
+        "bright_component_count": round(mean(profile["bright_component_count"] for profile in frame_profiles), 3),
+        "square_component_ratio": round(mean(profile["square_component_ratio"] for profile in frame_profiles), 3),
+        "isolated_bright_ratio": round(mean(profile["isolated_bright_ratio"] for profile in frame_profiles), 3),
         "vertical_energy": round(mean(profile["vertical_energy"] for profile in frame_profiles), 3),
         "base_energy": round(mean(profile["base_energy"] for profile in frame_profiles), 3),
         "center_energy": round(mean(profile["center_energy"] for profile in frame_profiles), 3),
@@ -80,11 +86,15 @@ def analyze_frame(frame: Image.Image) -> dict[str, Any]:
     spark_pixels = [pixel for pixel in visible if luminance(pixel) > 0.82 and pixel[0] > 190 and pixel[1] > 120]
 
     heat_map = build_heat_map(image)
+    bright_components = analyze_bright_components(image)
     return {
         "palette": dominant_palette([rgb_to_hex(pixel[:3]) for pixel in warm_pixels or visible]),
         "brightness": average_luminance(visible),
         "bright_pixel_ratio": ratio(len(bright_pixels), len(visible)),
         "warm_pixel_ratio": ratio(len(warm_pixels), len(visible)),
+        "bright_component_count": bright_components["component_count"],
+        "square_component_ratio": bright_components["square_component_ratio"],
+        "isolated_bright_ratio": bright_components["isolated_bright_ratio"],
         "vertical_energy": heat_map["vertical_energy"],
         "base_energy": heat_map["base_energy"],
         "center_energy": heat_map["center_energy"],
@@ -118,6 +128,53 @@ def build_heat_map(image: Image.Image) -> dict[str, float]:
     }
 
 
+def analyze_bright_components(image: Image.Image) -> dict[str, float]:
+    width, height = image.size
+    bright_points = set()
+    for y in range(height):
+        for x in range(width):
+            pixel = image.getpixel((x, y))
+            if pixel[3] > 16 and luminance(pixel) > 0.82:
+                bright_points.add((x, y))
+
+    visited = set()
+    components: list[tuple[int, int, int]] = []
+    for point in bright_points:
+        if point in visited:
+            continue
+        stack = [point]
+        visited.add(point)
+        xs = []
+        ys = []
+        while stack:
+            current_x, current_y = stack.pop()
+            xs.append(current_x)
+            ys.append(current_y)
+            for neighbor in ((current_x + 1, current_y), (current_x - 1, current_y), (current_x, current_y + 1), (current_x, current_y - 1)):
+                if neighbor in bright_points and neighbor not in visited:
+                    visited.add(neighbor)
+                    stack.append(neighbor)
+        area = len(xs)
+        if area >= 2:
+            components.append((max(xs) - min(xs) + 1, max(ys) - min(ys) + 1, area))
+
+    square_like = 0
+    isolated_area = 0
+    total_area = sum(area for _, _, area in components) or 1
+    for component_width, component_height, area in components:
+        aspect = component_width / max(component_height, 1)
+        fill = area / max(component_width * component_height, 1)
+        if 0.55 <= aspect <= 1.8 and fill > 0.32 and 2 <= area <= 240:
+            square_like += 1
+            isolated_area += area
+
+    return {
+        "component_count": float(len(components)),
+        "square_component_ratio": ratio(square_like, len(components)),
+        "isolated_bright_ratio": round(isolated_area / total_area, 3),
+    }
+
+
 def infer_motion_hint(profiles: list[dict[str, Any]]) -> str:
     vertical = mean(profile["vertical_energy"] for profile in profiles)
     base = mean(profile["base_energy"] for profile in profiles)
@@ -132,6 +189,11 @@ def infer_shape_hint(profiles: list[dict[str, Any]]) -> str:
     vertical = mean(profile["vertical_energy"] for profile in profiles)
     base = mean(profile["base_energy"] for profile in profiles)
     center = mean(profile["center_energy"] for profile in profiles)
+    square_ratio = mean(profile["square_component_ratio"] for profile in profiles)
+    component_count = mean(profile["bright_component_count"] for profile in profiles)
+    warm = mean(profile["warm_pixel_ratio"] for profile in profiles)
+    if component_count >= 6 and square_ratio > 0.28 and warm < 0.1:
+        return "glowing_square_particles"
     if vertical > 0.24 and center > 0.32:
         return "bright_core_column_with_outer_flames"
     if base > 0.42:
@@ -144,6 +206,10 @@ def infer_style_hint(profiles: list[dict[str, Any]]) -> str:
     warm = mean(profile["warm_pixel_ratio"] for profile in profiles)
     smoke = mean(profile["dark_smoke_ratio"] for profile in profiles)
     vertical = mean(profile["vertical_energy"] for profile in profiles)
+    square_ratio = mean(profile["square_component_ratio"] for profile in profiles)
+    component_count = mean(profile["bright_component_count"] for profile in profiles)
+    if bright > 0.025 and warm < 0.1 and component_count >= 6 and square_ratio > 0.28:
+        return "white_glowing_square_particles"
     if (bright > 0.08 and warm > 0.12) or (vertical > 0.4 and any(profile["sparks_hint"] for profile in profiles)):
         return "high_intensity_stylized_fire"
     if smoke > 0.08:
@@ -154,6 +220,8 @@ def infer_style_hint(profiles: list[dict[str, Any]]) -> str:
 def effect_palette(profiles: list[dict[str, Any]], palette: list[str]) -> list[str]:
     shape_hint = infer_shape_hint(profiles)
     style_hint = infer_style_hint(profiles)
+    if shape_hint == "glowing_square_particles" or style_hint == "white_glowing_square_particles":
+        return ["#FFFFFF", "#FFFCE8", "#DDE6FF", "#9FB3D9"]
     if shape_hint == "bright_core_column_with_outer_flames" or style_hint == "high_intensity_stylized_fire":
         warm = next((color for color in palette if color not in {"#FFF8C8", "#FFD36A"}), "#FF6A21")
         return ["#FFF8C8", "#FFD36A", warm, "#371008"]

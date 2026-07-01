@@ -180,6 +180,11 @@ def template_paths_for_effect(effect_type: str) -> list[str]:
             "/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion",
             "/Niagara/DefaultAssets/DefaultSystem",
         ]
+    if effect_type in {"glowing_particles"}:
+        return [
+            "/Niagara/DefaultAssets/Templates/Systems/FountainLightweight",
+            "/Niagara/DefaultAssets/DefaultSystem",
+        ]
     return ["/Niagara/DefaultAssets/DefaultSystem"]
 
 
@@ -209,6 +214,8 @@ def annotate_asset(unreal_module, asset, spec: dict) -> None:
         unreal_module.EditorAssetLibrary.set_metadata_tag(asset, "VFXMCP_Source", spec["source"]["uri"])
         if spec.get("visual_profile"):
             unreal_module.EditorAssetLibrary.set_metadata_tag(asset, "VFXMCP_VisualProfile", json.dumps(compact_visual_profile(spec["visual_profile"])))
+        if spec.get("vfx_plan"):
+            unreal_module.EditorAssetLibrary.set_metadata_tag(asset, "VFXMCP_Plan", json.dumps(compact_vfx_plan(spec["vfx_plan"])))
     except Exception as exc:
         unreal_module.log_warning(f"VFX MCP could not write metadata: {exc}")
 
@@ -277,7 +284,10 @@ def generated_texture_source_path(effect_name: str, texture_name: str) -> Path:
 def write_sprite_png(path: Path, spec: dict) -> None:
     width = 256
     height = 256
-    if is_fire_spec(spec):
+    sprite_shape = primary_sprite_shape(spec)
+    if sprite_shape == "square":
+        pixels = square_sprite_pixels(width, height, spec)
+    elif is_fire_spec(spec) or sprite_shape == "flame_tongue":
         pixels = fire_sprite_pixels(width, height, spec)
     else:
         pixels = soft_disc_pixels(width, height, spec)
@@ -335,6 +345,21 @@ def soft_disc_pixels(width: int, height: int, spec: dict) -> bytes:
             distance = (nx * nx + ny * ny) ** 0.5
             alpha = 1.0 - smoothstep(0.18, 0.92, distance)
             pixels.extend((color[0], color[1], color[2], int(alpha * 255)))
+    return bytes(pixels)
+
+
+def square_sprite_pixels(width: int, height: int, spec: dict) -> bytes:
+    color = hex_to_rgba_tuple(spec["color_palette"][0] if spec.get("color_palette") else "#FFFFFF")
+    pixels = bytearray()
+    for y in range(height):
+        ny = abs((y / (height - 1) - 0.5) * 2.0)
+        for x in range(width):
+            nx = abs((x / (width - 1) - 0.5) * 2.0)
+            body = 1.0 - smoothstep(0.72, 0.98, max(nx, ny))
+            inner = 1.0 - smoothstep(0.0, 0.82, max(nx, ny))
+            alpha = clamp(body)
+            brightness = 0.82 + inner * 0.18
+            pixels.extend((int(color[0] * brightness), int(color[1] * brightness), int(color[2] * brightness), int(alpha * 255)))
     return bytes(pixels)
 
 
@@ -627,6 +652,15 @@ def is_fire_spec(spec: dict) -> bool:
     return visual_profile.get("style_hint") in {"high_intensity_stylized_fire", "smoky_fire_impact"}
 
 
+def primary_sprite_shape(spec: dict) -> str:
+    plan = spec.get("vfx_plan") or {}
+    primary_name = plan.get("primary_emitter")
+    for emitter in plan.get("emitters", []):
+        if emitter.get("name") == primary_name:
+            return emitter.get("sprite_shape", "")
+    return ""
+
+
 def try_set_editor_property(asset, property_name: str, value) -> None:
     try:
         asset.set_editor_property(property_name, value)
@@ -674,6 +708,7 @@ def summarize_spec(spec: dict) -> dict:
         "duration_seconds": spec["timing"]["duration_seconds"],
         "looping": spec["timing"]["looping"],
         "visual_profile": compact_visual_profile(spec.get("visual_profile", {})),
+        "vfx_plan": compact_vfx_plan(spec.get("vfx_plan")),
     }
 
 
@@ -687,10 +722,37 @@ def compact_visual_profile(visual_profile: dict) -> dict:
         "palette": visual_profile.get("palette"),
         "bright_pixel_ratio": visual_profile.get("bright_pixel_ratio"),
         "warm_pixel_ratio": visual_profile.get("warm_pixel_ratio"),
+        "bright_component_count": visual_profile.get("bright_component_count"),
+        "square_component_ratio": visual_profile.get("square_component_ratio"),
+        "isolated_bright_ratio": visual_profile.get("isolated_bright_ratio"),
         "vertical_energy": visual_profile.get("vertical_energy"),
         "base_energy": visual_profile.get("base_energy"),
         "dark_smoke_ratio": visual_profile.get("dark_smoke_ratio"),
         "sparks_hint": visual_profile.get("sparks_hint"),
+    }
+
+
+def compact_vfx_plan(plan: dict | None) -> dict:
+    if not plan:
+        return {}
+    return {
+        "visual_intent": plan.get("visual_intent"),
+        "primary_emitter": plan.get("primary_emitter"),
+        "emitters": [
+            {
+                "name": emitter.get("name"),
+                "role": emitter.get("role"),
+                "sprite_shape": emitter.get("sprite_shape"),
+                "material_style": emitter.get("material_style"),
+                "motion": emitter.get("motion"),
+                "spawn_rate": emitter.get("spawn_rate"),
+                "lifetime_seconds": emitter.get("lifetime_seconds"),
+                "start_size": emitter.get("start_size"),
+                "end_size": emitter.get("end_size"),
+                "color_palette": emitter.get("color_palette"),
+            }
+            for emitter in plan.get("emitters", [])
+        ],
     }
 
 

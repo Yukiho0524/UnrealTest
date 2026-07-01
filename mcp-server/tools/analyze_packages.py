@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from schemas import VFXParticles, VFXSource, VFXSpec, VFXTiming
+from schemas import VFXEmitterPlan, VFXParticles, VFXPlan, VFXSource, VFXSpec, VFXTiming
 from tools.analyze_images import IMAGE_EXTENSIONS, _classify_from_filename
 from tools.image_features import analyze_media_files
 
@@ -47,6 +47,9 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
         palette = visual_profile["palette"]
     if visual_profile.get("motion_hint") == "vertical_column_rise":
         motion = "rise_and_fade"
+    if visual_profile.get("shape_hint") == "glowing_square_particles":
+        effect_type = "glowing_particles"
+        motion = "rise_and_fade"
     if visual_profile.get("shape_hint") in {"bright_core_column_with_outer_flames", "ground_ring_with_upward_flare"}:
         effect_type = "fire_or_flame"
 
@@ -61,6 +64,13 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
     notes.extend(package_notes(package_dir, prompt, media_files, config))
     notes.extend(visual_profile_notes(visual_profile))
 
+    particles = VFXParticles(
+        spawn_rate=float(config.get("spawn_rate", inferred_spawn_rate(visual_profile)) if config.get("lock_particles") else inferred_spawn_rate(visual_profile)),
+        lifetime_seconds=float(config.get("lifetime_seconds", inferred_lifetime(visual_profile)) if config.get("lock_particles") else inferred_lifetime(visual_profile)),
+        start_size=float(config.get("start_size", inferred_start_size(visual_profile)) if config.get("lock_particles") else inferred_start_size(visual_profile)),
+        end_size=float(config.get("end_size", inferred_end_size(visual_profile)) if config.get("lock_particles") else inferred_end_size(visual_profile)),
+    )
+
     return VFXSpec(
         name=config.get("name", package_dir.name),
         source=VFXSource(kind="folder", uri=str(package_dir)),
@@ -69,14 +79,10 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
         color_palette=palette,
         render_mode=render_mode,
         timing=VFXTiming(duration_seconds=duration_seconds, looping=looping),
-        particles=VFXParticles(
-            spawn_rate=float(config.get("spawn_rate", inferred_spawn_rate(visual_profile)) if config.get("lock_particles") else inferred_spawn_rate(visual_profile)),
-            lifetime_seconds=float(config.get("lifetime_seconds", inferred_lifetime(visual_profile)) if config.get("lock_particles") else inferred_lifetime(visual_profile)),
-            start_size=float(config.get("start_size", inferred_start_size(visual_profile)) if config.get("lock_particles") else inferred_start_size(visual_profile)),
-            end_size=float(config.get("end_size", inferred_end_size(visual_profile)) if config.get("lock_particles") else inferred_end_size(visual_profile)),
-        ),
+        particles=particles,
         notes=notes,
         visual_profile=visual_profile,
+        vfx_plan=build_vfx_plan(effect_type, motion, palette, particles, visual_profile),
     )
 
 
@@ -149,7 +155,98 @@ def visual_profile_notes(visual_profile: dict[str, Any]) -> list[str]:
     ]
 
 
+def build_vfx_plan(effect_type: str, motion: str, palette: list[str], particles: VFXParticles, visual_profile: dict[str, Any]) -> VFXPlan:
+    if effect_type == "glowing_particles" or visual_profile.get("shape_hint") == "glowing_square_particles":
+        return VFXPlan(
+            visual_intent="White emissive square particles drifting upward in a loose vertical column with soft bloom.",
+            primary_emitter="glowing_squares",
+            emitters=[
+                VFXEmitterPlan(
+                    name="glowing_squares",
+                    role="primary_particles",
+                    sprite_shape="square",
+                    material_style="white_emissive",
+                    motion="rise_with_turbulence",
+                    spawn_rate=max(particles.spawn_rate, 120.0),
+                    lifetime_seconds=max(particles.lifetime_seconds, 0.9),
+                    start_size=max(particles.start_size, 12.0),
+                    end_size=max(particles.end_size, 28.0),
+                    color_palette=palette[:3],
+                    notes=["Use hard-edged square sprites, random rotation, and additive bloom."],
+                ),
+                VFXEmitterPlan(
+                    name="soft_bloom_core",
+                    role="supporting_glow",
+                    sprite_shape="soft_disc",
+                    material_style="warm_white_glow",
+                    motion="slow_vertical_drift",
+                    spawn_rate=24.0,
+                    lifetime_seconds=0.7,
+                    start_size=32.0,
+                    end_size=72.0,
+                    color_palette=["#FFFFFF", "#FFFCE8"],
+                    notes=["Adds the overexposed vertical glow visible behind the square particles."],
+                ),
+            ],
+        )
+
+    if effect_type == "fire_or_flame":
+        return VFXPlan(
+            visual_intent="Layered stylized flame with a bright core, orange outer tongues, and small ember accents.",
+            primary_emitter="core_flame",
+            emitters=[
+                VFXEmitterPlan(
+                    name="core_flame",
+                    role="primary_body",
+                    sprite_shape="flame_tongue",
+                    material_style="additive_flame_gradient",
+                    motion=motion,
+                    spawn_rate=particles.spawn_rate,
+                    lifetime_seconds=particles.lifetime_seconds,
+                    start_size=particles.start_size,
+                    end_size=particles.end_size,
+                    color_palette=palette,
+                    notes=["Use alpha-shaped flame sprites instead of full rectangular billboards."],
+                ),
+                VFXEmitterPlan(
+                    name="ember_sparks",
+                    role="detail_particles",
+                    sprite_shape="small_disc",
+                    material_style="orange_emissive",
+                    motion="rise_and_scatter",
+                    spawn_rate=round(max(24.0, particles.spawn_rate * 0.18), 2),
+                    lifetime_seconds=round(max(0.35, particles.lifetime_seconds * 0.7), 2),
+                    start_size=round(max(3.0, particles.start_size * 0.18), 2),
+                    end_size=round(max(1.0, particles.start_size * 0.08), 2),
+                    color_palette=palette[1:3] or palette,
+                    notes=["Adds small hot particles separated from the main flame silhouette."],
+                ),
+            ],
+        )
+
+    return VFXPlan(
+        visual_intent="Single sprite-based energy effect inferred from the reference package.",
+        primary_emitter="primary_sprite",
+        emitters=[
+            VFXEmitterPlan(
+                name="primary_sprite",
+                role="primary_body",
+                sprite_shape="soft_disc",
+                material_style="additive_energy",
+                motion=motion,
+                spawn_rate=particles.spawn_rate,
+                lifetime_seconds=particles.lifetime_seconds,
+                start_size=particles.start_size,
+                end_size=particles.end_size,
+                color_palette=palette,
+            )
+        ],
+    )
+
+
 def inferred_spawn_rate(visual_profile: dict[str, Any]) -> float:
+    if visual_profile.get("shape_hint") == "glowing_square_particles":
+        return 130.0
     if visual_profile.get("style_hint") == "high_intensity_stylized_fire":
         return 170.0
     if visual_profile.get("bright_pixel_ratio", 0) > 0.12:
@@ -158,18 +255,24 @@ def inferred_spawn_rate(visual_profile: dict[str, Any]) -> float:
 
 
 def inferred_lifetime(visual_profile: dict[str, Any]) -> float:
+    if visual_profile.get("shape_hint") == "glowing_square_particles":
+        return 1.05
     if visual_profile.get("motion_hint") == "vertical_column_rise":
         return 0.72
     return 0.8
 
 
 def inferred_start_size(visual_profile: dict[str, Any]) -> float:
+    if visual_profile.get("shape_hint") == "glowing_square_particles":
+        return 10.0
     if visual_profile.get("base_energy", 0) > 0.34:
         return 28.0
     return 18.0
 
 
 def inferred_end_size(visual_profile: dict[str, Any]) -> float:
+    if visual_profile.get("shape_hint") == "glowing_square_particles":
+        return 28.0
     if visual_profile.get("shape_hint") == "bright_core_column_with_outer_flames":
         return 150.0
     return 96.0

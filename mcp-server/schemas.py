@@ -8,6 +8,7 @@ EffectType = Literal[
     "fire_or_flame",
     "smoke_or_mist",
     "magic_energy",
+    "glowing_particles",
     "electric_arc",
     "impact_burst",
     "unknown",
@@ -47,6 +48,28 @@ class VFXParticles:
 
 
 @dataclass(frozen=True)
+class VFXEmitterPlan:
+    name: str
+    role: str
+    sprite_shape: str
+    material_style: str
+    motion: str
+    spawn_rate: float
+    lifetime_seconds: float
+    start_size: float
+    end_size: float
+    color_palette: list[str]
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class VFXPlan:
+    visual_intent: str
+    primary_emitter: str
+    emitters: list[VFXEmitterPlan]
+
+
+@dataclass(frozen=True)
 class VFXSpec:
     name: str
     source: VFXSource
@@ -58,6 +81,7 @@ class VFXSpec:
     particles: VFXParticles
     notes: list[str] = field(default_factory=list)
     visual_profile: dict = field(default_factory=dict)
+    vfx_plan: VFXPlan | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
