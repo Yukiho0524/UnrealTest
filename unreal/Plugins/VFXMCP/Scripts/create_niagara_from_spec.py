@@ -99,6 +99,7 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
 def build_niagara_bundle_from_spec(unreal_module, spec: dict, destination_path: str, emitters: list[dict]) -> dict:
     systems = []
     primary_emitter = primary_emitter_name(spec)
+    reference_card = create_reference_card_assets(unreal_module, spec, destination_path)
     for emitter in emitters:
         emitter_spec = spec_for_emitter(spec, emitter, emitter.get("name") == primary_emitter)
         system_result = build_single_niagara_system(unreal_module, emitter_spec, destination_path)
@@ -116,6 +117,7 @@ def build_niagara_bundle_from_spec(unreal_module, spec: dict, destination_path: 
             "enabled": True,
             "primary_emitter": primary_emitter,
             "system_count": len(systems),
+            "reference_card": reference_card,
             "systems": systems,
         },
         "spec_summary": summarize_spec(spec),
@@ -169,6 +171,58 @@ def build_single_niagara_system(unreal, spec: dict, destination_path: str) -> di
         "renderer_material_assignment": renderer_result,
         "message": "Created destination folder and validated spec, but Niagara factory creation did not succeed in this UE Python API.",
     }
+
+
+def create_reference_card_assets(unreal_module, spec: dict, destination_path: str) -> dict:
+    plan = spec.get("vfx_plan") or {}
+    source = plan.get("reference_card_source")
+    result = {
+        "source": source,
+        "texture_path": None,
+        "material_path": None,
+        "material_instance_path": None,
+        "created": False,
+        "errors": [],
+    }
+    if not source:
+        return result
+    source_path = Path(source)
+    if not source_path.exists():
+        result["errors"].append(f"Reference card source does not exist: {source}")
+        return result
+
+    card_spec = json.loads(json.dumps(spec))
+    card_spec["name"] = f"{spec['name']}_reference_card"
+    card_spec["vfx_plan"] = {
+        "visual_intent": plan.get("visual_intent", ""),
+        "primary_emitter": "reference_card",
+        "emitters": [
+            {
+                "name": "reference_card",
+                "role": "reference_composite",
+                "sprite_shape": "reference_card",
+                "material_style": "reference_card_emissive",
+                "motion": "static_preview_card",
+                "spawn_rate": 1.0,
+                "lifetime_seconds": max(float(spec.get("timing", {}).get("duration_seconds", 1.0)), 1.0),
+                "start_size": max(float(spec.get("particles", {}).get("end_size", 96.0)), 128.0),
+                "end_size": max(float(spec.get("particles", {}).get("end_size", 96.0)), 128.0),
+                "color_palette": spec.get("color_palette", ["#FFFFFF"]),
+                "sprite_source": str(source_path),
+            }
+        ],
+    }
+    material_result = create_vfx_material_assets(unreal_module, card_spec, destination_path)
+    result.update(
+        {
+            "texture_path": material_result.get("texture_path"),
+            "material_path": material_result.get("material_path"),
+            "material_instance_path": material_result.get("material_instance_path"),
+            "created": bool(material_result.get("created")),
+            "errors": material_result.get("errors", []),
+        }
+    )
+    return result
 
 
 def planned_emitters(spec: dict) -> list[dict]:

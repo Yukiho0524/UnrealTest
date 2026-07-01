@@ -7,7 +7,7 @@ from typing import Any
 from schemas import VFXEmitterPlan, VFXParticles, VFXPlan, VFXSource, VFXSpec, VFXTiming
 from tools.analyze_images import IMAGE_EXTENSIONS, _classify_from_filename
 from tools.image_features import analyze_media_files
-from tools.reference_sprites import create_reference_sprite_source
+from tools.reference_sprites import create_reference_card_source, create_reference_sprite_source
 
 
 CONFIG_FILE = "config.json"
@@ -75,6 +75,7 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
     reference_sprite_source = None
     if visual_profile.get("shape_hint") != "glowing_shard_particles":
         reference_sprite_source = create_reference_sprite_source(package_dir.name, media_files, effect_type, visual_profile)
+    reference_card_source = create_reference_card_source(package_dir.name, media_files, effect_type, visual_profile)
 
     return VFXSpec(
         name=config.get("name", package_dir.name),
@@ -87,7 +88,7 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
         particles=particles,
         notes=notes,
         visual_profile=visual_profile,
-        vfx_plan=build_vfx_plan(effect_type, motion, palette, particles, visual_profile, reference_sprite_source),
+        vfx_plan=build_vfx_plan(effect_type, motion, palette, particles, visual_profile, reference_sprite_source, reference_card_source),
     )
 
 
@@ -167,6 +168,7 @@ def build_vfx_plan(
     particles: VFXParticles,
     visual_profile: dict[str, Any],
     reference_sprite_source: str | None,
+    reference_card_source: str | None,
 ) -> VFXPlan:
     if visual_profile.get("shape_hint") == "glowing_shard_particles":
         return VFXPlan(
@@ -201,6 +203,7 @@ def build_vfx_plan(
                     notes=["Adds small hot flashes between shard particles."],
                 ),
             ],
+            reference_card_source=reference_card_source,
         )
 
     if effect_type == "glowing_particles" or visual_profile.get("shape_hint") == "glowing_square_particles":
@@ -236,6 +239,7 @@ def build_vfx_plan(
                     notes=["Adds the overexposed vertical glow visible behind the square particles."],
                 ),
             ],
+            reference_card_source=reference_card_source,
         )
 
     if effect_type == "fire_or_flame":
@@ -271,6 +275,7 @@ def build_vfx_plan(
                     notes=["Adds small hot particles separated from the main flame silhouette."],
                 ),
             ],
+            reference_card_source=reference_card_source,
         )
 
     return VFXPlan(
@@ -291,6 +296,7 @@ def build_vfx_plan(
                 sprite_source=reference_sprite_source,
             )
         ],
+        reference_card_source=reference_card_source,
     )
 
 

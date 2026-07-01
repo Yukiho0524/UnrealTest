@@ -68,6 +68,7 @@ class VFXPlan:
     visual_intent: str
     primary_emitter: str
     emitters: list[VFXEmitterPlan]
+    reference_card_source: str | None = None
 
 
 @dataclass(frozen=True)

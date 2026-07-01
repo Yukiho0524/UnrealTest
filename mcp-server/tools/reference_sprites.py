@@ -36,6 +36,30 @@ def create_reference_sprite_source(
     return str(output_path)
 
 
+def create_reference_card_source(
+    package_name: str,
+    media_files: list[Path],
+    effect_type: str,
+    visual_profile: dict[str, Any],
+) -> str | None:
+    if not media_files:
+        return None
+
+    source = choose_source_media(media_files, visual_profile)
+    if not source:
+        return None
+
+    with Image.open(source) as image:
+        frame = choose_frame(image)
+        card = extract_card_sprite(frame, effect_type, visual_profile)
+
+    output_dir = WORKSPACE_ROOT / "generated" / "reference-sprites" / package_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{package_name}_reference_card.png"
+    card.save(output_path)
+    return str(output_path)
+
+
 def choose_source_media(media_files: list[Path], visual_profile: dict[str, Any]) -> Path | None:
     file_profiles = visual_profile.get("files", [])
     if not file_profiles:
@@ -86,6 +110,25 @@ def extract_sprite(frame: Image.Image, effect_type: str, visual_profile: dict[st
         return fallback_sprite(effect_type, visual_profile)
 
     expanded_bbox = expand_bbox(bbox, image.size, 0.16)
+    image = image.crop(expanded_bbox)
+    mask = mask.crop(expanded_bbox)
+    image.putalpha(mask)
+
+    canvas = Image.new("RGBA", (SPRITE_SIZE, SPRITE_SIZE), (0, 0, 0, 0))
+    image.thumbnail((SPRITE_SIZE, SPRITE_SIZE), Image.Resampling.LANCZOS)
+    offset = ((SPRITE_SIZE - image.width) // 2, (SPRITE_SIZE - image.height) // 2)
+    canvas.alpha_composite(image, offset)
+    return canvas
+
+
+def extract_card_sprite(frame: Image.Image, effect_type: str, visual_profile: dict[str, Any]) -> Image.Image:
+    image = ImageOps.exif_transpose(frame).convert("RGBA")
+    mask = build_card_foreground_mask(image, effect_type, visual_profile)
+    bbox = mask.getbbox()
+    if not bbox:
+        return fallback_sprite(effect_type, visual_profile)
+
+    expanded_bbox = expand_bbox(bbox, image.size, 0.08)
     image = image.crop(expanded_bbox)
     mask = mask.crop(expanded_bbox)
     image.putalpha(mask)
@@ -241,6 +284,34 @@ def build_foreground_mask(image: Image.Image, effect_type: str, visual_profile: 
     mask.putdata(alpha_values)
     mask = mask.filter(ImageFilter.GaussianBlur(radius=2.4))
     return mask.point(lambda value: 0 if value < 18 else value)
+
+
+def build_card_foreground_mask(image: Image.Image, effect_type: str, visual_profile: dict[str, Any]) -> Image.Image:
+    width, height = image.size
+    luminance_image = Image.new("L", (width, height))
+    luminance_values = [int(luminance(pixel) * 255) if pixel[3] > 16 else 0 for pixel in image.getdata()]
+    luminance_image.putdata(luminance_values)
+    local_background = luminance_image.filter(ImageFilter.GaussianBlur(radius=12.0))
+    background_values = list(local_background.getdata())
+
+    alpha_values = []
+    for pixel, lum_value, background in zip(image.getdata(), luminance_values, background_values):
+        if pixel[3] <= 16:
+            alpha_values.append(0)
+            continue
+        warm = is_warm(pixel)
+        local_pop = max(0, lum_value - background - 8)
+        hot = max(0, lum_value - 210)
+        if effect_type == "fire_or_flame":
+            alpha = max(local_pop * 2.2, hot * 3.0, 120 if warm and lum_value > 80 else 0)
+        else:
+            alpha = max(local_pop * 2.6, hot * 3.4)
+        alpha_values.append(int(max(0, min(255, alpha))))
+
+    mask = Image.new("L", (width, height))
+    mask.putdata(alpha_values)
+    mask = mask.filter(ImageFilter.GaussianBlur(radius=1.2))
+    return mask.point(lambda value: 0 if value < 18 else min(255, value))
 
 
 def build_isolated_particle_mask(image: Image.Image) -> Image.Image:

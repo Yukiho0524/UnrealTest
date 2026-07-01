@@ -130,6 +130,8 @@ UI 按鈕：
 
 當 `vfx_plan.emitters` 有多個 emitter 時，Unreal 端會生成一組 bundle。主 emitter 會使用 `NS_<name>`，其他 emitter 會使用 `NS_<name>_<emitter>`，並各自產生對應的 `T_`、`M_`、`MI_` 資產。這讓火焰主體、火星、碎光、柔光可以先分開生成與檢查，而不是全部被壓成單一噴粒子。
 
+bundle 也會產生 reference card assets，例如 `T_<name>_reference_card_VFX_Sprite`、`M_<name>_reference_card_VFX`、`MI_<name>_reference_card_VFX`。這張 card 來自原始參考圖的整體亮部剪影，用來保留主視覺形狀；粒子層則用來補火星、碎片與柔光。
+
 如果 Unreal Editor 已經開著同一個專案，`Generate Unreal Assets` 可能因資產鎖定而失敗或 partial。建議先關掉 Unreal Editor，再執行生成，生成完成後再用 `Open In Unreal` 檢視。
 
 ## CLI
