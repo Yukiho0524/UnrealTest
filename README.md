@@ -134,7 +134,7 @@ UI 按鈕：
 
 bundle 也會產生 reference card assets，例如 `T_<name>_reference_card_VFX_Sprite`、`M_<name>_reference_card_VFX`、`MI_<name>_reference_card_VFX`。這張 card 來自原始參考圖的整體亮部剪影，用來保留主視覺形狀；粒子層則用來補火星、碎片與柔光。
 
-生成 Unreal Assets 時，工具現在會再建立 `L_<name>_VFXPreview` 預覽關卡。這個關卡會把 reference card、各層材質平面與 Niagara layer 放在同一個場景，並擺好 camera/light，作為主要檢視入口。`Open In Unreal` 會優先開這個 preview level；`NS_` 資產則保留給 layer debug。
+目前為了避免 Unreal 5.7.4 在 Python 開啟 World/Map asset 時發生 `World Memory Leaks` crash，工具不再建立或開啟 `L_<name>_VFXPreview` 預覽關卡。`Open In Unreal` 會開主 `NS_<name>`，並同步 reference card、各層 `NS_`、`T_`、`M_`、`MI_` 資產到 Content Browser，讓你用 bundle 資產檢查每個 layer。
 
 如果 Unreal Editor 已經開著同一個專案，`Generate Unreal Assets` 可能因資產鎖定而失敗或 partial。建議先關掉 Unreal Editor，再執行生成，生成完成後再用 `Open In Unreal` 檢視。
 

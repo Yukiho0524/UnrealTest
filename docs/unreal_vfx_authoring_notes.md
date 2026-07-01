@@ -22,18 +22,19 @@
 
 ## 下一步
 
-- 產生 `L_<name>_VFXPreview`，把 reference card、各層材質與多個 Niagara Systems 組成一個可直接檢視的預覽關卡。
+- 改用不切換 World 的安全預覽方式，避免 Unreal Python 開啟 map asset 時觸發 `World Memory Leaks` crash。
 - 將 bundle systems 進一步合成成單一 Niagara System 內的多 emitter。
 - 將 `production_notes` 轉成實際 Niagara module 設定，例如 size over life、color over life、rotation rate、curl noise、sub UV/flipbook。
 
-## 已落地的預覽流程
+## 已落地的安全預覽流程
 
-- `Generate Unreal Assets` 會建立 `L_<name>_VFXPreview` 預覽關卡。
-- 預覽關卡會放入 reference card 材質平面、每個 emitter 對應的材質平面、Niagara layer actor、camera 與 light。
-- `Open In Unreal` 優先開 preview level；單獨的 `NS_` 系統只用於檢查單層 emitter。
+- `Generate Unreal Assets` 會建立多個 layer asset：reference card、主 `NS_`、細節 `NS_`、各層 texture/material/material instance。
+- 先前的 `L_<name>_VFXPreview` map preview 已停用，生成時會嘗試清掉舊的 unsafe preview level。
+- `Open In Unreal` 只開主 `NS_`，並同步相關 bundle assets 到 Content Browser，不再由 Python 開啟 World/Map asset。
 
 ## 後續真正要再強化的地方
 
 - 把目前分開的 Niagara layer 合成為同一個 Niagara System 內的多個 emitter。
 - 依 `module_stack` 實際設定 velocity、curl noise、color/alpha over life、sprite size over life、rotation rate。
 - 將 GIF/序列幀轉成 flipbook texture，讓主體不只是靜態 reference card。
+- 若要做場景預覽，改用 Editor Utility 或使用者手動開啟關卡，不從 `-ExecCmds=py` 直接呼叫 `open_editor_for_assets` 開 World。
