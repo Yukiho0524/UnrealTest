@@ -120,7 +120,7 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
 
 def create_niagara_system_from_template(unreal_module, spec: dict, asset_path: str) -> dict:
     errors: list[str] = []
-    template_paths = template_paths_for_effect(spec["effect_type"])
+    template_paths = template_paths_for_spec(spec)
 
     if unreal_module.EditorAssetLibrary.does_asset_exist(asset_path):
         unreal_module.EditorAssetLibrary.delete_asset(asset_path)
@@ -163,6 +163,24 @@ def template_paths_for_effect(effect_type: str) -> list[str]:
             "/Niagara/DefaultAssets/DefaultSystem",
         ]
     return ["/Niagara/DefaultAssets/DefaultSystem"]
+
+
+def template_paths_for_spec(spec: dict) -> list[str]:
+    effect_type = spec["effect_type"]
+    motion = spec["motion"]
+
+    if effect_type == "fire_or_flame" and motion == "rise_and_fade":
+        return [
+            "/Niagara/DefaultAssets/Templates/Systems/FountainLightweight",
+            "/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion",
+            "/Niagara/DefaultAssets/DefaultSystem",
+        ]
+    if motion == "radial_expand_then_fade":
+        return [
+            "/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion",
+            "/Niagara/DefaultAssets/DefaultSystem",
+        ]
+    return template_paths_for_effect(effect_type)
 
 
 def annotate_asset(unreal_module, asset, spec: dict) -> None:
