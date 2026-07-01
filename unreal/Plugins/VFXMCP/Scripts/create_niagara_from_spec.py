@@ -85,6 +85,11 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
     asset_path = f"{destination_path}/{asset_name}"
     template_result = create_niagara_system_from_template(unreal, spec, asset_path)
     material_result = create_vfx_material_assets(unreal, spec, destination_path)
+    renderer_result = assign_material_to_niagara_renderers(
+        unreal,
+        asset_path,
+        material_result.get("material_instance_path"),
+    )
     if template_result["created"]:
         unreal.EditorAssetLibrary.save_directory(destination_path, only_if_is_dirty=False, recursive=True)
         return {
@@ -93,8 +98,9 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
             "asset_path": asset_path,
             "template": template_result["template"],
             "materials": material_result,
+            "renderer_material_assignment": renderer_result,
             "spec_summary": summarize_spec(spec),
-            "message": "Created a non-empty Niagara System and generated VFX material assets from the analyzed reference images.",
+            "message": "Created a non-empty Niagara System, generated VFX material assets, and assigned the material instance to its sprite renderer.",
         }
 
     factory_result = create_niagara_system_asset(unreal, asset_name, destination_path)
@@ -107,6 +113,7 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
             "spec_summary": summarize_spec(spec),
             "template_errors": template_result["errors"],
             "materials": material_result,
+            "renderer_material_assignment": renderer_result,
             "message": "Created initial Niagara System asset and VFX material assets, but template duplication was unavailable.",
         }
 
@@ -118,6 +125,7 @@ def build_niagara_from_spec(spec: dict, destination_path: str) -> dict:
         "template_errors": template_result["errors"],
         "factory_errors": factory_result["errors"],
         "materials": material_result,
+        "renderer_material_assignment": renderer_result,
         "message": "Created destination folder and validated spec, but Niagara factory creation did not succeed in this UE Python API.",
     }
 
@@ -261,6 +269,109 @@ def create_or_replace_material_instance(unreal_module, instance_name: str, desti
     annotate_asset(unreal_module, material_instance, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(material_instance)
     return material_instance
+
+
+def assign_material_to_niagara_renderers(unreal_module, asset_path: str, material_instance_path: str | None) -> dict:
+    result = {
+        "asset_path": asset_path,
+        "material_instance_path": material_instance_path,
+        "assigned_count": 0,
+        "matched_renderers": [],
+        "errors": [],
+    }
+    if not material_instance_path:
+        result["errors"].append("No material instance path was produced.")
+        return result
+    if not hasattr(unreal_module, "ObjectIterator"):
+        result["errors"].append("Unreal ObjectIterator is not available in this Python API.")
+        return result
+
+    system_asset = unreal_module.EditorAssetLibrary.load_asset(asset_path)
+    material_instance = unreal_module.EditorAssetLibrary.load_asset(material_instance_path)
+    if not system_asset:
+        result["errors"].append(f"Niagara system could not be loaded: {asset_path}")
+        return result
+    if not material_instance:
+        result["errors"].append(f"Material instance could not be loaded: {material_instance_path}")
+        return result
+
+    asset_package = asset_path.rsplit("/", 1)[0]
+    asset_name = asset_path.rsplit("/", 1)[-1]
+    matched_objects = []
+    for obj in unreal_module.ObjectIterator():
+        class_name = safe_unreal_class_name(obj)
+        if class_name != "NiagaraSpriteRendererProperties":
+            continue
+        try:
+            outer_chain = object_outer_chain(obj)
+            if not is_renderer_owned_by_asset(outer_chain, asset_package, asset_name):
+                continue
+            matched_objects.append(obj)
+            set_renderer_material(unreal_module, obj, material_instance)
+            result["assigned_count"] += 1
+            result["matched_renderers"].append(
+                {
+                    "object": str(obj),
+                    "outer_chain": outer_chain,
+                    "material": str(obj.get_editor_property("material")),
+                }
+            )
+        except Exception as exc:
+            result["errors"].append(f"Renderer assignment failed for {obj}: {exc}")
+
+    if not matched_objects:
+        result["errors"].append(f"No Niagara sprite renderer was found for {asset_path}.")
+    else:
+        try:
+            unreal_module.EditorAssetLibrary.save_loaded_asset(system_asset)
+        except Exception as exc:
+            result["errors"].append(f"Could not save Niagara system after renderer assignment: {exc}")
+    return result
+
+
+def safe_unreal_class_name(obj) -> str | None:
+    try:
+        unreal_class = obj.get_class()
+        if unreal_class:
+            return unreal_class.get_name()
+    except Exception:
+        return None
+    return None
+
+
+def object_outer_chain(obj) -> list[str]:
+    chain = [str(obj)]
+    current = obj
+    seen = set()
+    while hasattr(current, "get_outer"):
+        try:
+            current = current.get_outer()
+        except Exception:
+            break
+        if not current:
+            break
+        current_text = str(current)
+        if current_text in seen:
+            break
+        seen.add(current_text)
+        chain.append(current_text)
+        if " Class 'Package'" in current_text:
+            break
+    return chain
+
+
+def is_renderer_owned_by_asset(outer_chain: list[str], asset_package: str, asset_name: str) -> bool:
+    package_prefix = f"{asset_package}/{asset_name}.{asset_name}:"
+    asset_object = f"{asset_package}/{asset_name}.{asset_name}"
+    return any(package_prefix in item or asset_object in item for item in outer_chain)
+
+
+def set_renderer_material(unreal_module, renderer, material_instance) -> None:
+    if hasattr(renderer, "modify"):
+        renderer.modify()
+    renderer.set_editor_property("material", material_instance)
+    if hasattr(renderer, "post_edit_change"):
+        renderer.post_edit_change()
 
 
 def configure_material_properties(unreal_module, material) -> None:
