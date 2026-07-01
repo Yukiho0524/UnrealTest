@@ -6,6 +6,7 @@ venv/
 
 # Generated VFX specs and local scratch output
 generated/
+.ui-server.pid
 
 # Unreal generated folders
 Binaries/

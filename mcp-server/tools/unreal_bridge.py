@@ -13,6 +13,13 @@ def write_spec_for_unreal(spec: VFXSpec, output_dir: Path) -> Path:
     return output_path
 
 
+def write_package_spec(spec: VFXSpec, output_dir: Path) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{spec.name}.vfxspec.json"
+    output_path.write_text(json.dumps(spec.to_dict(), indent=2), encoding="utf-8")
+    return output_path
+
+
 def create_niagara_from_spec_command(spec_path: Path, destination_path: str) -> list[str]:
     return [
         "unreal-python",

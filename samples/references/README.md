@@ -1,12 +1,16 @@
-# Reference Images
+# Reference Packages
 
-Drop source images here when testing the first goal.
+Drop one folder per target effect here.
 
-Recommended naming examples:
+Recommended package layout:
 
-- `magic_burst.png`
-- `fire_column.png`
-- `electric_spark.png`
-- `smoke_puff.png`
+```text
+fire/
+  images/
+    fire_column.png
+    ember_loop.gif
+  prompt.md
+  config.json
+```
 
-The MVP analyzer currently uses the filename to choose an initial `effect_type`, `motion`, palette, and particle defaults.
+The MVP analyzer combines the package name, media filenames, `prompt.md`, and optional `config.json` overrides into one `*.vfxspec.json` file.

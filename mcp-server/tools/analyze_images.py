@@ -5,7 +5,7 @@ from pathlib import Path
 from schemas import VFXParticles, VFXSource, VFXSpec, VFXTiming
 
 
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tga", ".exr"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tga", ".exr", ".gif"}
 
 
 def analyze_reference_folder(folder: Path) -> list[VFXSpec]:

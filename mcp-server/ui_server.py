@@ -1,0 +1,296 @@
+from __future__ import annotations
+
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlparse
+
+from project_registry import find_unreal_projects
+from tools.analyze_packages import analyze_effect_package, list_effect_packages
+from tools.unreal_bridge import create_niagara_from_spec_command, write_package_spec
+
+
+WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
+
+
+def run_ui(host: str, port: int, references_root: Path, output_root: Path) -> None:
+    references_root = resolve_from_workspace(references_root)
+    output_root = resolve_from_workspace(output_root)
+
+    class VFXMCPRequestHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            path = urlparse(self.path).path
+            if path == "/":
+                self.respond_html(render_index_html())
+                return
+            if path == "/api/state":
+                self.respond_json(build_state(references_root))
+                return
+            self.send_error(404, "Not found")
+
+        def do_POST(self) -> None:
+            path = urlparse(self.path).path
+            if path == "/api/analyze":
+                payload = self.read_json()
+                package_path = package_path_from_payload(references_root, payload)
+                spec = analyze_effect_package(package_path)
+                self.respond_json({"spec": spec.to_dict()})
+                return
+            if path == "/api/generate":
+                payload = self.read_json()
+                package_path = package_path_from_payload(references_root, payload)
+                destination_path = payload.get("destinationPath") or f"/Game/VFX/Generated/{package_path.name}"
+                spec = analyze_effect_package(package_path)
+                spec_path = write_package_spec(spec, output_root)
+                command = create_niagara_from_spec_command(spec_path, destination_path)
+                self.respond_json(
+                    {
+                        "spec": spec.to_dict(),
+                        "specFile": str(spec_path),
+                        "destinationPath": destination_path,
+                        "unrealCommand": command,
+                        "message": "Generated VFXSpec. Unreal asset creation is ready for the Unreal bridge step.",
+                    }
+                )
+                return
+            self.send_error(404, "Not found")
+
+        def read_json(self) -> dict:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length == 0:
+                return {}
+            body = self.rfile.read(length).decode("utf-8")
+            return json.loads(body)
+
+        def respond_html(self, html: str) -> None:
+            encoded = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def respond_json(self, payload: dict) -> None:
+            encoded = json.dumps(payload, indent=2).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def log_message(self, format: str, *args: object) -> None:
+            print(f"[vfx-mcp-ui] {self.address_string()} - {format % args}")
+
+    server = ThreadingHTTPServer((host, port), VFXMCPRequestHandler)
+    print(f"VFX MCP UI: http://{host}:{port}")
+    print(f"References: {references_root}")
+    print(f"Output: {output_root}")
+    server.serve_forever()
+
+
+def resolve_from_workspace(path: Path) -> Path:
+    if path.is_absolute():
+        return path
+    return WORKSPACE_ROOT / path
+
+
+def build_state(references_root: Path) -> dict:
+    return {
+        "workspaceRoot": str(WORKSPACE_ROOT),
+        "referencesRoot": str(references_root),
+        "packages": list_effect_packages(references_root),
+        "projects": find_unreal_projects(WORKSPACE_ROOT),
+    }
+
+
+def package_path_from_payload(references_root: Path, payload: dict) -> Path:
+    package_name = payload.get("packageName")
+    if not package_name:
+        raise ValueError("packageName is required")
+    return references_root / package_name
+
+
+def render_index_html() -> str:
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VFX MCP</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: #202124;
+      background: #f6f7f9;
+    }
+    body {
+      margin: 0;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+    h1 {
+      font-size: 28px;
+      margin: 0 0 6px;
+      letter-spacing: 0;
+    }
+    .subtitle {
+      margin: 0 0 24px;
+      color: #62666d;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+    section, aside {
+      background: #ffffff;
+      border: 1px solid #dfe3e8;
+      border-radius: 8px;
+      padding: 18px;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      margin: 14px 0 6px;
+    }
+    select, input {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #c6ccd3;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 14px;
+      background: #fff;
+    }
+    button {
+      border: 0;
+      border-radius: 6px;
+      background: #1663d8;
+      color: white;
+      padding: 10px 14px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 14px;
+      margin-right: 8px;
+    }
+    button.secondary {
+      background: #394150;
+    }
+    pre {
+      min-height: 420px;
+      overflow: auto;
+      background: #101418;
+      color: #d9f5e5;
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 13px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+    .meta {
+      color: #62666d;
+      font-size: 13px;
+      line-height: 1.5;
+      margin-top: 12px;
+    }
+    @media (max-width: 820px) {
+      main {
+        padding: 18px;
+      }
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>VFX MCP</h1>
+    <p class="subtitle">Generate a VFXSpec from a designer reference package and target an Unreal project path.</p>
+    <div class="layout">
+      <aside>
+        <label for="project">Unreal Project</label>
+        <select id="project"></select>
+
+        <label for="package">Effect Package</label>
+        <select id="package"></select>
+
+        <label for="destination">Destination Path</label>
+        <input id="destination" value="/Game/VFX/Generated/fire">
+
+        <button id="analyze">Analyze</button>
+        <button class="secondary" id="generate">Generate</button>
+
+        <div class="meta" id="meta"></div>
+      </aside>
+      <section>
+        <pre id="output">Loading...</pre>
+      </section>
+    </div>
+  </main>
+  <script>
+    const projectSelect = document.querySelector("#project");
+    const packageSelect = document.querySelector("#package");
+    const destinationInput = document.querySelector("#destination");
+    const output = document.querySelector("#output");
+    const meta = document.querySelector("#meta");
+
+    async function request(path, options = {}) {
+      const response = await fetch(path, {
+        headers: {"Content-Type": "application/json"},
+        ...options
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    }
+
+    function show(value) {
+      output.textContent = JSON.stringify(value, null, 2);
+    }
+
+    function selectedPayload() {
+      return {
+        projectPath: projectSelect.value,
+        packageName: packageSelect.value,
+        destinationPath: destinationInput.value
+      };
+    }
+
+    async function loadState() {
+      const state = await request("/api/state");
+      projectSelect.innerHTML = state.projects.map(project =>
+        `<option value="${project.path}">${project.name} (${project.engineAssociation})</option>`
+      ).join("");
+      packageSelect.innerHTML = state.packages.map(pkg =>
+        `<option value="${pkg.name}">${pkg.name} (${pkg.media_count} media)</option>`
+      ).join("");
+      if (state.packages[0]) {
+        destinationInput.value = `/Game/VFX/Generated/${state.packages[0].name}`;
+      }
+      meta.textContent = `References: ${state.referencesRoot}`;
+      show(state);
+    }
+
+    document.querySelector("#analyze").addEventListener("click", async () => {
+      show(await request("/api/analyze", {
+        method: "POST",
+        body: JSON.stringify(selectedPayload())
+      }));
+    });
+
+    document.querySelector("#generate").addEventListener("click", async () => {
+      show(await request("/api/generate", {
+        method: "POST",
+        body: JSON.stringify(selectedPayload())
+      }));
+    });
+
+    loadState().catch(error => output.textContent = error.stack || String(error));
+  </script>
+</body>
+</html>"""

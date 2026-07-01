@@ -1,0 +1,12 @@
+{
+  "effect_type": "fire_or_flame",
+  "motion": "rise_and_fade",
+  "render_mode": "sprite",
+  "duration_seconds": 1.0,
+  "looping": false,
+  "spawn_rate": 120,
+  "lifetime_seconds": 0.65,
+  "start_size": 14,
+  "end_size": 120,
+  "color_palette": ["#FFD36A", "#FF6A21", "#371008"]
+}

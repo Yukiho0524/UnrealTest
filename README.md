@@ -11,7 +11,7 @@ Prototype workspace for researching an Unreal MCP architecture that turns visual
 ## Current Architecture
 
 ```text
-Reference folder or URL
+Designer effect package or URL
   -> MCP intake tool
   -> image or page analysis
   -> VFXSpec JSON
@@ -33,7 +33,7 @@ specs/
   vfx_spec.schema.json       Portable VFX intent schema
 
 samples/
-  references/                Put source images here for local tests
+  references/                Designer effect packages, such as fire/
 
 unreal/
   UnrealTest.uproject        Unreal project descriptor pinned to UE 5.7
@@ -57,20 +57,38 @@ Open the Unreal project with:
 
 ## First Local Test
 
-Place images into `samples/references`, preferably with descriptive names such as:
+Place images or GIFs into an effect package, for example:
 
-- `magic_burst.png`
-- `fire_column.png`
-- `electric_spark.png`
-- `smoke_puff.png`
-
-Then run:
-
-```powershell
-python mcp-server/server.py analyze-folder samples/references --out generated/specs
+```text
+samples/references/fire/images/
 ```
 
-The command writes one JSON spec per image. The current analyzer uses filename heuristics so that the data contract can be tested before wiring in real vision analysis.
+Then run the local UI:
+
+```powershell
+.\mcp-server\Start-VFXMCPUI.ps1
+```
+
+Open:
+
+```text
+http://127.0.0.1:8765
+```
+
+The UI lets you choose:
+
+- Unreal project: `UnrealTest`
+- Effect package: `fire`
+- Destination path: `/Game/VFX/Generated/fire`
+
+You can also run the package analyzer directly:
+
+
+```powershell
+py mcp-server/server.py analyze-package samples/references/fire --out generated/specs
+```
+
+The command writes `generated/specs/fire.vfxspec.json`. The current analyzer uses package metadata and filename heuristics so that the data contract can be tested before wiring in real vision analysis.
 
 ## Next Implementation Pass
 
