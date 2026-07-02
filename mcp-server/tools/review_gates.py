@@ -27,6 +27,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_production_preview(patched_spec, unreal_result),
         gate_alpha_mask_applied(patched_spec, manifest),
         gate_reference_overlay_not_primary(patched_spec, unreal_result),
+        gate_texture_card_budget(patched_spec, manifest, unreal_result),
         gate_unreal_generation(unreal_result),
         gate_bootstrap_quality(manifest),
     ]
@@ -234,6 +235,78 @@ def gate_reference_overlay_not_primary(spec: dict[str, Any], unreal_result: dict
     }
 
 
+def gate_texture_card_budget(spec: dict[str, Any], manifest: dict[str, Any], unreal_result: dict[str, Any] | None) -> dict[str, Any]:
+    pass_issues = []
+    budgets_by_pass = {
+        entry.get("name"): entry.get("runtime_budget") or {}
+        for entry in manifest.get("passes", [])
+    }
+    for entry in manifest.get("passes", []):
+        metadata = entry.get("asset_metadata") or {}
+        budget = entry.get("runtime_budget") or {}
+        max_edge = int(budget.get("max_import_edge") or 4096)
+        width = int(metadata.get("width") or 0)
+        height = int(metadata.get("height") or 0)
+        if width and height and max(width, height) > max_edge:
+            pass_issues.append(
+                {
+                    "type": "texture_edge",
+                    "pass": entry.get("name"),
+                    "size": [width, height],
+                    "max_import_edge": max_edge,
+                    "asset": (entry.get("selected_asset") or {}).get("path"),
+                }
+            )
+
+    component_issues = []
+    components = preview_components(unreal_result)
+    emitters = ((spec.get("vfx_plan") or {}).get("emitters") or [])
+    for emitter in emitters:
+        pass_name = asset_pass_for_emitter(spec.get("effect_type"), emitter)
+        budget = budgets_by_pass.get(pass_name) or role_budget_for_emitter(emitter)
+        max_scale = float(budget.get("max_preview_scale") or 99.0)
+        max_area = float(budget.get("max_card_area") or 999.0)
+        emitter_name = str(emitter.get("name") or "")
+        for component in components:
+            component_name = str(component.get("name") or "")
+            if emitter_name not in component_name:
+                continue
+            transform = component.get("transform") or {}
+            scale = transform.get("scale") or []
+            if len(scale) < 2:
+                continue
+            sx = abs(float(scale[0]))
+            sy = abs(float(scale[1]))
+            area = sx * sy
+            if max(sx, sy) > max_scale or area > max_area:
+                component_issues.append(
+                    {
+                        "type": "preview_card_scale",
+                        "component": component_name,
+                        "pass": pass_name,
+                        "scale": [round(sx, 3), round(sy, 3)],
+                        "area": round(area, 3),
+                        "max_preview_scale": max_scale,
+                        "max_card_area": max_area,
+                    }
+                )
+
+    ok = not pass_issues and not component_issues
+    return {
+        "name": "texture_card_budget",
+        "status": "pass" if ok else "fail",
+        "message": (
+            "Runtime textures and preview cards stay within the VFX size budget."
+            if ok
+            else "One or more textures/cards are too large and will read as ugly billboard sheets."
+        ),
+        "data": {
+            "texture_issues": pass_issues,
+            "component_issues": component_issues,
+        },
+    }
+
+
 def gate_unreal_generation(unreal_result: dict[str, Any] | None) -> dict[str, Any]:
     ok = bool(unreal_result and unreal_result.get("status") == "created_bundle")
     return {
@@ -274,6 +347,43 @@ def preview_components(unreal_result: dict[str, Any] | None) -> list[dict[str, A
     bundle = unreal_result.get("bundle") or {}
     preview = bundle.get("preview") or {}
     return preview.get("components") or []
+
+
+def asset_pass_for_emitter(effect_type: str | None, emitter: dict[str, Any]) -> str | None:
+    role = emitter.get("role")
+    if effect_type == "fire_or_flame":
+        mapping = {
+            "reference_matched_composite": "reference_matched_composite",
+            "reference_motion": "reference_motion_overlay",
+            "fire_pillar": "core_flame_flipbook",
+            "flame_slashes": "flame_slash_flipbook",
+            "ground_energy_ring": "ground_ring_mask",
+            "impact_core": "impact_flash_mask",
+            "atmospheric_wisp": "smoke_heat_flipbook",
+            "detail_particles": "ember_sprite_set",
+        }
+        return mapping.get(role)
+    if effect_type == "electric_arc":
+        if role in {"primary_bolt", "secondary_bolts"}:
+            return "bolt_branch_set"
+        if role == "impact_core":
+            return "impact_flash_mask"
+    return None
+
+
+def role_budget_for_emitter(emitter: dict[str, Any]) -> dict[str, Any]:
+    role = emitter.get("role")
+    if role in {"reference_motion", "reference_matched_composite"}:
+        return {"max_preview_scale": 1.6, "max_card_area": 2.8}
+    if role in {"fire_pillar", "primary_bolt"}:
+        return {"max_preview_scale": 2.2, "max_card_area": 3.8}
+    if role in {"flame_slashes", "secondary_bolts"}:
+        return {"max_preview_scale": 2.0, "max_card_area": 3.2}
+    if role in {"ground_energy_ring", "supporting_glow"}:
+        return {"max_preview_scale": 2.6, "max_card_area": 6.8}
+    if role == "impact_core":
+        return {"max_preview_scale": 1.4, "max_card_area": 1.8}
+    return {"max_preview_scale": 1.8, "max_card_area": 3.0}
 
 
 def read_latest_unreal_result(effect_name: str) -> dict[str, Any] | None:

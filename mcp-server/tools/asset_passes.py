@@ -38,7 +38,7 @@ def build_asset_pass_manifest(
     derived_candidates = derive_bootstrap_candidates(package_path.name, pass_specs, reference_candidates, reference_media, output_root)
 
     entries = [
-        asset_pass_entry(pass_spec, manual_outputs, reference_candidates, derived_candidates, ai_outputs)
+        asset_pass_entry(pass_spec, manual_outputs, reference_candidates, derived_candidates, ai_outputs, package_path.name, output_root)
         for pass_spec in pass_specs
     ]
     required_entries = [entry for entry in entries if entry.get("required")]
@@ -136,8 +136,8 @@ def ensure_reference_matched_composite_emitter(spec: dict[str, Any], plan: dict[
             "motion": "locked_reference_matched_preview",
             "spawn_rate": 1.0,
             "lifetime_seconds": 0.9,
-            "start_size": 260.0,
-            "end_size": 260.0,
+            "start_size": 160.0,
+            "end_size": 160.0,
             "color_palette": spec.get("color_palette", ["#FFFFFF"]),
             "sprite_source": source_path,
             "notes": [
@@ -147,31 +147,31 @@ def ensure_reference_matched_composite_emitter(spec: dict[str, Any], plan: dict[
             "unreal_settings": {
                 "enabled": True,
                 "material": {
-                    "opacity": 0.86,
-                    "emissive_strength": 4.8,
+                    "opacity": 0.34,
+                    "emissive_strength": 2.2,
                     "blend_mode": "additive",
                 },
                 "timeline": {
                     "delay": 0.0,
                     "duration": 0.9,
-                    "opacity": [0.0, 0.86, 0.86, 0.0],
+                    "opacity": [0.0, 0.34, 0.3, 0.0],
                     "scale": [1.0, 1.0, 1.0, 1.0],
                     "rotation_speed": 0.0,
                 },
                 "preview": {
                     "card": {
                         "enabled": True,
-                        "location": [0.0, -8.0, 112.0],
+                        "location": [0.0, -10.0, 104.0],
                         "rotation": [90.0, 0.0, 0.0],
-                        "scale": [3.25, 3.25, 1.0],
+                        "scale": [1.45, 1.45, 1.0],
                     },
                     "niagara": {"enabled": False},
                 },
                 "niagara": {
                     "spawn_rate": 1.0,
                     "lifetime_seconds": 0.9,
-                    "start_size": 260.0,
-                    "end_size": 260.0,
+                    "start_size": 160.0,
+                    "end_size": 160.0,
                 },
             },
         },
@@ -213,34 +213,34 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         return
 
     if role == "reference_matched_composite":
-        timeline.update({"delay": 0.0, "duration": 0.9, "opacity": [0.0, 0.86, 0.86, 0.0], "scale": [1.0, 1.0, 1.0, 1.0], "rotation_speed": 0.0})
-        material["opacity"] = max(float(material.get("opacity", 0.86)), 0.86)
-        material["emissive_strength"] = max(float(material.get("emissive_strength", 4.8)), 4.8)
+        timeline.update({"delay": 0.0, "duration": 0.9, "opacity": [0.0, 0.34, 0.3, 0.0], "scale": [1.0, 1.0, 1.0, 1.0], "rotation_speed": 0.0})
+        material["opacity"] = min(float(material.get("opacity", 0.34)), 0.34)
+        material["emissive_strength"] = min(float(material.get("emissive_strength", 2.2)), 2.2)
         material["blend_mode"] = "additive"
-        card.update({"enabled": True, "location": [0, -8, 112], "rotation": [90, 0, 0], "scale": [3.25, 3.25, 1]})
+        card.update({"enabled": True, "location": [0, -10, 104], "rotation": [90, 0, 0], "scale": [1.45, 1.45, 1]})
         niagara["enabled"] = False
     elif role == "fire_pillar":
         timeline.update({"delay": 0.07, "duration": 0.58, "opacity": [0.0, 0.92, 0.82, 0.0], "scale": [0.42, 1.12, 1.0, 0.68]})
         material["opacity"] = max(float(material.get("opacity", 0.54)), 0.78)
         material["emissive_strength"] = max(float(material.get("emissive_strength", 14.0)), 18.0)
-        card.update({"enabled": True, "location": [0, 0, 150], "rotation": [90, 0, 0], "scale": [1.25, 2.65, 1.15]})
+        card.update({"enabled": True, "location": [0, 0, 138], "rotation": [90, 0, 0], "scale": [1.0, 2.15, 1.0]})
         niagara["enabled"] = False
     elif role == "flame_slashes":
         timeline.update({"delay": 0.1, "duration": 0.52, "opacity": [0.0, 0.78, 0.58, 0.0], "scale": [0.55, 1.08, 1.16, 0.82]})
         material["opacity"] = max(float(material.get("opacity", 0.5)), 0.62)
         material["emissive_strength"] = max(float(material.get("emissive_strength", 8.5)), 11.0)
-        card.update({"enabled": True, "location": [0, -2, 78], "rotation": [90, 0, -10], "scale": [2.55, 1.5, 1]})
+        card.update({"enabled": True, "location": [0, -2, 68], "rotation": [90, 0, -10], "scale": [1.85, 1.1, 1]})
         niagara["enabled"] = False
     elif role == "ground_energy_ring":
         timeline.update({"delay": 0.02, "duration": 0.72, "opacity": [0.0, 0.9, 0.72, 0.0], "scale": [0.55, 1.12, 1.04, 1.28], "rotation_speed": 18.0})
         material["opacity"] = max(float(material.get("opacity", 0.72)), 0.76)
-        card.update({"enabled": True, "location": [0, 0, 4], "rotation": [0, 0, 0], "scale": [3.65, 3.65, 1]})
+        card.update({"enabled": True, "location": [0, 0, 4], "rotation": [0, 0, 0], "scale": [2.55, 2.55, 1]})
         niagara["enabled"] = False
     elif role == "impact_core":
         timeline.update({"delay": 0.0, "duration": 0.24, "opacity": [0.0, 1.0, 0.45, 0.0], "scale": [0.35, 1.22, 0.84, 0.0]})
         material["opacity"] = max(float(material.get("opacity", 0.8)), 0.86)
         material["emissive_strength"] = max(float(material.get("emissive_strength", 22.0)), 24.0)
-        card.update({"enabled": True, "location": [0, -1, 44], "rotation": [90, 0, 0], "scale": [1.55, 1.1, 1]})
+        card.update({"enabled": True, "location": [0, -1, 38], "rotation": [90, 0, 0], "scale": [1.05, 0.82, 1]})
         niagara["enabled"] = False
     elif role == "atmospheric_wisp":
         timeline.update({"delay": 0.18, "duration": 1.05, "opacity": [0.0, 0.24, 0.18, 0.0], "scale": [0.62, 1.0, 1.22, 1.46], "rotation_speed": 5.0})
@@ -300,6 +300,8 @@ def asset_pass_entry(
     reference_candidates: dict[str, list[dict[str, str]]],
     derived_candidates: dict[str, list[dict[str, str]]],
     ai_outputs: list[dict[str, str]],
+    package_name: str,
+    output_root: Path,
 ) -> dict[str, Any]:
     name = str(pass_spec.get("name") or "unknown_pass")
     candidates = [
@@ -308,8 +310,9 @@ def asset_pass_entry(
         *reference_candidates.get(name, []),
         *derived_candidates.get(name, []),
     ]
-    selected = candidates[0] if candidates else None
+    selected = prepare_runtime_asset(candidates[0], name, package_name, output_root) if candidates else None
     prompt = prompt_for_asset_pass(pass_spec)
+    budget = texture_budget_for_pass(name)
     return {
         "name": name,
         "required": bool(pass_spec.get("required")),
@@ -321,10 +324,66 @@ def asset_pass_entry(
         "selected_asset": selected,
         "candidates": candidates,
         "asset_metadata": asset_metadata_for_selected_asset(selected, name),
+        "runtime_budget": budget,
         "quality_note": quality_note_for_selected_asset(selected),
         "generation_prompt": prompt,
         "negative_prompt": "watermark, text, logo, UI, character, weapon, environment, rectangular card border, atlas grid",
     }
+
+
+def prepare_runtime_asset(selected: dict[str, str], pass_name: str, package_name: str, output_root: Path) -> dict[str, str]:
+    path = Path(selected.get("path", ""))
+    if not path.exists() or path.suffix.lower() not in IMAGE_SUFFIXES:
+        return selected
+    budget = texture_budget_for_pass(pass_name)
+    max_edge = int(budget.get("max_import_edge", 1024))
+    try:
+        with Image.open(path) as image:
+            width, height = image.size
+            if max(width, height) <= max_edge:
+                return {**selected, "runtime_resized": "false", "runtime_max_edge": str(max_edge)}
+            resized = image.convert("RGBA")
+            ratio = max_edge / max(width, height)
+            target_size = (max(1, int(width * ratio)), max(1, int(height * ratio)))
+            resized = resized.resize(target_size, Image.Resampling.LANCZOS)
+    except Exception:
+        return selected
+
+    runtime_dir = output_root / package_name / "runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    runtime_path = runtime_dir / f"{package_name}_{safe_file_token(pass_name)}_{safe_file_token(path.stem)}_rt.png"
+    resized.save(runtime_path)
+    return {
+        **selected,
+        "path": str(runtime_path),
+        "original_path": str(path),
+        "runtime_resized": "true",
+        "runtime_max_edge": str(max_edge),
+    }
+
+
+def texture_budget_for_pass(pass_name: str) -> dict[str, Any]:
+    budgets = {
+        "reference_matched_composite": {"max_import_edge": 512, "max_preview_scale": 1.6, "max_card_area": 2.8, "usage": "small_similarity_anchor"},
+        "reference_motion_overlay": {"max_import_edge": 1024, "max_preview_scale": 1.8, "max_card_area": 3.2, "usage": "preview_only_motion_target"},
+        "beauty_flipbook": {"max_import_edge": 1024, "max_preview_scale": 2.2, "max_card_area": 4.4, "usage": "source_or_flipbook"},
+        "core_flame_flipbook": {"max_import_edge": 1024, "max_preview_scale": 2.2, "max_card_area": 2.4, "usage": "primary_shaped_layer"},
+        "flame_slash_flipbook": {"max_import_edge": 1024, "max_preview_scale": 2.0, "max_card_area": 2.2, "usage": "secondary_shaped_layer"},
+        "ground_ring_mask": {"max_import_edge": 768, "max_preview_scale": 2.6, "max_card_area": 6.8, "usage": "ground_anchor"},
+        "impact_flash_mask": {"max_import_edge": 512, "max_preview_scale": 1.2, "max_card_area": 1.2, "usage": "short_flash"},
+        "smoke_heat_flipbook": {"max_import_edge": 768, "max_preview_scale": 1.6, "max_card_area": 2.6, "usage": "low_opacity_support"},
+        "ember_sprite_set": {"max_import_edge": 512, "max_preview_scale": 0.8, "max_card_area": 0.8, "usage": "small_particle_detail"},
+        "bolt_branch_set": {"max_import_edge": 1024, "max_preview_scale": 2.2, "max_card_area": 3.8, "usage": "thin_directional_layer"},
+        "alpha_mask": {"max_import_edge": 1024, "max_preview_scale": 2.2, "max_card_area": 4.4, "usage": "mask_data"},
+        "distortion_flow": {"max_import_edge": 512, "max_preview_scale": 1.6, "max_card_area": 2.6, "usage": "flow_data"},
+        "normal_or_lighting": {"max_import_edge": 512, "max_preview_scale": 1.6, "max_card_area": 2.6, "usage": "lighting_data"},
+    }
+    return budgets.get(pass_name, {"max_import_edge": 768, "max_preview_scale": 1.8, "max_card_area": 3.0, "usage": "generic_vfx_layer"})
+
+
+def safe_file_token(value: str) -> str:
+    token = "".join(character if character.isalnum() else "_" for character in value)
+    return token.strip("_") or "asset"
 
 
 def asset_metadata_for_selected_asset(selected: dict[str, str] | None, pass_name: str | None = None) -> dict[str, Any]:

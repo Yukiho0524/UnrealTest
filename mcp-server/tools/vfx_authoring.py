@@ -8,6 +8,7 @@ def production_notes_for_plan(effect_type: str, visual_profile: dict[str, Any], 
         "Build the effect as a composition, not a single particle spray.",
         "Keep the primary silhouette readable first, then layer secondary particles and accents.",
         "Use texture alpha and emissive material response to carry shape; Niagara spawn rate should not be the main source of visual complexity.",
+        "Keep source textures and preview cards within a clear size budget; oversized billboard sheets quickly reveal texture artifacts.",
     ]
 
     roles = {emitter.get("role") for emitter in emitters}
@@ -70,10 +71,12 @@ def quality_target_for_plan(effect_type: str, visual_profile: dict[str, Any], em
                 "uniform particle spray as main shape",
                 "visible flipbook atlas/grid",
                 "opaque rectangular cards",
+                "oversized reference images used as full effect cards",
             ],
             "required": [
                 "layered emitters with clear roles",
                 "alpha-shaped sprites or flipbooks",
+                "small-to-medium texture cards that are supported by particles, ribbons, or mesh layers",
                 "material-driven emissive, opacity, and distortion controls",
                 "preview asset that plays in Unreal with Realtime enabled",
             ],
@@ -134,9 +137,9 @@ def asset_passes_for_plan(effect_type: str, visual_profile: dict[str, Any], emit
         {
             "name": "reference_matched_composite",
             "source": "local_layer_composite_or_ai_video",
-            "format": "transparent_or_additive_preview_atlas",
-            "purpose": "High-similarity viewport fidelity anchor generated from the layered passes.",
-            "unreal_usage": "Preview composite card behind editable production layers",
+            "format": "transparent_single_preview_png",
+            "purpose": "Small high-similarity viewport fidelity anchor generated from the layered passes.",
+            "unreal_usage": "Preview-only small composite card behind editable production layers",
             "required": False,
         },
     ]
@@ -245,8 +248,13 @@ def review_gates_for_plan(effect_type: str, visual_profile: dict[str, Any], emit
         },
         {
             "name": "material_quality",
-            "pass_condition": "No visible atlas grid or rectangular billboard; emissive core, edge alpha, and haze/distortion are separated.",
-            "failure_action": "Regenerate alpha/motion/distortion passes and verify material graph inputs.",
+            "pass_condition": "No visible atlas grid, oversized billboard, or rectangular card; emissive core, edge alpha, and haze/distortion are separated.",
+            "failure_action": "Regenerate alpha/motion/distortion passes, downsize card textures, and verify material graph inputs.",
+        },
+        {
+            "name": "texture_card_budget",
+            "pass_condition": "Runtime VFX textures and preview card scales stay within the role budget.",
+            "failure_action": "Downsample the texture, split it into smaller layers, or reduce the preview card scale.",
         },
         {
             "name": "layer_balance",

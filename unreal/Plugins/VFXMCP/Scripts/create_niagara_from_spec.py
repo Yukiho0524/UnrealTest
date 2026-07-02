@@ -291,9 +291,9 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
                 "ReferenceCard",
                 plane_mesh,
                 reference_card.get("material_instance_path"),
-                location=(0.0, 0.0, 155.0),
+                location=(0.0, -12.0, 118.0),
                 rotation=(90.0, 0.0, 0.0),
-                scale=(2.6, 2.6, 2.6),
+                scale=(1.35, 1.35, 1.0),
             )
             result["components"].append(component)
 
@@ -1148,16 +1148,18 @@ def configure_texture_asset(unreal_module, texture) -> None:
     try_set_editor_property(texture, "srgb", True)
     if hasattr(unreal_module, "TextureCompressionSettings"):
         try_set_editor_property(texture, "compression_settings", unreal_module.TextureCompressionSettings.TC_DEFAULT)
-    if hasattr(unreal_module, "TextureMipGenSettings"):
-        try_set_editor_property(texture, "mip_gen_settings", unreal_module.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+    set_texture_group(unreal_module, texture, "TEXTUREGROUP_Effects")
+    set_texture_mip_setting(unreal_module, texture, "TMGS_FROM_TEXTURE_GROUP", "TMGS_SIMPLE_AVERAGE")
+    try_set_editor_property(texture, "max_texture_size", 1024)
 
 
 def configure_alpha_texture_asset(unreal_module, texture) -> None:
     try_set_editor_property(texture, "srgb", False)
     if hasattr(unreal_module, "TextureCompressionSettings"):
         try_set_editor_property(texture, "compression_settings", unreal_module.TextureCompressionSettings.TC_MASKS)
-    if hasattr(unreal_module, "TextureMipGenSettings"):
-        try_set_editor_property(texture, "mip_gen_settings", unreal_module.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+    set_texture_group(unreal_module, texture, "TEXTUREGROUP_Effects")
+    set_texture_mip_setting(unreal_module, texture, "TMGS_NO_MIPMAPS")
+    try_set_editor_property(texture, "max_texture_size", 1024)
 
 
 def configure_distortion_texture_asset(unreal_module, texture) -> None:
@@ -1169,7 +1171,28 @@ def configure_distortion_texture_asset(unreal_module, texture) -> None:
         if compression is not None:
             try_set_editor_property(texture, "compression_settings", compression)
     if hasattr(unreal_module, "TextureMipGenSettings"):
-        try_set_editor_property(texture, "mip_gen_settings", unreal_module.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+        set_texture_mip_setting(unreal_module, texture, "TMGS_NO_MIPMAPS")
+    try_set_editor_property(texture, "max_texture_size", 512)
+
+
+def set_texture_group(unreal_module, texture, group_name: str) -> None:
+    texture_group = getattr(unreal_module, "TextureGroup", None)
+    if texture_group is None:
+        return
+    group = getattr(texture_group, group_name, None)
+    if group is not None:
+        try_set_editor_property(texture, "lod_group", group)
+
+
+def set_texture_mip_setting(unreal_module, texture, *setting_names: str) -> None:
+    mip_settings = getattr(unreal_module, "TextureMipGenSettings", None)
+    if mip_settings is None:
+        return
+    for setting_name in setting_names:
+        setting = getattr(mip_settings, setting_name, None)
+        if setting is not None:
+            try_set_editor_property(texture, "mip_gen_settings", setting)
+            return
 
 
 def create_or_replace_material(unreal_module, material_name: str, destination_path: str, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None):

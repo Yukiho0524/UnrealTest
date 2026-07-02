@@ -1,72 +1,45 @@
-# Unreal VFX Authoring Notes
+# Unreal VFX 生成規則筆記
 
-本文件整理 Unreal Niagara 特效製作面原則，作為本專案 `vfx_plan` 與 Unreal bridge 擴充依據。
+這份筆記記錄目前 VFX MCP 生成器要遵守的 Unreal / Niagara 製作方向。目標不是把參考圖直接貼到場景裡，而是把參考拆成可控的遊戲特效層。
 
-## 核心觀念
+## 核心原則
 
-- Niagara System 是完整特效的容器，通常由多個 emitter 組合而成。
-- Emitter 不應全部做同一件事；常見分層包含主體、細節粒子、柔光、拖尾、煙霧、貼花、衝擊波與後段殘留。
-- Sprite renderer 本質上是面向相機的 2D plane，外觀主要依賴 texture alpha、material、sprite size、rotation 與 per-particle material parameters。
-- 參考圖轉特效時，先保留主視覺剪影，再補動態粒子；不要只提高 spawn rate。
-- Niagara 的可調參數應該暴露在 emitter/system 層，讓後續可以迭代大小、生命週期、顏色、透明度、旋轉、速度與噪聲。
-- 完成視覺後才做 Effect Type / scalability，避免性能設定太早限制探索。
+- Niagara 的 Sprite Renderer 適合小到中型的 alpha sprite、flipbook、glow、flash，不適合把整張參考圖放很大當主效果。
+- 需要方向感、弧線、分支或較立體的讀形時，優先拆成 ribbon、mesh、bolt card、ground card 或多個小型 sprite layer。
+- 主讀形先成立，再加火星、煙、glow、distortion。不要用增加粒子數量掩蓋主形狀不對。
+- 大圖大卡會讓材質邊界、壓縮、mip、UV、解析度問題全部被放大，看起來會像破圖或平面貼片。
+- 參考圖可以作為 preview-only 對位層，但不能成為最終主視覺。
 
-## 本專案對應設計
+## 貼圖與卡片預算
 
-- `reference_card_source`：由參考圖萃取主視覺剪影，避免結果只剩噴粒子。
-- `composition_layers`：列出主視覺 card、主要 emitter、細節 emitter、柔光等層級。
-- `production_notes`：把製作面的注意事項寫入 spec，提醒 Unreal bridge 下一步如何合成。
-- `vfx_plan.emitters`：每個 emitter 對應一個可獨立生成與檢查的 Niagara/material/texture layer。
-- `composition_layers[].module_stack`：描述該層應該使用的 Niagara 模組，例如 Spawn、Initialize Particle、Curl Noise、Color/Alpha Over Life、Scale Sprite Size。
-- `composition_layers[].tuning`：記錄 spawn rate、life、size、opacity、rotation variation 等可調方向，讓 UI 與 Unreal bridge 後續能做更細的調整。
+- `reference_matched_composite`：最多 512px，preview scale 不超過 1.6，只能當小型相似度錨點。
+- `core_flame_flipbook`、`flame_slash_flipbook`：最多 1024px atlas，靠 alpha 與 flipbook 動態讀形，不靠放大整張圖。
+- `ground_ring_mask`：最多 768px，允許較大的地面 scale，但要是環/符文形狀，不可是一整張方形卡。
+- `impact_flash_mask`：最多 512px，短暫爆亮，尺寸要小。
+- `ember_sprite_set`：最多 512px，小粒子用，不可當主效果。
+- `distortion_flow`、`normal_or_lighting`：最多 512px，資料貼圖不做主色彩。
 
-## 下一步
+生成器現在會把超過預算的輸入圖縮到 runtime 版本，再匯入 Unreal。review 也會檢查 `texture_card_budget`，避免貼圖太大又被放成大卡。
 
-- 改用不切換 World 的安全預覽方式，避免 Unreal Python 開啟 map asset 時觸發 `World Memory Leaks` crash。
-- 將 bundle systems 進一步合成成單一 Niagara System 內的多 emitter。
-- 將 `production_notes` 轉成實際 Niagara module 設定，例如 size over life、color over life、rotation rate、curl noise、sub UV/flipbook。
+## Fire 分層
 
-## 已落地的安全預覽流程
+- `central_fire_pillar`：主要垂直火柱，承擔主 silhouette。
+- `side_flame_slashes`：左右破碎火舌，打破單根噴泉感。
+- `ground_rune_ring`：地面火環或符文，提供落點與比例。
+- `impact_flash`：起始瞬間的短暫高亮。
+- `smoke_dust_crown`：低亮度煙/熱擾動，只做支撐，不遮住火。
+- `ember_sparks`：稀疏火星，不能變成主畫面。
+- `reference_matched_composite`：小型 preview 錨點，只用來對比相似度。
 
-- `Generate Unreal Assets` 會建立多個 layer asset：reference card、主 `NS_`、細節 `NS_`、各層 texture/material/material instance。
-- 先前的 `L_<name>_VFXPreview` map preview 已停用，生成時會嘗試清掉舊的 unsafe preview level。
-- `Generate Unreal Assets` 會建立 `BP_<name>_VFXPreview` Blueprint Actor，內含 reference card、各層材質平面與 Niagara components。
-- `Open In Unreal` 優先開 `BP_<name>_VFXPreview`，並同步相關 bundle assets 到 Content Browser，不再由 Python 開啟 World/Map asset。
+## Unreal 匯入規則
 
-## 後續真正要再強化的地方
+- 彩色 VFX sprite 使用 Effects texture group，並允許 mipmaps，避免大卡縮放時鋸齒和閃爍。
+- Alpha mask 與 distortion flow 保持資料貼圖邏輯，尺寸較小，避免額外模糊。
+- Preview Blueprint 使用多個 layer card 與 Niagara layer 組合，不再產生不穩定的 map preview。
+- `Open In Unreal` 應優先開 `BP_<name>_VFXPreview`，用 Content Browser 同步相關材質與 Niagara 系統。
 
-- 把目前分開的 Niagara layer 合成為同一個 Niagara System 內的多個 emitter。
-- 依 `module_stack` 實際設定 velocity、curl noise、color/alpha over life、sprite size over life、rotation rate。
-- 將 GIF/序列幀轉成 flipbook texture，讓主體不只是靜態 reference card。
-- 若要做場景預覽，改用 Editor Utility 或使用者手動開啟關卡，不從 `-ExecCmds=py` 直接呼叫 `open_editor_for_assets` 開 World。
+## 參考來源
 
-## 2026-07-01 網路資料補充後的製作規則
-
-參考 Epic Niagara 文件後，火焰類效果不應只使用一個 particle spray。新版生成器會把 `fire_or_flame` 預設拆成五層：
-
-- `core_flame`：主火舌，負責主要剪影。
-- `outer_flame_wisps`：外焰 breakup，避免主體像一張平面卡。
-- `base_glow`：底部熱光/落地光，先建立視覺重量。
-- `smoke_heat_wisp`：低透明煙/熱擾動，軟化邊緣。
-- `ember_sparks`：少量短生命火星，只作細節，不主導形狀。
-
-材質上也要分層：core 可以高 emissive；outer flame 比 core 低；base glow 低透明廣域；smoke/heat 使用低 emissive translucent；reference card 只能當剪影輔助，不應整張爆亮。
-
-## Unreal 參數覆寫
-
-每個 emitter 會帶 `unreal_settings`，讓 Unreal 端能設定材質與 Blueprint 預覽細節。設計師可在資料包 `config.json` 用 `layer_overrides` 覆寫：
-
-- `material.opacity`
-- `material.emissive_strength`
-- `material.blend_mode`
-- `preview.card.enabled`
-- `preview.card.location / rotation / scale`
-- `preview.niagara.location / rotation / scale`
-- `niagara.spawn_rate / lifetime_seconds / start_size / end_size` 作為 metadata 與後續 Niagara module authoring 依據
-
-參考來源：
-
-- Epic Niagara Overview: https://dev.epicgames.com/documentation/unreal-engine/overview-of-niagara-effects-for-unreal-engine
-- Epic Niagara Renderers: https://dev.epicgames.com/documentation/unreal-engine/render-module-reference-for-niagara-effects-in-unreal-engine
-- Epic Niagara Fluids: https://dev.epicgames.com/documentation/unreal-engine/niagara-fluids-in-unreal-engine
-- Epic Niagara Fluids Reference: https://dev.epicgames.com/documentation/unreal-engine/niagara-fluids-reference-in-unreal-engine
+- Epic Niagara Renderers: https://dev.epicgames.com/documentation/en-us/unreal-engine/render-module-reference-for-niagara-effects-in-unreal-engine
+- Epic Niagara Overview: https://dev.epicgames.com/documentation/en-us/unreal-engine/overview-of-niagara-effects-for-unreal-engine
+- Epic Texture Import Guide: https://dev.epicgames.com/documentation/en-us/unreal-engine/importing-images-and-textures-in-unreal-engine
