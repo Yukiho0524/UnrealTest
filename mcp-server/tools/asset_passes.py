@@ -102,8 +102,10 @@ def apply_asset_pass_manifest_to_spec_dict(spec: dict[str, Any], manifest: dict[
         atlas = asset_pass.get("asset_metadata", {}).get("atlas")
         if atlas and selected_path == selected.get("path"):
             material["flipbook"] = atlas
+            material["preview_playback"] = "material_flipbook"
         elif "flipbook" in material:
             material.pop("flipbook", None)
+            material.pop("preview_playback", None)
         if should_apply_shared_alpha(pass_name, selected_path, alpha_path):
             material["alpha_source"] = alpha_path
             material["alpha_usage"] = "multiply_texture_alpha"
@@ -190,6 +192,12 @@ def apply_production_preview_layers(spec: dict[str, Any], manifest: dict[str, An
     if effect_type == "fire_or_flame":
         plan["preview_mode"] = "production_layers"
         plan["primary_emitter"] = "central_fire_pillar"
+        plan["playback"] = {
+            "mode": "material_flipbook",
+            "duration_seconds": (spec.get("timing") or {}).get("duration_seconds", spec.get("duration_seconds", 1.25)),
+            "looping": bool((spec.get("timing") or {}).get("looping", spec.get("looping", True))),
+            "preview_instruction": "Open the preview Blueprint, enable Realtime, or press Play/Simulate to see flipbook-driven layer playback.",
+        }
         for emitter in emitters:
             apply_fire_production_preview(emitter)
     elif effect_type == "electric_arc":
@@ -328,9 +336,29 @@ def asset_pass_for_emitter(effect_type: str | None, emitter: dict[str, Any]) -> 
 def sprite_path_for_emitter(pass_name: str, selected: dict[str, str], emitter: dict[str, Any]) -> str | None:
     role = emitter.get("role")
     preview_path = selected.get("preview_frame_path")
+    if playable_firestorm_atlas(selected, emitter):
+        return selected.get("path")
     if preview_path and role in {"fire_pillar", "flame_slashes", "ground_energy_ring", "impact_core", "atmospheric_wisp"}:
         return preview_path
     return selected.get("path")
+
+
+def playable_firestorm_atlas(selected: dict[str, str], emitter: dict[str, Any]) -> bool:
+    if not selected.get("atlas_columns") or not selected.get("atlas_rows"):
+        return False
+    text = " ".join(
+        str(value or "")
+        for value in (
+            emitter.get("name"),
+            emitter.get("motion"),
+            emitter.get("material_style"),
+            emitter.get("sprite_shape"),
+            selected.get("role"),
+            selected.get("source"),
+            selected.get("path"),
+        )
+    ).lower()
+    return "firestorm" in text and emitter.get("role") in {"fire_pillar", "flame_slashes", "ground_energy_ring", "impact_core"}
 
 
 def asset_pass_entry(

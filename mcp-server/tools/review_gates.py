@@ -381,11 +381,12 @@ def gate_texture_card_budget(spec: dict[str, Any], manifest: dict[str, Any], unr
     component_issues = []
     components = preview_components(unreal_result)
     emitters = ((spec.get("vfx_plan") or {}).get("emitters") or [])
+    playback_mode = (((spec.get("vfx_plan") or {}).get("playback") or {}).get("mode") or "")
     for emitter in emitters:
         pass_name = asset_pass_for_emitter(spec.get("effect_type"), emitter)
         material = ((emitter.get("unreal_settings") or {}).get("material") or {})
         preview_card = (((emitter.get("unreal_settings") or {}).get("preview") or {}).get("card") or {})
-        if preview_card.get("enabled") is not False and material.get("flipbook"):
+        if preview_card.get("enabled") is not False and material.get("flipbook") and playback_mode != "material_flipbook":
             component_issues.append(
                 {
                     "type": "preview_card_uses_flipbook_atlas",

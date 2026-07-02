@@ -234,11 +234,13 @@ def create_reference_card_assets(unreal_module, spec: dict, destination_path: st
 
 
 def safe_preview_summary(spec: dict, destination_path: str, systems: list[dict], reference_card: dict) -> dict:
+    plan = spec.get("vfx_plan") or {}
     result = {
         "asset_path": None,
         "created": False,
         "strategy": "content_browser_bundle_sync",
         "unsafe_level_preview_path": preview_level_path(spec, destination_path),
+        "playback": plan.get("playback") or {},
         "reference_card": reference_card,
         "layers": [
             {
