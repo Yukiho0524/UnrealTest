@@ -1305,7 +1305,6 @@ def connect_flipbook_uv_if_needed(unreal_module, material, texture_sample, spec:
         "MaterialExpressionTextureCoordinate",
         "MaterialExpressionTime",
         "MaterialExpressionConstant",
-        "MaterialExpressionConstant2Vector",
         "MaterialExpressionMultiply",
         "MaterialExpressionDivide",
         "MaterialExpressionFloor",
@@ -1329,12 +1328,13 @@ def connect_flipbook_uv_if_needed(unreal_module, material, texture_sample, spec:
 
     try:
         texcoord = library.create_material_expression(material, unreal_module.MaterialExpressionTextureCoordinate, -1510, -480)
+        try_set_editor_property(texcoord, "u_tiling", 1.0 / columns)
+        try_set_editor_property(texcoord, "v_tiling", 1.0 / rows)
         time = library.create_material_expression(material, unreal_module.MaterialExpressionTime, -1510, -300)
         fps_const = create_material_constant(unreal_module, material, fps, -1510, -190)
         columns_const = create_material_constant(unreal_module, material, columns, -1290, -80)
         rows_const = create_material_constant(unreal_module, material, rows, -1290, 40)
         frame_count_const = create_material_constant(unreal_module, material, frame_count, -1290, -210)
-        tile_size = create_material_constant2(unreal_module, material, 1.0 / columns, 1.0 / rows, -1290, -460)
 
         time_scaled = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -1280, -290)
         frame_floor = library.create_material_expression(material, unreal_module.MaterialExpressionFloor, -1080, -290)
@@ -1345,35 +1345,50 @@ def connect_flipbook_uv_if_needed(unreal_module, material, texture_sample, spec:
         column_offset = library.create_material_expression(material, unreal_module.MaterialExpressionDivide, -500, -250)
         row_offset = library.create_material_expression(material, unreal_module.MaterialExpressionDivide, -310, -120)
         offset = library.create_material_expression(material, unreal_module.MaterialExpressionAppendVector, -110, -200)
-        uv_scaled = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -1080, -460)
         atlas_uv = library.create_material_expression(material, unreal_module.MaterialExpressionAdd, 90, -350)
 
-        library.connect_material_expressions(time, "", time_scaled, "A")
-        library.connect_material_expressions(fps_const, "", time_scaled, "B")
-        library.connect_material_expressions(time_scaled, "", frame_floor, "")
-        library.connect_material_expressions(frame_floor, "", frame_loop, "A")
-        library.connect_material_expressions(frame_count_const, "", frame_loop, "B")
-        library.connect_material_expressions(frame_loop, "", column_mod, "A")
-        library.connect_material_expressions(columns_const, "", column_mod, "B")
-        library.connect_material_expressions(frame_loop, "", row_divide, "A")
-        library.connect_material_expressions(columns_const, "", row_divide, "B")
-        library.connect_material_expressions(row_divide, "", row_floor, "")
-        library.connect_material_expressions(column_mod, "", column_offset, "A")
-        library.connect_material_expressions(columns_const, "", column_offset, "B")
-        library.connect_material_expressions(row_floor, "", row_offset, "A")
-        library.connect_material_expressions(rows_const, "", row_offset, "B")
-        library.connect_material_expressions(column_offset, "", offset, "A")
-        library.connect_material_expressions(row_offset, "", offset, "B")
-        library.connect_material_expressions(texcoord, "", uv_scaled, "A")
-        library.connect_material_expressions(tile_size, "", uv_scaled, "B")
-        library.connect_material_expressions(uv_scaled, "", atlas_uv, "A")
-        library.connect_material_expressions(offset, "", atlas_uv, "B")
-        library.connect_material_expressions(atlas_uv, "", texture_sample, "Coordinates")
+        connect_material_expression_first(unreal_module, time, "", time_scaled, ["A"])
+        connect_material_expression_first(unreal_module, fps_const, "", time_scaled, ["B"])
+        connect_material_expression_first(unreal_module, time_scaled, "", frame_floor, ["", "Input", "X"])
+        connect_material_expression_first(unreal_module, frame_floor, "", frame_loop, ["A"])
+        connect_material_expression_first(unreal_module, frame_count_const, "", frame_loop, ["B"])
+        connect_material_expression_first(unreal_module, frame_loop, "", column_mod, ["A"])
+        connect_material_expression_first(unreal_module, columns_const, "", column_mod, ["B"])
+        connect_material_expression_first(unreal_module, frame_loop, "", row_divide, ["A"])
+        connect_material_expression_first(unreal_module, columns_const, "", row_divide, ["B"])
+        connect_material_expression_first(unreal_module, row_divide, "", row_floor, ["", "Input", "X"])
+        connect_material_expression_first(unreal_module, column_mod, "", column_offset, ["A"])
+        connect_material_expression_first(unreal_module, columns_const, "", column_offset, ["B"])
+        connect_material_expression_first(unreal_module, row_floor, "", row_offset, ["A"])
+        connect_material_expression_first(unreal_module, rows_const, "", row_offset, ["B"])
+        connect_material_expression_first(unreal_module, column_offset, "", offset, ["A"])
+        connect_material_expression_first(unreal_module, row_offset, "", offset, ["B"])
+        connect_material_expression_first(unreal_module, texcoord, "", atlas_uv, ["A"])
+        connect_material_expression_first(unreal_module, offset, "", atlas_uv, ["B"])
+        if not connect_material_expression_first(unreal_module, atlas_uv, "", texture_sample, ["Coordinates", "UVs", "Coordinate", "UV"]):
+            unreal_module.log_warning("VFX MCP could not connect flipbook UVs to texture sample; the atlas will render as a grid.")
     except Exception as exc:
         try:
             unreal_module.log_warning(f"VFX MCP could not build flipbook UV graph; using static atlas: {exc}")
         except Exception:
             pass
+
+
+def connect_material_expression_first(unreal_module, source, source_output: str, target, target_inputs: list[str]) -> bool:
+    library = unreal_module.MaterialEditingLibrary
+    last_error = None
+    for target_input in target_inputs:
+        try:
+            library.connect_material_expressions(source, source_output, target, target_input)
+            return True
+        except Exception as exc:
+            last_error = exc
+    try:
+        target_name = target.__class__.__name__
+        unreal_module.log_warning(f"VFX MCP material connection failed for {target_name} inputs {target_inputs}: {last_error}")
+    except Exception:
+        pass
+    return False
 
 
 def create_material_constant(unreal_module, material, value: float, x: int, y: int):
@@ -1386,6 +1401,8 @@ def create_material_constant2(unreal_module, material, x_value: float, y_value: 
     node = unreal_module.MaterialEditingLibrary.create_material_expression(material, unreal_module.MaterialExpressionConstant2Vector, x, y)
     try_set_editor_property(node, "r", float(x_value))
     try_set_editor_property(node, "g", float(y_value))
+    if hasattr(unreal_module, "LinearColor"):
+        try_set_editor_property(node, "constant", unreal_module.LinearColor(float(x_value), float(y_value), 0.0, 0.0))
     return node
 
 
