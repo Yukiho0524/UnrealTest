@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import json
 import copy
+import json
+import math
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageFile, ImageFilter
+from PIL import Image, ImageDraw, ImageFile, ImageFilter
 
 from tools.analyze_packages import analyze_effect_package, find_package_media
 
@@ -77,6 +78,9 @@ def apply_asset_pass_manifest_to_spec_dict(spec: dict[str, Any], manifest: dict[
     alpha_pass = passes_by_name.get("alpha_mask")
     alpha_selected = (alpha_pass or {}).get("selected_asset") or {}
     alpha_path = alpha_selected.get("path")
+    distortion_pass = passes_by_name.get("distortion_flow")
+    distortion_selected = (distortion_pass or {}).get("selected_asset") or {}
+    distortion_path = distortion_selected.get("path")
     for emitter in plan.get("emitters") or []:
         pass_name = asset_pass_for_emitter(patched.get("effect_type"), emitter)
         if not pass_name:
@@ -94,9 +98,12 @@ def apply_asset_pass_manifest_to_spec_dict(spec: dict[str, Any], manifest: dict[
         atlas = asset_pass.get("asset_metadata", {}).get("atlas")
         if atlas:
             material["flipbook"] = atlas
-        if alpha_path and Path(alpha_path).exists():
+        if should_apply_shared_alpha(pass_name, selected_path, alpha_path):
             material["alpha_source"] = alpha_path
             material["alpha_usage"] = "multiply_texture_alpha"
+        if should_apply_distortion(emitter, distortion_path):
+            material["distortion_source"] = distortion_path
+            material["distortion_strength"] = material.get("distortion_strength", 0.075)
     apply_production_preview_layers(patched, manifest)
     patched["vfx_plan"] = plan
     patched.setdefault("notes", []).append(
@@ -126,6 +133,7 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
     role = emitter.get("role")
     settings = emitter.setdefault("unreal_settings", {})
     material = settings.setdefault("material", {})
+    timeline = settings.setdefault("timeline", {})
     preview = settings.setdefault("preview", {})
     card = preview.setdefault("card", {})
     niagara = preview.setdefault("niagara", {})
@@ -139,30 +147,36 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         return
 
     if role == "fire_pillar":
+        timeline.update({"delay": 0.07, "duration": 0.58, "opacity": [0.0, 0.92, 0.82, 0.0], "scale": [0.42, 1.12, 1.0, 0.68]})
         material["opacity"] = max(float(material.get("opacity", 0.54)), 0.78)
         material["emissive_strength"] = max(float(material.get("emissive_strength", 14.0)), 18.0)
         card.update({"enabled": True, "location": [0, 0, 150], "rotation": [90, 0, 0], "scale": [1.25, 2.65, 1.15]})
         niagara["enabled"] = False
     elif role == "flame_slashes":
+        timeline.update({"delay": 0.1, "duration": 0.52, "opacity": [0.0, 0.78, 0.58, 0.0], "scale": [0.55, 1.08, 1.16, 0.82]})
         material["opacity"] = max(float(material.get("opacity", 0.5)), 0.62)
         material["emissive_strength"] = max(float(material.get("emissive_strength", 8.5)), 11.0)
         card.update({"enabled": True, "location": [0, -2, 78], "rotation": [90, 0, -10], "scale": [2.55, 1.5, 1]})
         niagara["enabled"] = False
     elif role == "ground_energy_ring":
+        timeline.update({"delay": 0.02, "duration": 0.72, "opacity": [0.0, 0.9, 0.72, 0.0], "scale": [0.55, 1.12, 1.04, 1.28], "rotation_speed": 18.0})
         material["opacity"] = max(float(material.get("opacity", 0.72)), 0.76)
         card.update({"enabled": True, "location": [0, 0, 4], "rotation": [0, 0, 0], "scale": [3.65, 3.65, 1]})
         niagara["enabled"] = False
     elif role == "impact_core":
+        timeline.update({"delay": 0.0, "duration": 0.24, "opacity": [0.0, 1.0, 0.45, 0.0], "scale": [0.35, 1.22, 0.84, 0.0]})
         material["opacity"] = max(float(material.get("opacity", 0.8)), 0.86)
         material["emissive_strength"] = max(float(material.get("emissive_strength", 22.0)), 24.0)
         card.update({"enabled": True, "location": [0, -1, 44], "rotation": [90, 0, 0], "scale": [1.55, 1.1, 1]})
         niagara["enabled"] = False
     elif role == "atmospheric_wisp":
+        timeline.update({"delay": 0.18, "duration": 1.05, "opacity": [0.0, 0.24, 0.18, 0.0], "scale": [0.62, 1.0, 1.22, 1.46], "rotation_speed": 5.0})
         material["opacity"] = max(float(material.get("opacity", 0.2)), 0.26)
         material["blend_mode"] = "translucent"
         card.update({"enabled": True, "location": [-4, 5, 122], "rotation": [90, 0, 7], "scale": [2.2, 2.0, 1]})
         niagara["enabled"] = False
     elif role == "detail_particles":
+        timeline.update({"delay": 0.12, "duration": 0.32, "opacity": [0.0, 0.9, 0.55, 0.0], "scale": [0.8, 1.0, 0.65, 0.25], "rotation_speed": 160.0})
         card["enabled"] = False
         niagara.update({"enabled": True, "location": [0, 0, 92], "rotation": [0, 0, 0], "scale": [0.65, 0.65, 0.65]})
 
@@ -186,8 +200,16 @@ def asset_pass_for_emitter(effect_type: str | None, emitter: dict[str, Any]) -> 
     if effect_type == "fire_or_flame":
         if role == "fire_pillar":
             return "core_flame_flipbook"
+        if role == "flame_slashes":
+            return "flame_slash_flipbook"
+        if role == "ground_energy_ring":
+            return "ground_ring_mask"
+        if role == "impact_core":
+            return "impact_flash_mask"
         if role == "atmospheric_wisp":
             return "smoke_heat_flipbook"
+        if role == "detail_particles":
+            return "ember_sprite_set"
     if effect_type == "electric_arc":
         if role in {"primary_bolt", "secondary_bolts"}:
             return "bolt_branch_set"
@@ -291,6 +313,31 @@ def derive_bootstrap_candidates(
         create_smoke_heat_pass(source_path, smoke_path)
         candidates.setdefault("smoke_heat_flipbook", []).append(derived_candidate(smoke_path, "soft_heat_haze_from_reference_alpha"))
 
+    if "flame_slash_flipbook" in target_names:
+        slash_path = output_dir / f"{package_name}_flame_slash_flipbook.png"
+        create_fire_atlas_pass(slash_path, "flame_slashes")
+        candidates.setdefault("flame_slash_flipbook", []).append(derived_candidate(slash_path, "procedural_side_flame_atlas"))
+
+    if "ground_ring_mask" in target_names:
+        ring_path = output_dir / f"{package_name}_ground_ring_mask.png"
+        create_fire_atlas_pass(ring_path, "ground_ring")
+        candidates.setdefault("ground_ring_mask", []).append(derived_candidate(ring_path, "procedural_molten_ring_atlas"))
+
+    if "impact_flash_mask" in target_names:
+        flash_path = output_dir / f"{package_name}_impact_flash_mask.png"
+        create_fire_atlas_pass(flash_path, "impact_flash")
+        candidates.setdefault("impact_flash_mask", []).append(derived_candidate(flash_path, "procedural_impact_flash_atlas"))
+
+    if "ember_sprite_set" in target_names:
+        ember_path = output_dir / f"{package_name}_ember_sprite_set.png"
+        create_fire_atlas_pass(ember_path, "embers")
+        candidates.setdefault("ember_sprite_set", []).append(derived_candidate(ember_path, "procedural_ember_sprite_set"))
+
+    if "distortion_flow" in target_names:
+        flow_path = output_dir / f"{package_name}_distortion_flow.png"
+        create_distortion_flow_pass(flow_path)
+        candidates.setdefault("distortion_flow", []).append(derived_candidate(flow_path, "procedural_heat_distortion_flow"))
+
     return candidates
 
 
@@ -364,6 +411,151 @@ def create_smoke_heat_pass(source_path: Path, output_path: Path) -> None:
         output.putdata(pixels)
         output = output.filter(ImageFilter.GaussianBlur(radius=1.4))
         output.save(output_path)
+
+
+def create_fire_atlas_pass(output_path: Path, pass_kind: str, columns: int = 4, rows: int = 4, frame_size: int = 256) -> None:
+    atlas = Image.new("RGBA", (columns * frame_size, rows * frame_size), (0, 0, 0, 0))
+    frame_count = columns * rows
+    for index in range(frame_count):
+        phase = index / max(frame_count - 1, 1)
+        frame = Image.new("RGBA", (frame_size, frame_size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(frame, "RGBA")
+        if pass_kind == "flame_slashes":
+            draw_flame_slash_frame(draw, frame_size, phase)
+        elif pass_kind == "ground_ring":
+            draw_ground_ring_frame(draw, frame_size, phase)
+        elif pass_kind == "impact_flash":
+            draw_impact_flash_frame(draw, frame_size, phase)
+        elif pass_kind == "embers":
+            draw_ember_frame(draw, frame_size, phase, index)
+        frame = frame.filter(ImageFilter.GaussianBlur(radius=0.22 if pass_kind != "embers" else 0.05))
+        x = (index % columns) * frame_size
+        y = (index // columns) * frame_size
+        atlas.alpha_composite(frame, (x, y))
+    atlas.save(output_path)
+
+
+def draw_flame_slash_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    pulse = math.sin(phase * math.pi)
+    for side, direction in enumerate((-1, 1)):
+        base_y = size * (0.67 - 0.08 * pulse)
+        points = []
+        for step in range(9):
+            t = step / 8
+            x = size * (0.5 + direction * (0.08 + 0.42 * t))
+            y = base_y - size * (0.18 * math.sin(t * math.pi) + 0.22 * t)
+            x += direction * math.sin(t * 9.0 + phase * 6.0 + side) * size * 0.035
+            y += math.cos(t * 7.0 + phase * 4.0) * size * 0.025
+            width = size * (0.075 * (1.0 - t) + 0.02)
+            points.append((x, y, width))
+        for color, scale in [((255, 74, 18, 80), 1.55), ((255, 166, 35, 160), 0.95), ((255, 245, 190, 210), 0.42)]:
+            polygon = ribbon_polygon(points, scale)
+            draw.polygon(polygon, fill=color)
+    draw.ellipse((size * 0.28, size * 0.58, size * 0.72, size * 0.82), fill=(255, 124, 25, int(78 * pulse)))
+
+
+def draw_ground_ring_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    pulse = math.sin(phase * math.pi)
+    cx = cy = size / 2
+    radius = size * (0.27 + 0.08 * phase)
+    for start in range(0, 360, 38):
+        gap = 9 + int(8 * math.sin(phase * 6.0 + start))
+        width = int(size * (0.022 + 0.018 * pulse))
+        box = (cx - radius, cy - radius * 0.72, cx + radius, cy + radius * 0.72)
+        draw.arc(box, start=start + gap, end=start + 27, fill=(255, 104, 18, 210), width=width)
+        draw.arc(box, start=start + 4 + gap, end=start + 18, fill=(255, 236, 170, 185), width=max(1, width // 2))
+    inner = size * (0.08 + 0.04 * pulse)
+    draw.ellipse((cx - inner, cy - inner * 0.7, cx + inner, cy + inner * 0.7), outline=(255, 176, 48, 135), width=max(1, int(size * 0.01)))
+
+
+def draw_impact_flash_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    pulse = max(0.0, 1.0 - phase * 1.3)
+    cx = cy = size / 2
+    for amount, color in [(0.55, (255, 92, 18, 90)), (0.34, (255, 178, 54, 150)), (0.18, (255, 250, 210, 230))]:
+        radius = size * amount * (0.25 + 0.9 * phase)
+        draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=(*color[:3], int(color[3] * pulse)))
+    for blade in range(8):
+        angle = blade * math.tau / 8 + phase * 0.6
+        length = size * (0.18 + 0.28 * pulse)
+        width = size * 0.035 * pulse
+        tip = (cx + math.cos(angle) * length, cy + math.sin(angle) * length)
+        left = (cx + math.cos(angle + 1.9) * width, cy + math.sin(angle + 1.9) * width)
+        right = (cx + math.cos(angle - 1.9) * width, cy + math.sin(angle - 1.9) * width)
+        draw.polygon([left, tip, right], fill=(255, 238, 190, int(150 * pulse)))
+
+
+def draw_ember_frame(draw: ImageDraw.ImageDraw, size: int, phase: float, seed: int) -> None:
+    cols = 4
+    rows = 4
+    cell = size / cols
+    for index in range(cols * rows):
+        x0 = (index % cols) * cell
+        y0 = (index // rows) * cell
+        local = (seed * 17 + index * 29) % 100 / 100
+        angle = local * math.tau + phase * 0.5
+        cx = x0 + cell * (0.48 + 0.16 * math.sin(local * 9.0))
+        cy = y0 + cell * (0.48 + 0.14 * math.cos(local * 7.0))
+        radius = cell * (0.08 + 0.08 * ((index + seed) % 5) / 4)
+        points = []
+        for vertex in range(3):
+            a = angle + vertex * math.tau / 3
+            points.append((cx + math.cos(a) * radius * 1.5, cy + math.sin(a) * radius))
+        draw.polygon(points, fill=(255, 224, 174, 230))
+        draw.polygon([(cx, cy), *points[:2]], fill=(255, 124, 26, 160))
+
+
+def ribbon_polygon(points: list[tuple[float, float, float]], scale: float) -> list[tuple[float, float]]:
+    left: list[tuple[float, float]] = []
+    right: list[tuple[float, float]] = []
+    for index, (x, y, width) in enumerate(points):
+        if index == 0:
+            nx, ny = points[index + 1][0] - x, points[index + 1][1] - y
+        elif index == len(points) - 1:
+            nx, ny = x - points[index - 1][0], y - points[index - 1][1]
+        else:
+            nx, ny = points[index + 1][0] - points[index - 1][0], points[index + 1][1] - points[index - 1][1]
+        length = math.hypot(nx, ny) or 1.0
+        px, py = -ny / length, nx / length
+        scaled = width * scale
+        left.append((x + px * scaled, y + py * scaled))
+        right.append((x - px * scaled, y - py * scaled))
+    return left + list(reversed(right))
+
+
+def create_distortion_flow_pass(output_path: Path, size: int = 256) -> None:
+    image = Image.new("RGBA", (size, size), (128, 128, 0, 255))
+    pixels = []
+    for y in range(size):
+        ny = y / max(size - 1, 1)
+        for x in range(size):
+            nx = x / max(size - 1, 1)
+            u = 128 + int(48 * math.sin(nx * 18.0 + ny * 7.0) + 22 * math.sin(ny * 31.0))
+            v = 128 + int(44 * math.cos(ny * 16.0 - nx * 8.0) + 18 * math.sin(nx * 25.0))
+            pixels.append((max(0, min(255, u)), max(0, min(255, v)), 128, 255))
+    image.putdata(pixels)
+    image.save(output_path)
+
+
+def should_apply_shared_alpha(pass_name: str | None, selected_path: str | None, alpha_path: str | None) -> bool:
+    if pass_name not in {"core_flame_flipbook", "smoke_heat_flipbook"}:
+        return False
+    if not selected_path or not alpha_path:
+        return False
+    selected = Path(selected_path)
+    alpha = Path(alpha_path)
+    if not selected.exists() or not alpha.exists():
+        return False
+    try:
+        with Image.open(selected) as selected_image, Image.open(alpha) as alpha_image:
+            return selected_image.size == alpha_image.size
+    except Exception:
+        return False
+
+
+def should_apply_distortion(emitter: dict[str, Any], distortion_path: str | None) -> bool:
+    if not distortion_path or not Path(distortion_path).exists():
+        return False
+    return emitter.get("role") in {"fire_pillar", "flame_slashes", "atmospheric_wisp", "primary_bolt", "secondary_bolts"}
 
 
 def quality_note_for_selected_asset(selected: dict[str, str] | None) -> str:

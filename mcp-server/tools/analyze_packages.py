@@ -552,9 +552,11 @@ def default_unreal_settings_for_emitter(emitter: VFXEmitterPlan, index: int) -> 
     material = default_material_settings_for_emitter(emitter)
     preview_card = default_preview_card_settings_for_emitter(emitter, index)
     niagara_transform = default_niagara_transform_for_emitter(emitter, index)
+    timeline = default_timeline_settings_for_emitter(emitter, index)
     return {
         "enabled": True,
         "material": material,
+        "timeline": timeline,
         "preview": {
             "card": preview_card,
             "niagara": niagara_transform,
@@ -566,6 +568,25 @@ def default_unreal_settings_for_emitter(emitter: VFXEmitterPlan, index: int) -> 
             "end_size": emitter.end_size,
         },
     }
+
+
+def default_timeline_settings_for_emitter(emitter: VFXEmitterPlan, index: int) -> dict[str, Any]:
+    role = emitter.role
+    if role == "reference_motion":
+        return {"delay": 0.0, "duration": emitter.lifetime_seconds, "opacity": [0.0, 0.45, 0.45, 0.0], "scale": [0.95, 1.0, 1.02, 1.0], "rotation_speed": 0.0}
+    if role == "impact_core":
+        return {"delay": 0.0, "duration": 0.24, "opacity": [0.0, 1.0, 0.45, 0.0], "scale": [0.35, 1.22, 0.84, 0.0], "rotation_speed": 0.0}
+    if role == "ground_energy_ring":
+        return {"delay": 0.02, "duration": 0.72, "opacity": [0.0, 0.9, 0.72, 0.0], "scale": [0.55, 1.12, 1.04, 1.28], "rotation_speed": 18.0}
+    if role == "fire_pillar":
+        return {"delay": 0.07, "duration": 0.58, "opacity": [0.0, 0.92, 0.82, 0.0], "scale": [0.42, 1.12, 1.0, 0.68], "rotation_speed": 0.0}
+    if role == "flame_slashes":
+        return {"delay": 0.1, "duration": 0.52, "opacity": [0.0, 0.78, 0.58, 0.0], "scale": [0.55, 1.08, 1.16, 0.82], "rotation_speed": -8.0}
+    if role == "atmospheric_wisp":
+        return {"delay": 0.18, "duration": 1.05, "opacity": [0.0, 0.24, 0.18, 0.0], "scale": [0.62, 1.0, 1.22, 1.46], "rotation_speed": 5.0}
+    if role in {"detail_particles", "accent_particles"}:
+        return {"delay": 0.12, "duration": emitter.lifetime_seconds, "opacity": [0.0, 0.9, 0.55, 0.0], "scale": [0.8, 1.0, 0.65, 0.25], "rotation_speed": 160.0}
+    return {"delay": round(index * 0.03, 2), "duration": emitter.lifetime_seconds, "opacity": [0.0, 1.0, 0.8, 0.0], "scale": [0.8, 1.0, 1.0, 0.8], "rotation_speed": 0.0}
 
 
 def default_material_settings_for_emitter(emitter: VFXEmitterPlan) -> dict[str, Any]:

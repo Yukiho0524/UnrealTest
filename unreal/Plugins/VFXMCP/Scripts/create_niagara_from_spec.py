@@ -313,6 +313,7 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
                     rotation=transform["rotation"],
                     scale=transform["scale"],
                 )
+                component["timeline"] = preview_timeline_for_emitter(emitter)
                 result["components"].append(component)
             niagara_transform = preview_niagara_transform_for_emitter(emitter, index)
             if niagara_transform:
@@ -324,6 +325,7 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
                     system.get("asset_path"),
                     transform=niagara_transform,
                 )
+                component["timeline"] = preview_timeline_for_emitter(emitter)
                 result["components"].append(component)
 
         unreal_module.BlueprintEditorLibrary.compile_blueprint(blueprint)
@@ -484,6 +486,14 @@ def preview_niagara_transform_for_emitter(emitter: dict, index: int) -> dict | N
             default_scale=(1.0, 1.0, 1.0),
         )
     return {"location": (-36.0, (index - 1) * 34.0, 118.0), "rotation": (0.0, 0.0, 0.0), "scale": (1.0, 1.0, 1.0)}
+
+
+def preview_timeline_for_emitter(emitter: dict) -> dict:
+    settings = emitter.get("unreal_settings", {})
+    timeline = settings.get("timeline", {}) if isinstance(settings, dict) else {}
+    if isinstance(timeline, dict):
+        return timeline
+    return {}
 
 
 def normalize_transform(
@@ -653,12 +663,14 @@ def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str)
     instance_path = f"{destination_path}/{instance_name}"
     texture_path = f"{destination_path}/{texture_name}"
     alpha_texture_path = f"{destination_path}/{texture_name}_Alpha"
+    distortion_texture_path = f"{destination_path}/{texture_name}_Distortion"
 
     result = {
         "material_path": material_path,
         "material_instance_path": instance_path,
         "texture_path": texture_path,
         "alpha_texture_path": None,
+        "distortion_texture_path": None,
         "palette": spec["color_palette"],
         "errors": [],
         "created": False,
@@ -667,10 +679,13 @@ def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str)
     try:
         texture = create_or_replace_sprite_texture(unreal_module, texture_name, destination_path, spec)
         alpha_texture = create_or_replace_alpha_texture(unreal_module, f"{texture_name}_Alpha", destination_path, spec)
+        distortion_texture = create_or_replace_distortion_texture(unreal_module, f"{texture_name}_Distortion", destination_path, spec)
         if alpha_texture:
             result["alpha_texture_path"] = alpha_texture_path
-        material = create_or_replace_material(unreal_module, material_name, destination_path, spec, texture, alpha_texture)
-        material_instance = create_or_replace_material_instance(unreal_module, instance_name, destination_path, material, spec, texture, alpha_texture)
+        if distortion_texture:
+            result["distortion_texture_path"] = distortion_texture_path
+        material = create_or_replace_material(unreal_module, material_name, destination_path, spec, texture, alpha_texture, distortion_texture)
+        material_instance = create_or_replace_material_instance(unreal_module, instance_name, destination_path, material, spec, texture, alpha_texture, distortion_texture)
         result["created"] = bool(material and material_instance)
         return result
     except Exception as exc:
@@ -712,6 +727,16 @@ def create_or_replace_alpha_texture(unreal_module, texture_name: str, destinatio
         return None
     texture = import_texture_from_source(unreal_module, texture_name, destination_path, alpha_source, spec)
     configure_alpha_texture_asset(unreal_module, texture)
+    unreal_module.EditorAssetLibrary.save_loaded_asset(texture)
+    return texture
+
+
+def create_or_replace_distortion_texture(unreal_module, texture_name: str, destination_path: str, spec: dict):
+    distortion_source = primary_distortion_source_path(spec)
+    if not distortion_source:
+        return None
+    texture = import_texture_from_source(unreal_module, texture_name, destination_path, distortion_source, spec)
+    configure_distortion_texture_asset(unreal_module, texture)
     unreal_module.EditorAssetLibrary.save_loaded_asset(texture)
     return texture
 
@@ -1135,7 +1160,19 @@ def configure_alpha_texture_asset(unreal_module, texture) -> None:
         try_set_editor_property(texture, "mip_gen_settings", unreal_module.TextureMipGenSettings.TMGS_NO_MIPMAPS)
 
 
-def create_or_replace_material(unreal_module, material_name: str, destination_path: str, spec: dict, sprite_texture=None, alpha_texture=None):
+def configure_distortion_texture_asset(unreal_module, texture) -> None:
+    try_set_editor_property(texture, "srgb", False)
+    if hasattr(unreal_module, "TextureCompressionSettings"):
+        compression = getattr(unreal_module.TextureCompressionSettings, "TC_VECTOR_DISPLACEMENTMAP", None)
+        if compression is None:
+            compression = getattr(unreal_module.TextureCompressionSettings, "TC_DEFAULT", None)
+        if compression is not None:
+            try_set_editor_property(texture, "compression_settings", compression)
+    if hasattr(unreal_module, "TextureMipGenSettings"):
+        try_set_editor_property(texture, "mip_gen_settings", unreal_module.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+
+
+def create_or_replace_material(unreal_module, material_name: str, destination_path: str, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None):
     material_path = f"{destination_path}/{material_name}"
     if unreal_module.EditorAssetLibrary.does_asset_exist(material_path):
         unreal_module.EditorAssetLibrary.delete_asset(material_path)
@@ -1147,13 +1184,13 @@ def create_or_replace_material(unreal_module, material_name: str, destination_pa
         raise RuntimeError(f"Could not create material: {material_path}")
 
     configure_material_properties(unreal_module, material, spec)
-    build_sprite_material_graph(unreal_module, material, spec, sprite_texture, alpha_texture)
+    build_sprite_material_graph(unreal_module, material, spec, sprite_texture, alpha_texture, distortion_texture)
     annotate_asset(unreal_module, material, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(material)
     return material
 
 
-def create_or_replace_material_instance(unreal_module, instance_name: str, destination_path: str, material, spec: dict, sprite_texture=None, alpha_texture=None):
+def create_or_replace_material_instance(unreal_module, instance_name: str, destination_path: str, material, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None):
     instance_path = f"{destination_path}/{instance_name}"
     if unreal_module.EditorAssetLibrary.does_asset_exist(instance_path):
         unreal_module.EditorAssetLibrary.delete_asset(instance_path)
@@ -1170,10 +1207,13 @@ def create_or_replace_material_instance(unreal_module, instance_name: str, desti
     unreal_module.MaterialEditingLibrary.set_material_instance_vector_parameter_value(material_instance, "OuterColor", palette[2 if len(palette) > 2 else 0])
     unreal_module.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(material_instance, "EmissiveStrength", inferred_emissive_strength(spec))
     unreal_module.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(material_instance, "Opacity", inferred_opacity(spec))
+    unreal_module.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(material_instance, "DistortionStrength", inferred_distortion_strength(spec))
     if sprite_texture:
         unreal_module.MaterialEditingLibrary.set_material_instance_texture_parameter_value(material_instance, "SpriteTexture", sprite_texture)
     if alpha_texture:
         unreal_module.MaterialEditingLibrary.set_material_instance_texture_parameter_value(material_instance, "AlphaTexture", alpha_texture)
+    if distortion_texture:
+        unreal_module.MaterialEditingLibrary.set_material_instance_texture_parameter_value(material_instance, "DistortionTexture", distortion_texture)
     annotate_asset(unreal_module, material_instance, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(material_instance)
     return material_instance
@@ -1292,7 +1332,7 @@ def configure_material_properties(unreal_module, material, spec: dict) -> None:
     material.set_editor_property("use_material_attributes", False)
 
 
-def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_texture=None, alpha_texture=None) -> None:
+def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None) -> None:
     library = unreal_module.MaterialEditingLibrary
     palette = palette_as_linear_colors(spec["color_palette"])
 
@@ -1309,6 +1349,14 @@ def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_text
         alpha_sample.set_editor_property("parameter_name", "AlphaTexture")
         alpha_sample.set_editor_property("texture", alpha_texture)
         connect_flipbook_uv_if_needed(unreal_module, material, alpha_sample, spec)
+
+    if distortion_texture and hasattr(unreal_module, "MaterialExpressionTextureSampleParameter2D"):
+        distortion_sample = library.create_material_expression(material, unreal_module.MaterialExpressionTextureSampleParameter2D, -1180, 610)
+        distortion_sample.set_editor_property("parameter_name", "DistortionTexture")
+        distortion_sample.set_editor_property("texture", distortion_texture)
+        strength_node = library.create_material_expression(material, unreal_module.MaterialExpressionScalarParameter, -940, 610)
+        strength_node.set_editor_property("parameter_name", "DistortionStrength")
+        strength_node.set_editor_property("default_value", inferred_distortion_strength(spec))
 
     particle_color = library.create_material_expression(material, unreal_module.MaterialExpressionParticleColor, -760, 40)
     core_color = library.create_material_expression(material, unreal_module.MaterialExpressionVectorParameter, -760, 220)
@@ -1597,6 +1645,16 @@ def primary_alpha_source_path(spec: dict) -> Path | None:
     return None
 
 
+def primary_distortion_source_path(spec: dict) -> Path | None:
+    source = material_setting(spec, "distortion_source")
+    if not source:
+        return None
+    source_path = Path(str(source))
+    if source_path.exists():
+        return source_path
+    return None
+
+
 def try_set_editor_property(asset, property_name: str, value) -> None:
     try:
         asset.set_editor_property(property_name, value)
@@ -1683,6 +1741,20 @@ def inferred_opacity(spec: dict) -> float:
     if "glow" in style:
         return 0.42
     return 0.82
+
+
+def inferred_distortion_strength(spec: dict) -> float:
+    override = material_setting(spec, "distortion_strength")
+    if override is not None:
+        return float(override)
+    style = primary_material_style(spec)
+    if "smoke" in style or "translucent_smoke" in style:
+        return 0.11
+    if "fire_pillar" in style or "fire_side" in style:
+        return 0.075
+    if "electric" in style:
+        return 0.045
+    return 0.0
 
 
 def primary_unreal_settings(spec: dict) -> dict:

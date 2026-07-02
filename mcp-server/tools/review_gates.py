@@ -19,6 +19,9 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
     unreal_result = read_latest_unreal_result(spec.name)
     gates = [
         gate_required_passes(manifest),
+        gate_fire_pass_coverage(spec.effect_type, manifest),
+        gate_layer_timing(patched_spec, unreal_result),
+        gate_distortion_pass_link(patched_spec, manifest),
         gate_production_preview(patched_spec, unreal_result),
         gate_alpha_mask_applied(patched_spec, manifest),
         gate_reference_overlay_not_primary(patched_spec, unreal_result),
@@ -55,6 +58,78 @@ def gate_required_passes(manifest: dict[str, Any]) -> dict[str, Any]:
         "status": "pass" if missing == 0 else "fail",
         "message": "All required asset passes have candidates." if missing == 0 else f"{missing} required asset pass(es) are missing.",
         "data": summary,
+    }
+
+
+def gate_fire_pass_coverage(effect_type: str, manifest: dict[str, Any]) -> dict[str, Any]:
+    if effect_type != "fire_or_flame":
+        return {
+            "name": "fire_production_pass_coverage",
+            "status": "pass",
+            "message": "Not a fire package.",
+            "data": {},
+        }
+    required = {
+        "core_flame_flipbook",
+        "smoke_heat_flipbook",
+        "ground_ring_mask",
+        "flame_slash_flipbook",
+        "impact_flash_mask",
+        "ember_sprite_set",
+    }
+    ready = {
+        entry.get("name")
+        for entry in manifest.get("passes", [])
+        if entry.get("name") in required and entry.get("status") == "ready"
+    }
+    missing = sorted(required - ready)
+    return {
+        "name": "fire_production_pass_coverage",
+        "status": "pass" if not missing else "fail",
+        "message": "Fire package has the required production layer passes." if not missing else f"Fire package is missing production layer passes: {', '.join(missing)}",
+        "data": {"ready": sorted(ready), "missing": missing},
+    }
+
+
+def gate_layer_timing(spec: dict[str, Any], unreal_result: dict[str, Any] | None) -> dict[str, Any]:
+    plan = spec.get("vfx_plan") or {}
+    emitters = [
+        emitter for emitter in plan.get("emitters", [])
+        if emitter.get("role") != "reference_motion"
+    ]
+    timed_emitters = [
+        emitter.get("name")
+        for emitter in emitters
+        if isinstance(((emitter.get("unreal_settings") or {}).get("timeline")), dict)
+        and ((emitter.get("unreal_settings") or {}).get("timeline") or {}).get("duration")
+    ]
+    component_timelines = [
+        component.get("name")
+        for component in preview_components(unreal_result)
+        if (component.get("timeline") or {}).get("duration")
+    ]
+    ok = len(timed_emitters) >= min(len(emitters), 5) and len(component_timelines) >= min(len(emitters), 4)
+    return {
+        "name": "layer_timing_design",
+        "status": "pass" if ok else "fail",
+        "message": "Production layers have explicit timing metadata." if ok else "Production layers are still missing timing metadata.",
+        "data": {"timed_emitters": timed_emitters, "component_timelines": component_timelines},
+    }
+
+
+def gate_distortion_pass_link(spec: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
+    distortion_ready = any(entry.get("name") == "distortion_flow" and entry.get("status") == "ready" for entry in manifest.get("passes", []))
+    distortion_emitters = []
+    for emitter in ((spec.get("vfx_plan") or {}).get("emitters") or []):
+        material = ((emitter.get("unreal_settings") or {}).get("material") or {})
+        if material.get("distortion_source"):
+            distortion_emitters.append(emitter.get("name"))
+    ok = distortion_ready and bool(distortion_emitters)
+    return {
+        "name": "distortion_flow_material_link",
+        "status": "pass" if ok else "warning",
+        "message": "Distortion flow is available and linked into material settings." if ok else "Distortion flow is missing or not linked into material settings.",
+        "data": {"distortion_ready": distortion_ready, "distortion_emitters": distortion_emitters},
     }
 
 

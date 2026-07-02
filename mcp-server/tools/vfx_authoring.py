@@ -158,7 +158,31 @@ def asset_passes_for_plan(effect_type: str, visual_profile: dict[str, Any], emit
                     "format": "radial_mask_texture",
                     "purpose": "Molten ring/rune anchor that sells impact scale.",
                     "unreal_usage": "Ground card or mesh ring emitter",
-                    "required": False,
+                    "required": True,
+                },
+                {
+                    "name": "flame_slash_flipbook",
+                    "source": "simulation_or_ai_video",
+                    "format": "premultiplied_emissive_atlas",
+                    "purpose": "Broad asymmetric side tongues that break the silhouette away from a single vertical column.",
+                    "unreal_usage": "Side flame slash emitter",
+                    "required": True,
+                },
+                {
+                    "name": "impact_flash_mask",
+                    "source": "procedural_or_ai",
+                    "format": "radial_alpha_texture_or_flipbook_atlas",
+                    "purpose": "Short overexposed ignition pulse that leads the fire animation.",
+                    "unreal_usage": "Impact flash emitter",
+                    "required": True,
+                },
+                {
+                    "name": "ember_sprite_set",
+                    "source": "procedural_or_ai_sprite_set",
+                    "format": "small_alpha_sprite_atlas",
+                    "purpose": "Sparse, varied ember shapes used as accents only.",
+                    "unreal_usage": "Detail particle emitter",
+                    "required": True,
                 },
             ]
         )
