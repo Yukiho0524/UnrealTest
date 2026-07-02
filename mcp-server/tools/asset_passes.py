@@ -220,7 +220,21 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
     card = preview.setdefault("card", {})
     mesh = preview.setdefault("mesh", {})
     niagara = preview.setdefault("niagara", {})
-    is_firestorm = "firestorm" in name.lower() or "firestorm" in str(emitter.get("motion", "")).lower() or "firestorm" in str(material.get("style", "")).lower()
+    firestorm_layer_names = {
+        "central_fire_pillar",
+        "side_flame_slashes",
+        "back_spiral_flame_wall",
+        "ground_rune_ring",
+        "impact_flash",
+        "smoke_dust_crown",
+        "ember_sparks",
+    }
+    is_firestorm = (
+        "firestorm" in name.lower()
+        or name in firestorm_layer_names
+        or "firestorm" in str(emitter.get("motion", "")).lower()
+        or "firestorm" in str(material.get("style", "")).lower()
+    )
 
     if role == "reference_motion":
         material["opacity"] = min(float(material.get("opacity", 0.72)), 0.16)
@@ -240,27 +254,25 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         emitter.setdefault("notes", []).append("Production preview hides the reference-matched anchor so it cannot be mistaken for the authored effect.")
     elif role == "fire_pillar":
         if is_firestorm or name == "central_fire_pillar":
-            timeline.update({"delay": 0.06, "duration": 0.68, "opacity": [0.0, 0.62, 0.46, 0.0], "scale": [0.62, 1.0, 0.92, 0.7], "rotation_speed": 12.0})
-            material["opacity"] = 0.7
-            material["emissive_strength"] = 14.0
-            card.update({"enabled": True, "location": [0, 0, 82], "rotation": [88, 0, 0], "scale": [1.18, 1.05, 1.0]})
-            card["volume_mode"] = "cross_billboard_column"
+            timeline.update({"delay": 0.08, "duration": 0.82, "opacity": [0.0, 0.42, 0.34, 0.0], "scale": [0.72, 1.0, 0.96, 0.78], "rotation_speed": 18.0})
+            material["opacity"] = 0.46
+            material["emissive_strength"] = 8.5
+            card.update({"enabled": True, "location": [0, 0, 84], "rotation": [88, 0, 0], "scale": [0.86, 0.92, 1.0]})
+            card["volume_mode"] = "inner_vortex_veil"
             card["instances"] = [
-                {"location": [0, 0, 82], "rotation": [88, 58, -10], "scale": [1.02, 1.0, 1.0]},
-                {"location": [0, 0, 82], "rotation": [88, 118, 12], "scale": [0.94, 0.96, 1.0]},
-                {"location": [12, -7, 72], "rotation": [86, 34, -20], "scale": [0.78, 0.78, 1.0]},
-                {"location": [-11, 8, 70], "rotation": [86, -38, 18], "scale": [0.74, 0.72, 1.0]},
+                {"location": [0, 0, 78], "rotation": [88, 62, -8], "scale": [0.78, 0.86, 1.0]},
+                {"location": [0, 0, 94], "rotation": [88, 132, 8], "scale": [0.66, 0.78, 1.0]},
             ]
             mesh.update(
                 {
                     "enabled": True,
                     "mesh": "cylinder",
                     "instances": [
-                        {"mesh": "cylinder", "location": [0, 0, 34], "rotation": [0, 0, 0], "scale": [0.72, 0.72, 0.42]},
-                        {"mesh": "cylinder", "location": [0, 0, 62], "rotation": [0, 0, 18], "scale": [0.56, 0.56, 0.62]},
-                        {"mesh": "cylinder", "location": [0, 0, 90], "rotation": [0, 0, 36], "scale": [0.38, 0.38, 0.48]},
-                        {"mesh": "sphere", "location": [0, 0, 48], "rotation": [0, 0, 0], "scale": [0.82, 0.82, 0.3]},
-                        {"mesh": "sphere", "location": [0, 0, 78], "rotation": [0, 0, 0], "scale": [0.62, 0.62, 0.34]},
+                        {"mesh": "cylinder", "location": [0, 0, 34], "rotation": [0, 0, 0], "scale": [0.56, 0.56, 0.34]},
+                        {"mesh": "cylinder", "location": [0, 0, 62], "rotation": [0, 0, 22], "scale": [0.48, 0.48, 0.52]},
+                        {"mesh": "cylinder", "location": [0, 0, 90], "rotation": [0, 0, 44], "scale": [0.34, 0.34, 0.4]},
+                        {"mesh": "sphere", "location": [0, 0, 48], "rotation": [0, 0, 0], "scale": [0.64, 0.64, 0.22]},
+                        {"mesh": "sphere", "location": [0, 0, 78], "rotation": [0, 0, 0], "scale": [0.48, 0.48, 0.24]},
                     ],
                 }
             )
@@ -278,24 +290,23 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             material["emissive_strength"] = max(float(material.get("emissive_strength", 7.5)), 9.0)
             card.update({"enabled": True, "location": [0, 7, 76], "rotation": [88, 0, 18], "scale": [1.55, 1.1, 1]})
             if is_firestorm or "back_spiral" in name:
-                timeline.update({"delay": 0.12, "duration": 0.86, "opacity": [0.0, 0.66, 0.54, 0.0], "scale": [0.6, 1.2, 1.08, 0.76], "rotation_speed": 34.0})
-                material["opacity"] = min(max(float(material.get("opacity", 0.52)), 0.58), 0.68)
-                material["emissive_strength"] = min(max(float(material.get("emissive_strength", 9.0)), 10.0), 12.5)
-                card.update({"enabled": True, "location": [0, 10, 66], "rotation": [86, 0, 24], "scale": [1.78, 0.98, 1]})
+                timeline.update({"delay": 0.12, "duration": 0.92, "opacity": [0.0, 0.42, 0.34, 0.0], "scale": [0.68, 1.04, 1.0, 0.78], "rotation_speed": 26.0})
+                material["opacity"] = 0.42
+                material["emissive_strength"] = 7.2
+                card.update({"enabled": True, "location": [0, 12, 64], "rotation": [86, 0, 18], "scale": [1.14, 0.78, 1]})
                 card["volume_mode"] = "rear_spiral_shell"
                 card["instances"] = [
-                    {"location": [-12, 14, 66], "rotation": [86, 52, 34], "scale": [1.58, 0.86, 1.0]},
-                    {"location": [12, 12, 74], "rotation": [86, -46, -18], "scale": [1.42, 0.82, 1.0]},
-                    {"location": [0, 18, 86], "rotation": [85, 86, 10], "scale": [1.1, 0.7, 1.0]},
+                    {"location": [-8, 14, 62], "rotation": [86, 48, 28], "scale": [1.02, 0.66, 1.0]},
+                    {"location": [9, 12, 78], "rotation": [86, -42, -16], "scale": [0.92, 0.62, 1.0]},
                 ]
                 mesh.update(
                     {
                         "enabled": True,
                         "mesh": "cylinder",
                         "instances": [
-                            {"mesh": "cylinder", "location": [-10, 13, 58], "rotation": [0, 0, 38], "scale": [0.96, 0.18, 0.38]},
-                            {"mesh": "cylinder", "location": [10, 11, 72], "rotation": [0, 0, -28], "scale": [0.86, 0.16, 0.34]},
-                            {"mesh": "sphere", "location": [0, 16, 82], "rotation": [0, 0, 0], "scale": [0.68, 0.26, 0.32]},
+                            {"mesh": "cylinder", "location": [-9, 13, 58], "rotation": [0, 0, 38], "scale": [0.72, 0.14, 0.3]},
+                            {"mesh": "cylinder", "location": [9, 11, 72], "rotation": [0, 0, -28], "scale": [0.66, 0.13, 0.28]},
+                            {"mesh": "sphere", "location": [0, 16, 82], "rotation": [0, 0, 0], "scale": [0.5, 0.2, 0.24]},
                         ],
                     }
                 )
@@ -305,61 +316,61 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             material["emissive_strength"] = max(float(material.get("emissive_strength", 8.5)), 13.0)
             card.update({"enabled": True, "location": [0, -6, 58], "rotation": [88, 0, -18], "scale": [1.82, 0.92, 1]})
             if is_firestorm or name == "side_flame_slashes":
-                timeline.update({"delay": 0.06, "duration": 0.78, "opacity": [0.0, 0.84, 0.64, 0.0], "scale": [0.62, 1.18, 1.08, 0.72], "rotation_speed": -42.0})
-                material["opacity"] = min(max(float(material.get("opacity", 0.68)), 0.7), 0.82)
-                material["emissive_strength"] = min(max(float(material.get("emissive_strength", 13.0)), 12.5), 15.5)
-                card.update({"enabled": True, "location": [0, -11, 54], "rotation": [86, 0, -24], "scale": [1.9, 1.02, 1]})
+                timeline.update({"delay": 0.08, "duration": 0.88, "opacity": [0.0, 0.46, 0.36, 0.0], "scale": [0.68, 1.02, 0.98, 0.76], "rotation_speed": -30.0})
+                material["opacity"] = 0.46
+                material["emissive_strength"] = 7.8
+                card.update({"enabled": True, "location": [0, -12, 52], "rotation": [86, 0, -18], "scale": [1.18, 0.76, 1]})
                 card["volume_mode"] = "front_spiral_shell"
                 card["instances"] = [
-                    {"location": [12, -15, 58], "rotation": [86, 48, -38], "scale": [1.62, 0.88, 1.0]},
-                    {"location": [-13, -10, 48], "rotation": [86, -50, 18], "scale": [1.44, 0.82, 1.0]},
-                    {"location": [2, -18, 78], "rotation": [85, 84, -8], "scale": [1.14, 0.72, 1.0]},
+                    {"location": [9, -14, 56], "rotation": [86, 46, -30], "scale": [1.04, 0.66, 1.0]},
+                    {"location": [-10, -10, 48], "rotation": [86, -48, 16], "scale": [0.92, 0.62, 1.0]},
                 ]
                 mesh.update(
                     {
                         "enabled": True,
                         "mesh": "cylinder",
                         "instances": [
-                            {"mesh": "cylinder", "location": [12, -14, 54], "rotation": [0, 0, -42], "scale": [1.0, 0.2, 0.36]},
-                            {"mesh": "cylinder", "location": [-12, -10, 46], "rotation": [0, 0, 34], "scale": [0.88, 0.18, 0.3]},
-                            {"mesh": "sphere", "location": [0, -18, 72], "rotation": [0, 0, 0], "scale": [0.72, 0.3, 0.34]},
+                            {"mesh": "cylinder", "location": [10, -14, 54], "rotation": [0, 0, -42], "scale": [0.76, 0.15, 0.3]},
+                            {"mesh": "cylinder", "location": [-10, -10, 46], "rotation": [0, 0, 34], "scale": [0.68, 0.14, 0.26]},
+                            {"mesh": "sphere", "location": [0, -18, 72], "rotation": [0, 0, 0], "scale": [0.5, 0.22, 0.24]},
                         ],
                     }
                 )
                 emitter.setdefault("notes", []).append("Firestorm side flames use offset spiral shell cards instead of a single flat ribbon.")
         niagara["enabled"] = False
     elif role == "ground_energy_ring":
-        timeline.update({"delay": 0.02, "duration": 0.72, "opacity": [0.0, 0.9, 0.72, 0.0], "scale": [0.55, 1.12, 1.04, 1.28], "rotation_speed": 18.0})
-        material["opacity"] = max(float(material.get("opacity", 0.72)), 0.76)
-        card.update({"enabled": True, "location": [0, 0, 2], "rotation": [0, 0, 0], "scale": [2.35, 2.35, 1]})
+        timeline.update({"delay": 0.02, "duration": 0.82, "opacity": [0.0, 0.52, 0.4, 0.0], "scale": [0.64, 1.0, 0.96, 1.08], "rotation_speed": 12.0})
+        material["opacity"] = 0.5 if is_firestorm else max(float(material.get("opacity", 0.72)), 0.76)
+        material["emissive_strength"] = 5.8 if is_firestorm else material.get("emissive_strength", 8.0)
+        card.update({"enabled": True, "location": [0, 0, 2], "rotation": [0, 0, 0], "scale": [1.72, 1.72, 1]})
         if is_firestorm or name == "ground_rune_ring":
             mesh.update(
                 {
                     "enabled": True,
                     "mesh": "cylinder",
                     "instances": [
-                        {"mesh": "cylinder", "location": [0, 0, 4], "rotation": [0, 0, 0], "scale": [1.38, 1.38, 0.035]},
-                        {"mesh": "cylinder", "location": [0, 0, 10], "rotation": [0, 0, 28], "scale": [1.08, 1.08, 0.055]},
-                        {"mesh": "sphere", "location": [0, 0, 18], "rotation": [0, 0, 0], "scale": [0.72, 0.72, 0.16]},
+                        {"mesh": "cylinder", "location": [0, 0, 4], "rotation": [0, 0, 0], "scale": [1.02, 1.02, 0.03]},
+                        {"mesh": "cylinder", "location": [0, 0, 10], "rotation": [0, 0, 28], "scale": [0.78, 0.78, 0.045]},
+                        {"mesh": "sphere", "location": [0, 0, 16], "rotation": [0, 0, 0], "scale": [0.48, 0.48, 0.12]},
                     ],
                 }
             )
         niagara["enabled"] = False
     elif role == "impact_core":
-        timeline.update({"delay": 0.0, "duration": 0.24, "opacity": [0.0, 1.0, 0.45, 0.0], "scale": [0.35, 1.22, 0.84, 0.0]})
-        material["opacity"] = max(float(material.get("opacity", 0.8)), 0.86)
-        material["emissive_strength"] = max(float(material.get("emissive_strength", 22.0)), 24.0)
-        card.update({"enabled": True, "location": [0, -1, 24], "rotation": [88, 0, 0], "scale": [0.92, 0.58, 1]})
+        timeline.update({"delay": 0.0, "duration": 0.24, "opacity": [0.0, 0.58, 0.2, 0.0], "scale": [0.32, 0.82, 0.58, 0.0]})
+        material["opacity"] = 0.58 if is_firestorm else max(float(material.get("opacity", 0.8)), 0.86)
+        material["emissive_strength"] = 9.5 if is_firestorm else max(float(material.get("emissive_strength", 22.0)), 24.0)
+        card.update({"enabled": True, "location": [0, -1, 22], "rotation": [88, 0, 0], "scale": [0.54, 0.38, 1]})
         if is_firestorm or name == "impact_flash":
             card["instances"] = [
-                {"location": [0, 0, 24], "rotation": [88, 90, 0], "scale": [0.66, 0.42, 1.0]},
+                {"location": [0, 0, 22], "rotation": [88, 90, 0], "scale": [0.42, 0.28, 1.0]},
             ]
             mesh.update(
                 {
                     "enabled": True,
                     "mesh": "sphere",
                     "instances": [
-                        {"mesh": "sphere", "location": [0, 0, 22], "rotation": [0, 0, 0], "scale": [0.48, 0.48, 0.26]},
+                        {"mesh": "sphere", "location": [0, 0, 22], "rotation": [0, 0, 0], "scale": [0.32, 0.32, 0.18]},
                     ],
                 }
             )
@@ -1812,45 +1823,45 @@ def draw_firestorm_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: float
     center_y = size * 0.67
     base_y = size * 0.86
 
-    for layer in range(5):
-        offset = layer / 4
+    for layer in range(3):
+        offset = layer / 3
         angle = -0.85 + offset * 0.42 + phase * 0.32
         draw_flame_ribbon(
             draw,
             size,
             center_x - size * (0.18 - offset * 0.08),
             base_y - size * (0.04 + offset * 0.055),
-            size * (0.34 + offset * 0.05),
-            size * (0.075 - offset * 0.006),
+            size * (0.26 + offset * 0.035),
+            size * (0.055 - offset * 0.006),
             angle,
-            0.9 - offset * 0.12,
+            0.72 - offset * 0.1,
             phase + offset * 0.11,
-            (160, 28, 3, int(62 + 28 * pulse)),
+            (160, 28, 3, int(38 + 20 * pulse)),
             8.0 + layer,
-            steps=14,
+            steps=11,
         )
         draw_flame_ribbon(
             draw,
             size,
             center_x + size * (0.18 - offset * 0.08),
             base_y - size * (0.07 + offset * 0.048),
-            size * (0.32 + offset * 0.045),
-            size * (0.06 - offset * 0.005),
+            size * (0.24 + offset * 0.034),
+            size * (0.046 - offset * 0.005),
             math.pi - angle,
-            -0.82 + offset * 0.1,
+            -0.66 + offset * 0.08,
             phase + 0.07 + offset * 0.13,
-            (255, 73, 7, int(72 + 38 * pulse)),
+            (255, 73, 7, int(46 + 24 * pulse)),
             14.0 + layer,
-            steps=14,
+            steps=11,
         )
 
-    for lobe in range(9):
-        local = lobe / 8
+    for lobe in range(6):
+        local = lobe / 6
         side = -1 if lobe % 2 else 1
-        y = size * (0.8 - local * 0.34)
-        x = center_x + side * size * (0.055 + 0.12 * math.sin(local * math.pi))
-        height = size * (0.13 - local * 0.055)
-        width = size * (0.04 - local * 0.012)
+        y = size * (0.78 - local * 0.28)
+        x = center_x + side * size * (0.045 + 0.085 * math.sin(local * math.pi))
+        height = size * (0.095 - local * 0.04)
+        width = size * (0.028 - local * 0.008)
         draw_flame_tongue(
             draw,
             size,
@@ -1860,124 +1871,108 @@ def draw_firestorm_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: float
             max(size * 0.012, width),
             side * size * (0.07 + local * 0.022),
             phase + local * 0.19,
-            (255, 128, 22, int(44 + 36 * pulse)),
+            (255, 128, 22, int(28 + 24 * pulse)),
             28.0 + lobe,
-            steps=7,
+            steps=6,
         )
+
+    # Leave a darker center so the preview reads as a rotating fire column, not a solid white torch.
+    hollow_radius_x = size * 0.052
+    hollow_radius_y = size * 0.19
+    draw.ellipse(
+        (
+            center_x - hollow_radius_x,
+            center_y - hollow_radius_y,
+            center_x + hollow_radius_x,
+            center_y + hollow_radius_y,
+        ),
+        fill=(12, 5, 3, 76),
+    )
 
     for ring in range(4):
         radius = size * (0.09 + ring * 0.035 + pulse * 0.012)
         height = radius * (1.65 - ring * 0.1)
         box = (center_x - radius, center_y - height, center_x + radius, center_y + height)
         start = phase * 220 + ring * 68
-        draw.arc(box, start=start, end=start + 112, fill=(255, 190, 74, int(52 - ring * 7)), width=max(2, int(size * (0.016 - ring * 0.002))))
+        draw.arc(box, start=start, end=start + 86, fill=(255, 166, 54, int(34 - ring * 5)), width=max(2, int(size * (0.011 - ring * 0.0015))))
 
 
 def draw_firestorm_slash_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
     pulse = math.sin(phase * math.pi)
-    origin_x = size * 0.22
+    origin_x = size * 0.28
     origin_y = size * 0.74
-    for band in range(5):
-        band_phase = phase + band * 0.09
+    for band in range(3):
+        band_phase = phase + band * 0.11
         draw_flame_ribbon(
             draw,
             size,
             origin_x + size * 0.02 * band,
             origin_y - size * 0.035 * band,
-            size * (0.58 + band * 0.045),
-            size * (0.072 - band * 0.006),
+            size * (0.34 + band * 0.035),
+            size * (0.052 - band * 0.006),
             0.0 + band * 0.11,
-            1.05 - band * 0.09,
+            0.66 - band * 0.07,
             band_phase,
-            (112, 12, 2, int(58 + 24 * pulse)),
+            (112, 12, 2, int(38 + 18 * pulse)),
             21.0 + band,
-            steps=16,
+            steps=10,
         )
         draw_flame_ribbon(
             draw,
             size,
             origin_x + size * 0.03 * band,
             origin_y - size * 0.044 * band,
-            size * (0.52 + band * 0.04),
-            size * (0.046 - band * 0.004),
+            size * (0.3 + band * 0.032),
+            size * (0.034 - band * 0.004),
             0.02 + band * 0.12,
-            0.88 - band * 0.08,
+            0.54 - band * 0.06,
             band_phase + 0.08,
-            (255, 68, 8, int(92 + 34 * pulse)),
+            (255, 68, 8, int(52 + 22 * pulse)),
             31.0 + band,
-            steps=16,
+            steps=10,
         )
-        draw_flame_ribbon(
-            draw,
-            size,
-            origin_x + size * 0.038 * band,
-            origin_y - size * 0.055 * band,
-            size * (0.38 + band * 0.028),
-            size * (0.018 - band * 0.0015),
-            0.04 + band * 0.12,
-            0.65 - band * 0.05,
-            band_phase + 0.14,
-            (255, 214, 96, int(46 + 30 * pulse)),
-            41.0 + band,
-            steps=14,
-        )
-    for band in range(3):
+    for band in range(2):
         draw_flame_ribbon(
             draw,
             size,
             size * (0.8 - band * 0.035),
             size * (0.66 - band * 0.05),
-            size * (0.38 + band * 0.04),
-            size * (0.04 - band * 0.006),
+            size * (0.26 + band * 0.03),
+            size * (0.032 - band * 0.005),
             math.pi * 0.95 - band * 0.14,
-            -0.85 + band * 0.08,
+            -0.52 + band * 0.08,
             phase + 0.2 + band * 0.1,
-            (255, 88, 12, int(62 + 28 * pulse)),
+            (255, 88, 12, int(38 + 18 * pulse)),
             61.0 + band,
-            steps=13,
+            steps=9,
         )
-    for spark in range(12):
-        local = ((spark * 37) % 100) / 100
-        angle = 0.18 + local * 1.05 + phase * 0.55
-        radius = size * (0.22 + 0.36 * ((spark * 19) % 100) / 100)
-        x = origin_x + math.cos(angle) * radius
-        y = origin_y - math.sin(angle) * radius * 0.45
-        r = size * (0.005 + 0.005 * ((spark + 3) % 4))
-        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 224, 150, int(52 + 54 * pulse)))
 
 
 def draw_firestorm_ground_ring_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
     pulse = math.sin(phase * math.pi)
     cx = cy = size / 2
-    for radius_index, radius_scale in enumerate((0.17, 0.29, 0.39)):
-        radius = size * (radius_scale + 0.035 * pulse + 0.018 * phase * (radius_index + 1))
+    for radius_index, radius_scale in enumerate((0.18, 0.3)):
+        radius = size * (radius_scale + 0.02 * pulse + 0.012 * phase * (radius_index + 1))
         height = radius * (0.55 + radius_index * 0.05)
-        width = max(2, int(size * (0.018 + 0.008 * radius_index + 0.008 * pulse)))
-        for segment in range(10 + radius_index * 2):
-            start = segment * (360 / (10 + radius_index * 2)) + phase * 74 * (1 if radius_index % 2 == 0 else -1)
-            length = 12 + 15 * ((segment * 37 + radius_index * 19) % 100) / 100
+        width = max(2, int(size * (0.012 + 0.005 * radius_index + 0.004 * pulse)))
+        segment_count = 7 + radius_index * 2
+        for segment in range(segment_count):
+            start = segment * (360 / segment_count) + phase * 54 * (1 if radius_index % 2 == 0 else -1)
+            length = 9 + 9 * ((segment * 37 + radius_index * 19) % 100) / 100
             box = (cx - radius, cy - height, cx + radius, cy + height)
-            draw.arc(box, start=start, end=start + length, fill=(98, 10, 2, 120), width=width + 5)
-            draw.arc(box, start=start + 1, end=start + length * 0.82, fill=(255, 74, 8, 190), width=width)
-            draw.arc(box, start=start + 3, end=start + length * 0.52, fill=(255, 232, 145, 180), width=max(1, width // 2))
-    for shard in range(18):
-        local = shard / 18
+            draw.arc(box, start=start, end=start + length, fill=(98, 10, 2, 72), width=width + 3)
+            draw.arc(box, start=start + 1, end=start + length * 0.82, fill=(255, 74, 8, 118), width=width)
+            draw.arc(box, start=start + 3, end=start + length * 0.48, fill=(255, 212, 120, 86), width=max(1, width // 2))
+    for shard in range(8):
+        local = shard / 8
         angle = local * math.tau + phase * math.tau * (0.35 + (shard % 3) * 0.08)
-        radius = size * (0.2 + 0.23 * ((shard * 23) % 100) / 100)
+        radius = size * (0.18 + 0.18 * ((shard * 23) % 100) / 100)
         x = cx + math.cos(angle) * radius
         y = cy + math.sin(angle) * radius * 0.62
-        rx = size * (0.012 + 0.016 * ((shard * 11) % 100) / 100)
-        ry = rx * (0.45 + 0.45 * pulse)
-        draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(255, 118, 22, int(70 + 78 * pulse)))
-        draw.ellipse((x - rx * 0.45, y - ry * 0.45, x + rx * 0.45, y + ry * 0.45), fill=(255, 240, 170, int(80 + 78 * pulse)))
-    for spark in range(14):
-        local = ((spark * 41) % 100) / 100
-        angle = local * math.tau + phase * math.tau * 1.1
-        radius = size * (0.1 + 0.36 * ((spark * 13) % 100) / 100)
-        x = cx + math.cos(angle) * radius
-        y = cy + math.sin(angle) * radius * 0.62
-        r = size * (0.006 + 0.008 * ((spark + 2) % 3))
-        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 236, 170, int(70 + 70 * pulse)))
+        rx = size * (0.008 + 0.01 * ((shard * 11) % 100) / 100)
+        ry = rx * (0.35 + 0.3 * pulse)
+        draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(255, 118, 22, int(42 + 38 * pulse)))
+        draw.ellipse((x - rx * 0.45, y - ry * 0.45, x + rx * 0.45, y + ry * 0.45), fill=(255, 220, 140, int(44 + 34 * pulse)))
 
 
 def draw_firestorm_alpha_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:

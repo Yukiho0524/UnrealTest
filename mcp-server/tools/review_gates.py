@@ -29,6 +29,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_unreal_material_creation(unreal_result),
         gate_fire_spatial_design(patched_spec, unreal_result),
         gate_firestorm_3d_volume_preview(patched_spec, unreal_result),
+        gate_firestorm_visual_balance(patched_spec),
         gate_alpha_mask_applied(patched_spec, manifest),
         gate_reference_overlay_not_primary(patched_spec, unreal_result),
         gate_texture_card_budget(patched_spec, manifest, unreal_result),
@@ -409,6 +410,54 @@ def gate_firestorm_3d_volume_preview(spec: dict[str, Any], unreal_result: dict[s
     }
 
 
+def gate_firestorm_visual_balance(spec: dict[str, Any]) -> dict[str, Any]:
+    emitters = ((spec.get("vfx_plan") or {}).get("emitters") or [])
+    if spec.get("effect_type") != "fire_or_flame" or not any(is_firestorm_emitter(emitter) for emitter in emitters):
+        return {
+            "name": "firestorm_visual_balance",
+            "status": "pass",
+            "message": "Not a firestorm package.",
+            "data": {},
+        }
+
+    issues = []
+    expected = {
+        "central_fire_pillar": {"max_card_instances": 2, "opacity": (0.32, 0.56), "emissive": (5.0, 11.0), "max_scale_xy": 1.15},
+        "side_flame_slashes": {"max_card_instances": 2, "opacity": (0.32, 0.58), "emissive": (5.0, 10.5), "max_scale_xy": 1.35},
+        "back_spiral_flame_wall": {"max_card_instances": 2, "opacity": (0.32, 0.58), "emissive": (5.0, 10.5), "max_scale_xy": 1.35},
+        "ground_rune_ring": {"max_card_instances": 0, "opacity": (0.3, 0.62), "emissive": (3.0, 8.0), "max_scale_xy": 1.9},
+        "impact_flash": {"max_card_instances": 1, "opacity": (0.25, 0.7), "emissive": (4.0, 12.0), "max_scale_xy": 0.9},
+    }
+    by_name = {str(emitter.get("name") or ""): emitter for emitter in emitters}
+    for emitter_name, rule in expected.items():
+        emitter = by_name.get(emitter_name)
+        if not emitter:
+            issues.append({"emitter": emitter_name, "type": "missing_firestorm_balance_emitter"})
+            continue
+        settings = emitter.get("unreal_settings") or {}
+        material = settings.get("material") or {}
+        card = ((settings.get("preview") or {}).get("card") or {})
+        opacity = safe_float(material.get("opacity"))
+        emissive = safe_float(material.get("emissive_strength"))
+        issues.extend(expect_range(emitter_name, "opacity", opacity, *rule["opacity"]))
+        issues.extend(expect_range(emitter_name, "emissive_strength", emissive, *rule["emissive"]))
+        instance_count = len(card.get("instances") or [])
+        if instance_count > int(rule["max_card_instances"]):
+            issues.append({"emitter": emitter_name, "type": "too_many_firestorm_card_instances", "expected_max": rule["max_card_instances"], "actual": instance_count})
+        scale = card.get("scale") or []
+        if len(scale) >= 2:
+            max_scale = max(abs(float(scale[0])), abs(float(scale[1])))
+            if max_scale > float(rule["max_scale_xy"]):
+                issues.append({"emitter": emitter_name, "type": "firestorm_card_scale_too_large", "expected_max": rule["max_scale_xy"], "actual": round(max_scale, 3)})
+
+    return {
+        "name": "firestorm_visual_balance",
+        "status": "pass" if not issues else "fail",
+        "message": "Firestorm preview keeps emissive intensity, card count, and ground footprint restrained." if not issues else "Firestorm preview is likely to read as an overbright card pile or spike burst.",
+        "data": {"issues": issues},
+    }
+
+
 def gate_alpha_mask_applied(spec: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
     alpha_ready = any(entry.get("name") == "alpha_mask" and entry.get("status") == "ready" for entry in manifest.get("passes", []))
     alpha_emitters = []
@@ -705,20 +754,33 @@ def check_role_material_expectations(emitter: dict[str, Any]) -> list[dict[str, 
     opacity = safe_float(material.get("opacity"))
     emissive = safe_float(material.get("emissive_strength"))
     blend = material.get("blend_mode")
+    is_firestorm = is_firestorm_emitter(emitter)
     if role == "reference_matched_composite":
         issues.extend(expect_range(name, "opacity", opacity, 0.0, 0.4))
         issues.extend(expect_range(name, "emissive_strength", emissive, 0.5, 3.0))
     elif role == "fire_pillar":
-        issues.extend(expect_range(name, "opacity", opacity, 0.7, 0.95))
-        issues.extend(expect_range(name, "emissive_strength", emissive, 14.0, 28.0))
+        if is_firestorm:
+            issues.extend(expect_range(name, "opacity", opacity, 0.32, 0.62))
+            issues.extend(expect_range(name, "emissive_strength", emissive, 5.0, 12.0))
+        else:
+            issues.extend(expect_range(name, "opacity", opacity, 0.7, 0.95))
+            issues.extend(expect_range(name, "emissive_strength", emissive, 14.0, 28.0))
     elif role == "flame_slashes":
-        issues.extend(expect_range(name, "opacity", opacity, 0.45, 0.75))
-        issues.extend(expect_range(name, "emissive_strength", emissive, 7.0, 16.0))
+        if is_firestorm:
+            issues.extend(expect_range(name, "opacity", opacity, 0.32, 0.62))
+            issues.extend(expect_range(name, "emissive_strength", emissive, 5.0, 12.0))
+        else:
+            issues.extend(expect_range(name, "opacity", opacity, 0.45, 0.75))
+            issues.extend(expect_range(name, "emissive_strength", emissive, 7.0, 16.0))
     elif role == "ground_energy_ring":
-        issues.extend(expect_range(name, "opacity", opacity, 0.45, 0.85))
+        issues.extend(expect_range(name, "opacity", opacity, 0.3, 0.85))
     elif role == "impact_core":
-        issues.extend(expect_range(name, "opacity", opacity, 0.75, 1.0))
-        issues.extend(expect_range(name, "emissive_strength", emissive, 16.0, 32.0))
+        if is_firestorm:
+            issues.extend(expect_range(name, "opacity", opacity, 0.25, 0.7))
+            issues.extend(expect_range(name, "emissive_strength", emissive, 4.0, 12.0))
+        else:
+            issues.extend(expect_range(name, "opacity", opacity, 0.75, 1.0))
+            issues.extend(expect_range(name, "emissive_strength", emissive, 16.0, 32.0))
     elif role == "atmospheric_wisp":
         issues.extend(expect_range(name, "opacity", opacity, 0.0, 0.12))
         issues.extend(expect_range(name, "emissive_strength", emissive, 0.0, 0.35))
@@ -727,6 +789,29 @@ def check_role_material_expectations(emitter: dict[str, Any]) -> list[dict[str, 
     if role not in {"atmospheric_wisp"} and material and blend not in {None, "additive"}:
         issues.append({"emitter": name, "type": "material_blend_mismatch", "expected": "additive", "actual": blend})
     return issues
+
+
+def is_firestorm_emitter(emitter: dict[str, Any]) -> bool:
+    material = ((emitter.get("unreal_settings") or {}).get("material") or {})
+    text = " ".join(
+        str(value or "")
+        for value in (
+            emitter.get("name"),
+            emitter.get("motion"),
+            emitter.get("material_style"),
+            emitter.get("sprite_shape"),
+            material.get("style"),
+        )
+    ).lower()
+    return "firestorm" in text or str(emitter.get("name") or "") in {
+        "central_fire_pillar",
+        "side_flame_slashes",
+        "back_spiral_flame_wall",
+        "ground_rune_ring",
+        "impact_flash",
+        "smoke_dust_crown",
+        "ember_sparks",
+    }
 
 
 def expect_range(emitter_name: str, field: str, value: float | None, minimum: float, maximum: float) -> list[dict[str, Any]]:
