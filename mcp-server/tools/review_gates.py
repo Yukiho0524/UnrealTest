@@ -786,8 +786,13 @@ def check_role_material_expectations(emitter: dict[str, Any]) -> list[dict[str, 
         issues.extend(expect_range(name, "emissive_strength", emissive, 0.0, 0.35))
         if blend != "translucent":
             issues.append({"emitter": name, "type": "material_blend_mismatch", "expected": "translucent", "actual": blend})
-    if role not in {"atmospheric_wisp"} and material and blend not in {None, "additive"}:
-        issues.append({"emitter": name, "type": "material_blend_mismatch", "expected": "additive", "actual": blend})
+    if role not in {"atmospheric_wisp"} and material:
+        allowed_blends = {None, "additive"}
+        if is_firestorm and role == "ground_energy_ring":
+            allowed_blends.add("translucent")
+        if blend not in allowed_blends:
+            expected = "additive_or_translucent" if "translucent" in allowed_blends else "additive"
+            issues.append({"emitter": name, "type": "material_blend_mismatch", "expected": expected, "actual": blend})
     return issues
 
 

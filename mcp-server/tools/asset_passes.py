@@ -339,19 +339,21 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                 emitter.setdefault("notes", []).append("Firestorm side flames use offset spiral shell cards instead of a single flat ribbon.")
         niagara["enabled"] = False
     elif role == "ground_energy_ring":
-        timeline.update({"delay": 0.02, "duration": 0.82, "opacity": [0.0, 0.52, 0.4, 0.0], "scale": [0.64, 1.0, 0.96, 1.08], "rotation_speed": 12.0})
-        material["opacity"] = 0.5 if is_firestorm else max(float(material.get("opacity", 0.72)), 0.76)
-        material["emissive_strength"] = 5.8 if is_firestorm else material.get("emissive_strength", 8.0)
-        card.update({"enabled": True, "location": [0, 0, 2], "rotation": [0, 0, 0], "scale": [1.72, 1.72, 1]})
+        timeline.update({"delay": 0.02, "duration": 0.9, "opacity": [0.0, 0.62, 0.5, 0.0], "scale": [0.7, 1.0, 0.98, 1.05], "rotation_speed": 9.0})
+        material["opacity"] = 0.62 if is_firestorm else max(float(material.get("opacity", 0.72)), 0.76)
+        material["emissive_strength"] = 3.8 if is_firestorm else material.get("emissive_strength", 8.0)
+        if is_firestorm:
+            material["blend_mode"] = "translucent"
+        card.update({"enabled": True, "location": [0, 0, 1.5], "rotation": [0, 0, 0], "scale": [1.82, 1.82, 1]})
         if is_firestorm or name == "ground_rune_ring":
             mesh.update(
                 {
                     "enabled": True,
                     "mesh": "cylinder",
                     "instances": [
-                        {"mesh": "cylinder", "location": [0, 0, 4], "rotation": [0, 0, 0], "scale": [1.02, 1.02, 0.03]},
-                        {"mesh": "cylinder", "location": [0, 0, 10], "rotation": [0, 0, 28], "scale": [0.78, 0.78, 0.045]},
-                        {"mesh": "sphere", "location": [0, 0, 16], "rotation": [0, 0, 0], "scale": [0.48, 0.48, 0.12]},
+                        {"mesh": "cylinder", "location": [0, 0, 2], "rotation": [0, 0, 0], "scale": [1.2, 1.2, 0.025]},
+                        {"mesh": "cylinder", "location": [0, 0, 7], "rotation": [0, 0, 28], "scale": [0.88, 0.88, 0.035]},
+                        {"mesh": "sphere", "location": [0, 0, 14], "rotation": [0, 0, 0], "scale": [0.42, 0.42, 0.1]},
                     ],
                 }
             )
@@ -1951,28 +1953,66 @@ def draw_firestorm_slash_frame(draw: ImageDraw.ImageDraw, size: int, phase: floa
 def draw_firestorm_ground_ring_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
     pulse = math.sin(phase * math.pi)
     cx = cy = size / 2
-    for radius_index, radius_scale in enumerate((0.18, 0.3)):
-        radius = size * (radius_scale + 0.02 * pulse + 0.012 * phase * (radius_index + 1))
-        height = radius * (0.55 + radius_index * 0.05)
-        width = max(2, int(size * (0.012 + 0.005 * radius_index + 0.004 * pulse)))
-        segment_count = 7 + radius_index * 2
+    outer_rx = size * (0.39 + 0.012 * pulse)
+    outer_ry = size * (0.25 + 0.008 * pulse)
+    inner_rx = size * 0.12
+    inner_ry = size * 0.075
+
+    draw.ellipse(
+        (cx - outer_rx, cy - outer_ry, cx + outer_rx, cy + outer_ry),
+        fill=(16, 6, 3, 132),
+    )
+    draw.ellipse(
+        (cx - size * 0.31, cy - size * 0.19, cx + size * 0.31, cy + size * 0.19),
+        fill=(44, 11, 4, 84),
+    )
+    draw.ellipse(
+        (cx - inner_rx, cy - inner_ry, cx + inner_rx, cy + inner_ry),
+        fill=(4, 2, 1, 152),
+    )
+
+    for crack in range(11):
+        seed = (crack * 37) % 97 / 97
+        angle = seed * math.tau + phase * 0.38 * (1 if crack % 2 else -1)
+        start_radius = size * (0.1 + 0.04 * ((crack * 13) % 7) / 7)
+        end_radius = size * (0.29 + 0.08 * ((crack * 19) % 9) / 9)
+        points = []
+        for step in range(5):
+            t = step / 4
+            wobble = math.sin(t * math.pi * 2.0 + seed * math.tau) * size * 0.025
+            radius = start_radius + (end_radius - start_radius) * t
+            local_angle = angle + wobble / max(radius, 1)
+            x = cx + math.cos(local_angle) * radius
+            y = cy + math.sin(local_angle) * radius * 0.62
+            points.append((x, y))
+        base_width = max(2, int(size * (0.009 + 0.003 * pulse)))
+        draw.line(points, fill=(74, 12, 2, 130), width=base_width + 4, joint="curve")
+        draw.line(points, fill=(235, 52, 6, 152), width=base_width + 1, joint="curve")
+        if crack % 3 == 0:
+            draw.line(points[1:4], fill=(255, 184, 72, 120), width=max(1, base_width // 2), joint="curve")
+
+    for radius_index, radius_scale in enumerate((0.2, 0.32)):
+        radius = size * (radius_scale + 0.012 * pulse)
+        height = radius * (0.54 + radius_index * 0.04)
+        width = max(2, int(size * (0.009 + 0.004 * radius_index + 0.003 * pulse)))
+        segment_count = 5 + radius_index * 2
         for segment in range(segment_count):
-            start = segment * (360 / segment_count) + phase * 54 * (1 if radius_index % 2 == 0 else -1)
-            length = 9 + 9 * ((segment * 37 + radius_index * 19) % 100) / 100
+            start = segment * (360 / segment_count) + phase * 46 * (1 if radius_index % 2 == 0 else -1)
+            length = 22 + 11 * ((segment * 31 + radius_index * 17) % 100) / 100
             box = (cx - radius, cy - height, cx + radius, cy + height)
-            draw.arc(box, start=start, end=start + length, fill=(98, 10, 2, 72), width=width + 3)
-            draw.arc(box, start=start + 1, end=start + length * 0.82, fill=(255, 74, 8, 118), width=width)
-            draw.arc(box, start=start + 3, end=start + length * 0.48, fill=(255, 212, 120, 86), width=max(1, width // 2))
-    for shard in range(8):
-        local = shard / 8
-        angle = local * math.tau + phase * math.tau * (0.35 + (shard % 3) * 0.08)
-        radius = size * (0.18 + 0.18 * ((shard * 23) % 100) / 100)
+            draw.arc(box, start=start, end=start + length, fill=(104, 16, 3, 96), width=width + 4)
+            draw.arc(box, start=start + 1, end=start + length * 0.86, fill=(240, 62, 8, 128), width=width)
+            draw.arc(box, start=start + 4, end=start + length * 0.46, fill=(255, 206, 96, 92), width=max(1, width // 2))
+
+    for ember in range(7):
+        local = ember / 7
+        angle = local * math.tau + phase * math.tau * 0.55
+        radius = size * (0.2 + 0.16 * ((ember * 23) % 100) / 100)
         x = cx + math.cos(angle) * radius
         y = cy + math.sin(angle) * radius * 0.62
-        rx = size * (0.008 + 0.01 * ((shard * 11) % 100) / 100)
-        ry = rx * (0.35 + 0.3 * pulse)
-        draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(255, 118, 22, int(42 + 38 * pulse)))
-        draw.ellipse((x - rx * 0.45, y - ry * 0.45, x + rx * 0.45, y + ry * 0.45), fill=(255, 220, 140, int(44 + 34 * pulse)))
+        rx = size * (0.006 + 0.007 * ((ember * 11) % 100) / 100)
+        ry = rx * (0.45 + 0.22 * pulse)
+        draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(255, 118, 22, int(38 + 28 * pulse)))
 
 
 def draw_firestorm_alpha_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
