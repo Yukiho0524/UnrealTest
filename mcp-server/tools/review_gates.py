@@ -263,6 +263,17 @@ def gate_texture_card_budget(spec: dict[str, Any], manifest: dict[str, Any], unr
     emitters = ((spec.get("vfx_plan") or {}).get("emitters") or [])
     for emitter in emitters:
         pass_name = asset_pass_for_emitter(spec.get("effect_type"), emitter)
+        material = ((emitter.get("unreal_settings") or {}).get("material") or {})
+        preview_card = (((emitter.get("unreal_settings") or {}).get("preview") or {}).get("card") or {})
+        if preview_card.get("enabled") is not False and material.get("flipbook"):
+            component_issues.append(
+                {
+                    "type": "preview_card_uses_flipbook_atlas",
+                    "emitter": emitter.get("name"),
+                    "pass": pass_name,
+                    "reason": "Blueprint preview cards must use a single clean frame; atlas playback belongs in Niagara/material animation only.",
+                }
+            )
         budget = budgets_by_pass.get(pass_name) or role_budget_for_emitter(emitter)
         max_scale = float(budget.get("max_preview_scale") or 99.0)
         max_area = float(budget.get("max_card_area") or 999.0)

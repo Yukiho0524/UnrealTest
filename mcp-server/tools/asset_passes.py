@@ -92,15 +92,17 @@ def apply_asset_pass_manifest_to_spec_dict(spec: dict[str, Any], manifest: dict[
         selected = (asset_pass or {}).get("selected_asset")
         if not selected:
             continue
-        selected_path = selected.get("path")
+        selected_path = sprite_path_for_emitter(pass_name, selected, emitter)
         if not selected_path or not Path(selected_path).exists():
             continue
         emitter["sprite_source"] = selected_path
         emitter.setdefault("notes", []).append(f"Using asset pass '{pass_name}' from {selected.get('source')}.")
         material = emitter.setdefault("unreal_settings", {}).setdefault("material", {})
         atlas = asset_pass.get("asset_metadata", {}).get("atlas")
-        if atlas:
+        if atlas and selected_path == selected.get("path"):
             material["flipbook"] = atlas
+        elif "flipbook" in material:
+            material.pop("flipbook", None)
         if should_apply_shared_alpha(pass_name, selected_path, alpha_path):
             material["alpha_source"] = alpha_path
             material["alpha_usage"] = "multiply_texture_alpha"
@@ -244,11 +246,12 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         niagara["enabled"] = False
     elif role == "atmospheric_wisp":
         timeline.update({"delay": 0.18, "duration": 1.05, "opacity": [0.0, 0.24, 0.18, 0.0], "scale": [0.62, 1.0, 1.22, 1.46], "rotation_speed": 5.0})
-        material["opacity"] = min(float(material.get("opacity", 0.2)), 0.12)
+        material["opacity"] = min(float(material.get("opacity", 0.2)), 0.1)
+        material["emissive_strength"] = min(float(material.get("emissive_strength", 0.35)), 0.22)
         material["blend_mode"] = "translucent"
-        card.update({"enabled": False, "location": [-4, 5, 122], "rotation": [90, 0, 7], "scale": [2.2, 2.0, 1]})
+        card.update({"enabled": True, "location": [-4, 5, 96], "rotation": [90, 0, 7], "scale": [1.45, 1.35, 1]})
         niagara["enabled"] = False
-        emitter.setdefault("notes", []).append("Smoke card is hidden in preview until the smoke alpha pass is clean enough to avoid rectangular artifacts.")
+        emitter.setdefault("notes", []).append("Smoke preview uses a single low-opacity frame so it supports the fire without exposing atlas cards.")
     elif role == "detail_particles":
         timeline.update({"delay": 0.12, "duration": 0.32, "opacity": [0.0, 0.9, 0.55, 0.0], "scale": [0.8, 1.0, 0.65, 0.25], "rotation_speed": 160.0})
         card["enabled"] = False
@@ -294,6 +297,14 @@ def asset_pass_for_emitter(effect_type: str | None, emitter: dict[str, Any]) -> 
     return None
 
 
+def sprite_path_for_emitter(pass_name: str, selected: dict[str, str], emitter: dict[str, Any]) -> str | None:
+    role = emitter.get("role")
+    preview_path = selected.get("preview_frame_path")
+    if preview_path and role in {"fire_pillar", "flame_slashes", "ground_energy_ring", "impact_core", "atmospheric_wisp"}:
+        return preview_path
+    return selected.get("path")
+
+
 def asset_pass_entry(
     pass_spec: dict[str, Any],
     manual_outputs: list[dict[str, str]],
@@ -337,29 +348,46 @@ def prepare_runtime_asset(selected: dict[str, str], pass_name: str, package_name
         return selected
     budget = texture_budget_for_pass(pass_name)
     max_edge = int(budget.get("max_import_edge", 1024))
+    runtime_dir = output_root / package_name / "runtime"
+    result = dict(selected)
     try:
         with Image.open(path) as image:
             width, height = image.size
-            if max(width, height) <= max_edge:
-                return {**selected, "runtime_resized": "false", "runtime_max_edge": str(max_edge)}
-            resized = image.convert("RGBA")
-            ratio = max_edge / max(width, height)
-            target_size = (max(1, int(width * ratio)), max(1, int(height * ratio)))
-            resized = resized.resize(target_size, Image.Resampling.LANCZOS)
+            atlas = atlas_metadata_for_dimensions(pass_name, selected, width, height)
+            if atlas:
+                result.update(
+                    {
+                        "atlas_columns": str(atlas["columns"]),
+                        "atlas_rows": str(atlas["rows"]),
+                        "atlas_frame_count": str(atlas["frame_count"]),
+                        "atlas_fps": str(atlas["fps"]),
+                    }
+                )
+            if max(width, height) > max_edge:
+                resized = image.convert("RGBA")
+                ratio = max_edge / max(width, height)
+                target_size = (max(1, int(width * ratio)), max(1, int(height * ratio)))
+                resized = resized.resize(target_size, Image.Resampling.LANCZOS)
+                runtime_dir.mkdir(parents=True, exist_ok=True)
+                runtime_path = runtime_dir / f"{package_name}_{safe_file_token(pass_name)}_{safe_file_token(path.stem)}_rt.png"
+                resized.save(runtime_path)
+                result.update(
+                    {
+                        "path": str(runtime_path),
+                        "original_path": str(path),
+                        "runtime_resized": "true",
+                        "runtime_max_edge": str(max_edge),
+                    }
+                )
+            else:
+                result.update({"runtime_resized": "false", "runtime_max_edge": str(max_edge)})
     except Exception:
-        return selected
+        return result
 
-    runtime_dir = output_root / package_name / "runtime"
-    runtime_dir.mkdir(parents=True, exist_ok=True)
-    runtime_path = runtime_dir / f"{package_name}_{safe_file_token(pass_name)}_{safe_file_token(path.stem)}_rt.png"
-    resized.save(runtime_path)
-    return {
-        **selected,
-        "path": str(runtime_path),
-        "original_path": str(path),
-        "runtime_resized": "true",
-        "runtime_max_edge": str(max_edge),
-    }
+    preview_path = create_preview_frame_for_asset(result, pass_name, package_name, output_root)
+    if preview_path:
+        result["preview_frame_path"] = str(preview_path)
+    return result
 
 
 def texture_budget_for_pass(pass_name: str) -> dict[str, Any]:
@@ -408,6 +436,31 @@ def asset_metadata_for_selected_asset(selected: dict[str, str] | None, pass_name
 
 
 def atlas_metadata_for_asset(pass_name: str | None, selected: dict[str, str], width: int, height: int) -> dict[str, Any] | None:
+    explicit = explicit_atlas_metadata(selected)
+    if explicit:
+        return explicit
+    return atlas_metadata_for_dimensions(pass_name, selected, width, height)
+
+
+def explicit_atlas_metadata(selected: dict[str, str]) -> dict[str, Any] | None:
+    try:
+        columns = int(selected.get("atlas_columns") or 0)
+        rows = int(selected.get("atlas_rows") or 0)
+        frame_count = int(selected.get("atlas_frame_count") or columns * rows)
+        fps = float(selected.get("atlas_fps") or 12.0)
+    except (TypeError, ValueError):
+        return None
+    if columns <= 1 and rows <= 1:
+        return None
+    return {
+        "columns": columns,
+        "rows": rows,
+        "frame_count": max(1, frame_count),
+        "fps": fps,
+    }
+
+
+def atlas_metadata_for_dimensions(pass_name: str | None, selected: dict[str, str], width: int, height: int) -> dict[str, Any] | None:
     role = str(selected.get("role") or "").lower()
     source = str(selected.get("source") or "").lower()
     filename = Path(selected.get("path", "")).name.lower()
@@ -440,6 +493,55 @@ def atlas_metadata_for_asset(pass_name: str | None, selected: dict[str, str], wi
         "frame_count": max(1, columns * rows),
         "fps": 12.0,
     }
+
+
+def create_preview_frame_for_asset(selected: dict[str, str], pass_name: str, package_name: str, output_root: Path) -> Path | None:
+    if pass_name not in {"core_flame_flipbook", "flame_slash_flipbook", "ground_ring_mask", "impact_flash_mask", "smoke_heat_flipbook"}:
+        return None
+    atlas = explicit_atlas_metadata(selected)
+    if not atlas:
+        return None
+    path = Path(selected.get("path", ""))
+    if not path.exists() or path.suffix.lower() not in IMAGE_SUFFIXES:
+        return None
+    try:
+        with Image.open(path) as image:
+            atlas_image = image.convert("RGBA")
+            columns = max(1, int(atlas["columns"]))
+            rows = max(1, int(atlas["rows"]))
+            frame_count = min(max(1, int(atlas["frame_count"])), columns * rows)
+            frame_width = atlas_image.width // columns
+            frame_height = atlas_image.height // rows
+            best_score = -1.0
+            best_frame = None
+            for index in range(frame_count):
+                x = (index % columns) * frame_width
+                y = (index // columns) * frame_height
+                frame = atlas_image.crop((x, y, x + frame_width, y + frame_height))
+                score = frame_energy_score(frame)
+                if score > best_score:
+                    best_score = score
+                    best_frame = frame
+            if best_frame is None:
+                return None
+            runtime_dir = output_root / package_name / "runtime"
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            preview_path = runtime_dir / f"{package_name}_{safe_file_token(pass_name)}_preview_frame.png"
+            best_frame.save(preview_path)
+            return preview_path
+    except Exception:
+        return None
+
+
+def frame_energy_score(frame: Image.Image) -> float:
+    rgba = frame.convert("RGBA")
+    score = 0.0
+    for r, g, b, a in rgba.getdata():
+        if a <= 4:
+            continue
+        lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
+        score += (a / 255.0) * (0.35 + lum * 0.65)
+    return score
 
 
 def derive_bootstrap_candidates(
@@ -483,8 +585,8 @@ def derive_bootstrap_candidates(
 
     if "smoke_heat_flipbook" in target_names:
         smoke_path = output_dir / f"{package_name}_smoke_heat_flipbook.png"
-        create_reference_extracted_fire_atlas(smoke_source, smoke_path, "smoke_heat")
-        candidates.setdefault("smoke_heat_flipbook", []).append(derived_candidate(smoke_path, "smoke_heat_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
+        create_fire_atlas_pass(smoke_path, "smoke_heat")
+        candidates.setdefault("smoke_heat_flipbook", []).append(derived_candidate(smoke_path, "procedural_smoke_heat_support", source="procedural_layer_synthesis", confidence="medium"))
 
     if "flame_slash_flipbook" in target_names:
         slash_path = output_dir / f"{package_name}_flame_slash_flipbook.png"
@@ -493,8 +595,8 @@ def derive_bootstrap_candidates(
 
     if "ground_ring_mask" in target_names:
         ring_path = output_dir / f"{package_name}_ground_ring_mask.png"
-        create_reference_extracted_fire_atlas(ring_source, ring_path, "ground_ring")
-        candidates.setdefault("ground_ring_mask", []).append(derived_candidate(ring_path, "ground_ring_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
+        create_fire_atlas_pass(ring_path, "ground_ring")
+        candidates.setdefault("ground_ring_mask", []).append(derived_candidate(ring_path, "procedural_ground_ring_anchor", source="procedural_layer_synthesis", confidence="medium"))
 
     if "impact_flash_mask" in target_names:
         flash_path = output_dir / f"{package_name}_impact_flash_mask.png"
@@ -996,9 +1098,11 @@ def create_fire_atlas_pass(output_path: Path, pass_kind: str, columns: int = 4, 
             draw_ground_ring_frame(draw, frame_size, phase)
         elif pass_kind == "impact_flash":
             draw_impact_flash_frame(draw, frame_size, phase)
+        elif pass_kind == "smoke_heat":
+            draw_smoke_heat_frame(draw, frame_size, phase, index)
         elif pass_kind == "embers":
             draw_ember_frame(draw, frame_size, phase, index)
-        frame = frame.filter(ImageFilter.GaussianBlur(radius=0.22 if pass_kind != "embers" else 0.05))
+        frame = frame.filter(ImageFilter.GaussianBlur(radius=2.6 if pass_kind == "smoke_heat" else (0.22 if pass_kind != "embers" else 0.05)))
         x = (index % columns) * frame_size
         y = (index // columns) * frame_size
         atlas.alpha_composite(frame, (x, y))
@@ -1052,6 +1156,29 @@ def draw_impact_flash_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) 
         left = (cx + math.cos(angle + 1.9) * width, cy + math.sin(angle + 1.9) * width)
         right = (cx + math.cos(angle - 1.9) * width, cy + math.sin(angle - 1.9) * width)
         draw.polygon([left, tip, right], fill=(255, 238, 190, int(150 * pulse)))
+
+
+def draw_smoke_heat_frame(draw: ImageDraw.ImageDraw, size: int, phase: float, seed: int) -> None:
+    pulse = math.sin(phase * math.pi)
+    base_y = size * (0.62 - 0.1 * phase)
+    for index in range(10):
+        local = ((seed + 1) * 19 + index * 31) % 100 / 100
+        drift = math.sin(phase * math.tau + local * 5.0)
+        tier = index / 9.0
+        cx = size * (0.5 + (local - 0.5) * (0.42 - tier * 0.18) + drift * 0.045)
+        cy = base_y - size * (0.28 * tier + 0.08 * phase)
+        rx = size * (0.12 + 0.09 * pulse + 0.04 * local) * (1.0 - tier * 0.32)
+        ry = size * (0.06 + 0.05 * pulse + 0.02 * (1.0 - local))
+        alpha = int((10 + 28 * pulse * (0.55 + local * 0.45)) * (1.0 - tier * 0.42))
+        color = (78, 58, 46, alpha)
+        draw.ellipse((cx - rx, cy - ry, cx + rx, cy + ry), fill=color)
+    for index in range(4):
+        local = index / 3.0
+        cx = size * (0.45 + local * 0.1 + math.sin(phase * math.tau + index) * 0.025)
+        cy = size * (0.46 - local * 0.18 - phase * 0.06)
+        rx = size * (0.035 + local * 0.025)
+        ry = size * (0.16 - local * 0.04)
+        draw.ellipse((cx - rx, cy - ry, cx + rx, cy + ry), fill=(96, 70, 46, int(10 + 12 * pulse)))
 
 
 def draw_ember_frame(draw: ImageDraw.ImageDraw, size: int, phase: float, seed: int) -> None:
