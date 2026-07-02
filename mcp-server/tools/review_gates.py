@@ -19,6 +19,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
     unreal_result = read_latest_unreal_result(spec.name)
     gates = [
         gate_required_passes(manifest),
+        gate_similarity_target(manifest),
         gate_fire_pass_coverage(spec.effect_type, manifest),
         gate_layer_timing(patched_spec, unreal_result),
         gate_distortion_pass_link(patched_spec, manifest),
@@ -58,6 +59,24 @@ def gate_required_passes(manifest: dict[str, Any]) -> dict[str, Any]:
         "status": "pass" if missing == 0 else "fail",
         "message": "All required asset passes have candidates." if missing == 0 else f"{missing} required asset pass(es) are missing.",
         "data": summary,
+    }
+
+
+def gate_similarity_target(manifest: dict[str, Any]) -> dict[str, Any]:
+    report = manifest.get("similarity_report") or {}
+    score = (report.get("score") or {}).get("overall")
+    ok = isinstance(score, (int, float)) and float(score) >= 0.8
+    return {
+        "name": "reference_similarity_80",
+        "status": "pass" if ok else "fail",
+        "message": "Local composited preview reached the 0.80 similarity target." if ok else "Local composited preview is below the 0.80 similarity target.",
+        "data": {
+            "target": report.get("target", 0.8),
+            "score": report.get("score"),
+            "preview": report.get("preview"),
+            "target_reference": report.get("target_reference"),
+            "report_status": report.get("status"),
+        },
     }
 
 

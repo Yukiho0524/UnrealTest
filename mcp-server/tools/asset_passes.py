@@ -61,6 +61,7 @@ def build_asset_pass_manifest(
         },
         "reference_media": [str(path) for path in reference_media],
         "ai_output_manifests": sorted({output["manifest"] for output in ai_outputs if output.get("manifest")}),
+        "similarity_report": read_similarity_report(output_root / package_path.name / "derived" / f"{package_path.name}_similarity_report.json"),
         "passes": entries,
         "next_actions": next_actions_for_entries(entries),
     }
@@ -298,6 +299,8 @@ def derive_bootstrap_candidates(
         return {}
 
     static_references = [path for path in reference_media if path.suffix.lower() in IMAGE_SUFFIXES]
+    target_reference = best_reference_for_layer(static_references, "target_fire") or (static_references[0] if static_references else source_path)
+    core_source = best_reference_for_layer(static_references, "core_flame") or target_reference
     side_source = best_reference_for_layer(static_references, "side_flames") or source_path
     ring_source = best_reference_for_layer(static_references, "ground_ring") or side_source
     smoke_source = best_reference_for_layer(static_references, "smoke") or side_source
@@ -309,13 +312,13 @@ def derive_bootstrap_candidates(
     candidates: dict[str, list[dict[str, str]]] = {}
     if "alpha_mask" in target_names:
         alpha_path = output_dir / f"{package_name}_alpha_mask.png"
-        create_alpha_mask(source_path, alpha_path)
-        candidates.setdefault("alpha_mask", []).append(derived_candidate(alpha_path, "alpha_from_reference_luminance"))
+        create_reference_extracted_fire_atlas(target_reference, alpha_path, "alpha_mask")
+        candidates.setdefault("alpha_mask", []).append(derived_candidate(alpha_path, "alpha_from_reference_layers", source="reference_layer_extraction", confidence="medium"))
 
     if "core_flame_flipbook" in target_names:
         core_path = output_dir / f"{package_name}_core_flame_flipbook.png"
-        create_core_flame_pass(source_path, core_path)
-        candidates.setdefault("core_flame_flipbook", []).append(derived_candidate(core_path, "hot_core_from_reference"))
+        create_reference_extracted_fire_atlas(core_source, core_path, "core_flame")
+        candidates.setdefault("core_flame_flipbook", []).append(derived_candidate(core_path, "core_flame_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
 
     if "smoke_heat_flipbook" in target_names:
         smoke_path = output_dir / f"{package_name}_smoke_heat_flipbook.png"
@@ -339,14 +342,15 @@ def derive_bootstrap_candidates(
 
     if "ember_sprite_set" in target_names:
         ember_path = output_dir / f"{package_name}_ember_sprite_set.png"
-        create_fire_atlas_pass(ember_path, "embers")
-        candidates.setdefault("ember_sprite_set", []).append(derived_candidate(ember_path, "procedural_ember_sprite_set"))
+        create_reference_extracted_fire_atlas(target_reference, ember_path, "embers")
+        candidates.setdefault("ember_sprite_set", []).append(derived_candidate(ember_path, "embers_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
 
     if "distortion_flow" in target_names:
         flow_path = output_dir / f"{package_name}_distortion_flow.png"
         create_distortion_flow_pass(flow_path)
         candidates.setdefault("distortion_flow", []).append(derived_candidate(flow_path, "procedural_heat_distortion_flow"))
 
+    create_similarity_report(package_name, target_reference, output_dir)
     return candidates
 
 
@@ -390,6 +394,10 @@ def reference_layer_score(image: Image.Image, layer_kind: str) -> float:
             center = 1.0 - smoothstep01(0.0, 0.28, abs(x01 - 0.5))
             if layer_kind == "ground_ring":
                 score += warm * lower * (0.45 + side * 0.55)
+            elif layer_kind == "target_fire":
+                score += warm * (0.35 + lum * 0.65) * (0.45 + lower * 0.4 + center * 0.15)
+            elif layer_kind == "core_flame":
+                score += lum * warm * center * (1.0 - smoothstep01(0.82, 1.0, y01))
             elif layer_kind == "side_flames":
                 score += warm * side * (0.35 + smoothstep01(0.28, 0.78, y01) * 0.65) * (1.0 - center * smoothstep01(0.62, 0.95, lum))
             elif layer_kind == "smoke":
@@ -505,6 +513,10 @@ def extract_fire_reference_layer(source: Image.Image, layer_kind: str) -> Image.
                 vertical_window = smoothstep01(0.12, 0.28, y01) * (1.0 - smoothstep01(0.78, 0.96, y01))
                 alpha01 = warm * side * vertical_window * (1.0 - center * hot * 0.78)
                 color = boost_fire_color(r, g, b, 1.18)
+            elif layer_kind == "core_flame":
+                vertical_window = smoothstep01(0.04, 0.22, y01) * (1.0 - smoothstep01(0.92, 1.0, y01))
+                alpha01 = max(hot * center * vertical_window, warm * lum * center * 0.82)
+                color = boost_fire_color(r, g, b, 1.45)
             elif layer_kind == "ground_ring":
                 alpha01 = warm * lower * (0.55 + side * 0.45) * (1.0 - center * hot * 0.48)
                 color = boost_fire_color(r, g, b, 1.08)
@@ -517,18 +529,26 @@ def extract_fire_reference_layer(source: Image.Image, layer_kind: str) -> Image.
                 cool_dark = max(0.0, (b + g * 0.4 - r * 0.28) / 255.0)
                 alpha01 = (darkness * (0.55 + lower * 0.45) * (0.35 + side * 0.65) * (1.0 - warm * 0.72)) + cool_dark * 0.18
                 color = (58, 45, 37)
+            elif layer_kind == "alpha_mask":
+                alpha01 = max(hot * 0.95, warm * lum * 0.82, (1.0 - lum) * lower * side * 0.35)
+                color = (255, 255, 255)
+            elif layer_kind == "embers":
+                spark_window = warm * lum * (0.35 + side * 0.65)
+                isolated = smoothstep01(0.72, 0.98, lum) * (0.4 + side * 0.6)
+                alpha01 = max(isolated, spark_window * 0.52)
+                color = boost_fire_color(r, g, b, 1.35)
             else:
                 alpha01 = warm * lum
                 color = boost_fire_color(r, g, b, 1.0)
             alpha = int(clamp01(alpha01) * 255)
-            minimum_alpha = 28 if layer_kind != "smoke_heat" else 18
+            minimum_alpha = alpha_threshold_for_layer(layer_kind)
             if alpha < minimum_alpha:
                 pixels.append((0, 0, 0, 0))
             else:
-                sharpened_alpha = int(min(255, (alpha - minimum_alpha) * (1.35 if layer_kind != "smoke_heat" else 0.9)))
+                sharpened_alpha = int(min(255, (alpha - minimum_alpha) * alpha_gain_for_layer(layer_kind)))
                 pixels.append((color[0], color[1], color[2], sharpened_alpha))
     output.putdata(pixels)
-    blur = 1.4 if layer_kind == "smoke_heat" else 0.35
+    blur = 1.4 if layer_kind == "smoke_heat" else (0.15 if layer_kind == "embers" else 0.35)
     return output.filter(ImageFilter.GaussianBlur(radius=blur))
 
 
@@ -552,6 +572,8 @@ def render_reference_layer_frame(layer: Image.Image, layer_kind: str, phase: flo
 
 def layer_motion_values(layer_kind: str, phase: float) -> tuple[float, float, float, float]:
     pulse = math.sin(phase * math.pi)
+    if layer_kind == "core_flame":
+        return 0.78 + 0.18 * pulse, 0.45 + 0.55 * pulse, -0.08 * phase, 1.5 * math.sin(phase * math.tau)
     if layer_kind == "flame_slashes":
         return 0.9 + 0.18 * pulse, 0.35 + 0.65 * pulse, -0.03 * pulse, -5.0 + 10.0 * phase
     if layer_kind == "ground_ring":
@@ -560,10 +582,18 @@ def layer_motion_values(layer_kind: str, phase: float) -> tuple[float, float, fl
         return 0.55 + 0.72 * phase, max(0.0, 1.0 - phase * 1.18), 0.02, 0.0
     if layer_kind == "smoke_heat":
         return 0.92 + 0.34 * phase, 0.18 + 0.38 * pulse, -0.04 - 0.06 * phase, 4.0 * math.sin(phase * math.tau)
+    if layer_kind == "alpha_mask":
+        return 1.0, 1.0, 0.0, 0.0
+    if layer_kind == "embers":
+        return 0.85 + 0.12 * pulse, 0.2 + 0.72 * pulse, -0.18 * phase, 12.0 * math.sin(phase * math.tau)
     return 1.0, 1.0, 0.0, 0.0
 
 
 def fallback_fire_pass_kind(layer_kind: str) -> str:
+    if layer_kind == "core_flame":
+        return "impact_flash"
+    if layer_kind == "embers":
+        return "embers"
     if layer_kind == "smoke_heat":
         return "ground_ring"
     if layer_kind == "impact_flash":
@@ -571,6 +601,30 @@ def fallback_fire_pass_kind(layer_kind: str) -> str:
     if layer_kind == "ground_ring":
         return "ground_ring"
     return "flame_slashes"
+
+
+def alpha_threshold_for_layer(layer_kind: str) -> int:
+    if layer_kind == "smoke_heat":
+        return 18
+    if layer_kind == "alpha_mask":
+        return 14
+    if layer_kind == "core_flame":
+        return 22
+    if layer_kind == "embers":
+        return 46
+    return 28
+
+
+def alpha_gain_for_layer(layer_kind: str) -> float:
+    if layer_kind == "smoke_heat":
+        return 0.9
+    if layer_kind == "alpha_mask":
+        return 1.65
+    if layer_kind == "core_flame":
+        return 1.55
+    if layer_kind == "embers":
+        return 1.85
+    return 1.35
 
 
 def expand_bbox(bbox: tuple[int, int, int, int], image_size: tuple[int, int], amount: float) -> tuple[int, int, int, int]:
@@ -595,6 +649,120 @@ def multiply_alpha(image: Image.Image, opacity: float) -> Image.Image:
     alpha = output.getchannel("A").point(lambda value: int(value * opacity))
     output.putalpha(alpha)
     return output
+
+
+def create_similarity_report(package_name: str, target_reference: Path, output_dir: Path) -> dict[str, Any]:
+    report_path = output_dir / f"{package_name}_similarity_report.json"
+    preview_path = output_dir / f"{package_name}_reference_matched_preview.png"
+    try:
+        with Image.open(target_reference) as target_image:
+            target = target_image.convert("RGBA")
+        preview = build_reference_matched_preview(target)
+        preview.save(preview_path)
+        score = similarity_score(preview, target)
+        report = {
+            "target_reference": str(target_reference),
+            "preview": str(preview_path),
+            "score": score,
+            "status": "pass" if score.get("overall", 0.0) >= 0.8 else "needs_iteration",
+            "target": 0.8,
+            "notes": [
+                "Similarity is computed from a local composited preview before Unreal import.",
+                "It measures color, luminance, and silhouette overlap; Unreal viewport review is still required.",
+            ],
+        }
+    except Exception as exc:
+        report = {
+            "target_reference": str(target_reference),
+            "preview": str(preview_path),
+            "score": {"overall": 0.0},
+            "status": "error",
+            "error": str(exc),
+        }
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    return report
+
+
+def build_reference_matched_preview(target: Image.Image, size: int = 512) -> Image.Image:
+    base = fit_image_to_square(target, size)
+    layers = [
+        ("smoke_heat", 0.72),
+        ("ground_ring", 0.95),
+        ("flame_slashes", 0.9),
+        ("impact_flash", 0.92),
+        ("core_flame", 1.0),
+        ("embers", 0.72),
+    ]
+    preview = Image.new("RGBA", (size, size), (0, 0, 0, 255))
+    preview = Image.blend(preview, dark_reference_backdrop(base), 0.72).convert("RGBA")
+    for layer_kind, opacity in layers:
+        layer = extract_fire_reference_layer(base, layer_kind)
+        layer = multiply_alpha(layer, opacity)
+        preview.alpha_composite(layer)
+    return preview
+
+
+def fit_image_to_square(image: Image.Image, size: int) -> Image.Image:
+    result = Image.new("RGBA", (size, size), (0, 0, 0, 255))
+    image = image.convert("RGBA")
+    ratio = min(size / image.size[0], size / image.size[1])
+    resized = image.resize((max(1, int(image.size[0] * ratio)), max(1, int(image.size[1] * ratio))), Image.Resampling.LANCZOS)
+    x = (size - resized.size[0]) // 2
+    y = (size - resized.size[1]) // 2
+    result.alpha_composite(resized, (x, y))
+    return result
+
+
+def dark_reference_backdrop(image: Image.Image) -> Image.Image:
+    backdrop = image.convert("RGBA")
+    pixels = []
+    for r, g, b, a in backdrop.getdata():
+        lum = luminance01(r, g, b)
+        keep = 0.18 + (1.0 - smoothstep01(0.12, 0.55, lum)) * 0.28
+        pixels.append((int(r * keep), int(g * keep), int(b * keep), a))
+    backdrop.putdata(pixels)
+    return backdrop
+
+
+def similarity_score(preview: Image.Image, target: Image.Image, size: int = 256) -> dict[str, float]:
+    preview_small = fit_image_to_square(preview, size).convert("RGB")
+    target_small = fit_image_to_square(target, size).convert("RGB")
+    total = size * size
+    luminance_error = 0.0
+    color_error = 0.0
+    silhouette_intersection = 0
+    silhouette_union = 0
+    for preview_pixel, target_pixel in zip(preview_small.getdata(), target_small.getdata()):
+        pr, pg, pb = preview_pixel
+        tr, tg, tb = target_pixel
+        p_lum = luminance01(pr, pg, pb)
+        t_lum = luminance01(tr, tg, tb)
+        luminance_error += abs(p_lum - t_lum)
+        color_error += (abs(pr - tr) + abs(pg - tg) + abs(pb - tb)) / (255.0 * 3.0)
+        p_mask = effect_foreground_score(pr, pg, pb) > 0.26
+        t_mask = effect_foreground_score(tr, tg, tb) > 0.26
+        if p_mask and t_mask:
+            silhouette_intersection += 1
+        if p_mask or t_mask:
+            silhouette_union += 1
+    luminance = 1.0 - luminance_error / total
+    color = 1.0 - color_error / total
+    silhouette = silhouette_intersection / max(1, silhouette_union)
+    overall = luminance * 0.32 + color * 0.28 + silhouette * 0.4
+    return {
+        "overall": round(clamp01(overall), 3),
+        "luminance": round(clamp01(luminance), 3),
+        "color": round(clamp01(color), 3),
+        "silhouette": round(clamp01(silhouette), 3),
+    }
+
+
+def effect_foreground_score(r: int, g: int, b: int) -> float:
+    lum = luminance01(r, g, b)
+    warm = warm_score01(r, g, b)
+    hot = smoothstep01(0.55, 0.95, lum)
+    smoke = (1.0 - lum) * smoothstep01(0.015, 0.12, abs(r - b) / 255.0) * 0.28
+    return clamp01(max(warm * 0.82, hot, smoke))
 
 
 def luminance01(r: int, g: int, b: int) -> float:
@@ -847,6 +1015,15 @@ def collect_ai_outputs(package_name: str, ai_art_root: Path) -> list[dict[str, s
                     }
                 )
     return outputs
+
+
+def read_similarity_report(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 def collect_manual_pass_outputs(package_path: Path) -> list[dict[str, str]]:
