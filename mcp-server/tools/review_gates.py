@@ -23,6 +23,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_fire_pass_coverage(spec.effect_type, manifest),
         gate_layer_timing(patched_spec, unreal_result),
         gate_distortion_pass_link(patched_spec, manifest),
+        gate_reference_matched_anchor(patched_spec, unreal_result),
         gate_production_preview(patched_spec, unreal_result),
         gate_alpha_mask_applied(patched_spec, manifest),
         gate_reference_overlay_not_primary(patched_spec, unreal_result),
@@ -149,6 +150,30 @@ def gate_distortion_pass_link(spec: dict[str, Any], manifest: dict[str, Any]) ->
         "status": "pass" if ok else "warning",
         "message": "Distortion flow is available and linked into material settings." if ok else "Distortion flow is missing or not linked into material settings.",
         "data": {"distortion_ready": distortion_ready, "distortion_emitters": distortion_emitters},
+    }
+
+
+def gate_reference_matched_anchor(spec: dict[str, Any], unreal_result: dict[str, Any] | None) -> dict[str, Any]:
+    emitters = ((spec.get("vfx_plan") or {}).get("emitters") or [])
+    has_emitter = any(emitter.get("role") == "reference_matched_composite" for emitter in emitters)
+    components = [
+        component.get("name")
+        for component in preview_components(unreal_result)
+        if "reference_matched_composite" in str(component.get("name", ""))
+    ]
+    return {
+        "name": "reference_matched_viewport_anchor",
+        "status": "warning" if has_emitter else "fail",
+        "message": (
+            "Viewport includes a reference-matched fidelity anchor; use it as a temporary visual target while improving procedural layers."
+            if has_emitter
+            else "Viewport is missing the reference-matched fidelity anchor."
+        ),
+        "data": {
+            "has_emitter": has_emitter,
+            "components": components,
+            "caveat": "This improves visual similarity but is not a final fully procedural AAA effect.",
+        },
     }
 
 

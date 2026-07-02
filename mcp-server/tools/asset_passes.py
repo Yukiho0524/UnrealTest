@@ -77,6 +77,7 @@ def apply_asset_pass_manifest_to_spec_dict(spec: dict[str, Any], manifest: dict[
     patched = copy.deepcopy(spec)
     plan = patched.get("vfx_plan") or {}
     passes_by_name = {entry.get("name"): entry for entry in manifest.get("passes", [])}
+    ensure_reference_matched_composite_emitter(patched, plan, passes_by_name)
     alpha_pass = passes_by_name.get("alpha_mask")
     alpha_selected = (alpha_pass or {}).get("selected_asset") or {}
     alpha_path = alpha_selected.get("path")
@@ -114,6 +115,69 @@ def apply_asset_pass_manifest_to_spec_dict(spec: dict[str, Any], manifest: dict[
     return patched
 
 
+def ensure_reference_matched_composite_emitter(spec: dict[str, Any], plan: dict[str, Any], passes_by_name: dict[str, dict[str, Any]]) -> None:
+    if spec.get("effect_type") != "fire_or_flame":
+        return
+    composite_pass = passes_by_name.get("reference_matched_composite") or {}
+    selected = composite_pass.get("selected_asset") or {}
+    source_path = selected.get("path")
+    if not source_path or not Path(source_path).exists():
+        return
+    emitters = plan.setdefault("emitters", [])
+    if any(emitter.get("role") == "reference_matched_composite" for emitter in emitters):
+        return
+    emitters.insert(
+        1 if emitters else 0,
+        {
+            "name": "reference_matched_composite",
+            "role": "reference_matched_composite",
+            "sprite_shape": "reference_matched_composite",
+            "material_style": "reference_matched_composite_additive",
+            "motion": "locked_reference_matched_preview",
+            "spawn_rate": 1.0,
+            "lifetime_seconds": 0.9,
+            "start_size": 260.0,
+            "end_size": 260.0,
+            "color_palette": spec.get("color_palette", ["#FFFFFF"]),
+            "sprite_source": source_path,
+            "notes": [
+                "Viewport fidelity anchor generated from the local layered preview.",
+                "This is not the final procedural solution; keep editable layers active in front of it.",
+            ],
+            "unreal_settings": {
+                "enabled": True,
+                "material": {
+                    "opacity": 0.86,
+                    "emissive_strength": 4.8,
+                    "blend_mode": "additive",
+                },
+                "timeline": {
+                    "delay": 0.0,
+                    "duration": 0.9,
+                    "opacity": [0.0, 0.86, 0.86, 0.0],
+                    "scale": [1.0, 1.0, 1.0, 1.0],
+                    "rotation_speed": 0.0,
+                },
+                "preview": {
+                    "card": {
+                        "enabled": True,
+                        "location": [0.0, -8.0, 112.0],
+                        "rotation": [90.0, 0.0, 0.0],
+                        "scale": [3.25, 3.25, 1.0],
+                    },
+                    "niagara": {"enabled": False},
+                },
+                "niagara": {
+                    "spawn_rate": 1.0,
+                    "lifetime_seconds": 0.9,
+                    "start_size": 260.0,
+                    "end_size": 260.0,
+                },
+            },
+        },
+    )
+
+
 def apply_production_preview_layers(spec: dict[str, Any], manifest: dict[str, Any]) -> None:
     if not (manifest.get("summary") or {}).get("unreal_ready"):
         return
@@ -148,7 +212,14 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         emitter.setdefault("notes", []).append("Production preview hides the reference flipbook so the editable layers drive the look.")
         return
 
-    if role == "fire_pillar":
+    if role == "reference_matched_composite":
+        timeline.update({"delay": 0.0, "duration": 0.9, "opacity": [0.0, 0.86, 0.86, 0.0], "scale": [1.0, 1.0, 1.0, 1.0], "rotation_speed": 0.0})
+        material["opacity"] = max(float(material.get("opacity", 0.86)), 0.86)
+        material["emissive_strength"] = max(float(material.get("emissive_strength", 4.8)), 4.8)
+        material["blend_mode"] = "additive"
+        card.update({"enabled": True, "location": [0, -8, 112], "rotation": [90, 0, 0], "scale": [3.25, 3.25, 1]})
+        niagara["enabled"] = False
+    elif role == "fire_pillar":
         timeline.update({"delay": 0.07, "duration": 0.58, "opacity": [0.0, 0.92, 0.82, 0.0], "scale": [0.42, 1.12, 1.0, 0.68]})
         material["opacity"] = max(float(material.get("opacity", 0.54)), 0.78)
         material["emissive_strength"] = max(float(material.get("emissive_strength", 14.0)), 18.0)
@@ -200,6 +271,8 @@ def apply_electric_production_preview(emitter: dict[str, Any]) -> None:
 def asset_pass_for_emitter(effect_type: str | None, emitter: dict[str, Any]) -> str | None:
     role = emitter.get("role")
     if effect_type == "fire_or_flame":
+        if role == "reference_matched_composite":
+            return "reference_matched_composite"
         if role == "fire_pillar":
             return "core_flame_flipbook"
         if role == "flame_slashes":
@@ -350,7 +423,13 @@ def derive_bootstrap_candidates(
         create_distortion_flow_pass(flow_path)
         candidates.setdefault("distortion_flow", []).append(derived_candidate(flow_path, "procedural_heat_distortion_flow"))
 
-    create_similarity_report(package_name, target_reference, output_dir)
+    similarity_report = create_similarity_report(package_name, target_reference, output_dir)
+    if "reference_matched_composite" in target_names:
+        preview_path = similarity_report.get("preview")
+        if preview_path and Path(preview_path).exists():
+            candidates.setdefault("reference_matched_composite", []).append(
+                derived_candidate(Path(preview_path), "reference_matched_viewport_anchor", source="reference_matched_composite", confidence="medium")
+            )
     return candidates
 
 

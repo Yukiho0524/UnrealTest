@@ -131,6 +131,14 @@ def asset_passes_for_plan(effect_type: str, visual_profile: dict[str, Any], emit
             "unreal_usage": "Lit/unlit hybrid material parameters",
             "required": False,
         },
+        {
+            "name": "reference_matched_composite",
+            "source": "local_layer_composite_or_ai_video",
+            "format": "transparent_or_additive_preview_atlas",
+            "purpose": "High-similarity viewport fidelity anchor generated from the layered passes.",
+            "unreal_usage": "Preview composite card behind editable production layers",
+            "required": False,
+        },
     ]
 
     if effect_type == "fire_or_flame":
