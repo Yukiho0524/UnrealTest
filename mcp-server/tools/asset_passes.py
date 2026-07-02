@@ -35,7 +35,7 @@ def build_asset_pass_manifest(
     manual_outputs = collect_manual_pass_outputs(package_path)
     ai_outputs = collect_ai_outputs(package_path.name, ai_art_root)
     reference_candidates = reference_candidates_for_spec(spec.to_dict(), reference_media)
-    derived_candidates = derive_bootstrap_candidates(package_path.name, pass_specs, reference_candidates, output_root)
+    derived_candidates = derive_bootstrap_candidates(package_path.name, pass_specs, reference_candidates, reference_media, output_root)
 
     entries = [
         asset_pass_entry(pass_spec, manual_outputs, reference_candidates, derived_candidates, ai_outputs)
@@ -284,6 +284,7 @@ def derive_bootstrap_candidates(
     package_name: str,
     pass_specs: list[dict[str, Any]],
     reference_candidates: dict[str, list[dict[str, str]]],
+    reference_media: list[Path],
     output_root: Path,
 ) -> dict[str, list[dict[str, str]]]:
     beauty = first_existing_candidate(reference_candidates.get("beauty_flipbook", []))
@@ -295,6 +296,11 @@ def derive_bootstrap_candidates(
     source_path = Path(source["path"])
     if not source_path.suffix.lower() in IMAGE_SUFFIXES:
         return {}
+
+    static_references = [path for path in reference_media if path.suffix.lower() in IMAGE_SUFFIXES]
+    side_source = best_reference_for_layer(static_references, "side_flames") or source_path
+    ring_source = best_reference_for_layer(static_references, "ground_ring") or side_source
+    smoke_source = best_reference_for_layer(static_references, "smoke") or side_source
 
     target_names = {str(pass_spec.get("name") or "") for pass_spec in pass_specs}
     output_dir = output_root / package_name / "derived"
@@ -313,23 +319,23 @@ def derive_bootstrap_candidates(
 
     if "smoke_heat_flipbook" in target_names:
         smoke_path = output_dir / f"{package_name}_smoke_heat_flipbook.png"
-        create_smoke_heat_pass(source_path, smoke_path)
-        candidates.setdefault("smoke_heat_flipbook", []).append(derived_candidate(smoke_path, "soft_heat_haze_from_reference_alpha"))
+        create_reference_extracted_fire_atlas(smoke_source, smoke_path, "smoke_heat")
+        candidates.setdefault("smoke_heat_flipbook", []).append(derived_candidate(smoke_path, "smoke_heat_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
 
     if "flame_slash_flipbook" in target_names:
         slash_path = output_dir / f"{package_name}_flame_slash_flipbook.png"
-        create_fire_atlas_pass(slash_path, "flame_slashes")
-        candidates.setdefault("flame_slash_flipbook", []).append(derived_candidate(slash_path, "procedural_side_flame_atlas"))
+        create_reference_extracted_fire_atlas(side_source, slash_path, "flame_slashes")
+        candidates.setdefault("flame_slash_flipbook", []).append(derived_candidate(slash_path, "side_flames_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
 
     if "ground_ring_mask" in target_names:
         ring_path = output_dir / f"{package_name}_ground_ring_mask.png"
-        create_fire_atlas_pass(ring_path, "ground_ring")
-        candidates.setdefault("ground_ring_mask", []).append(derived_candidate(ring_path, "procedural_molten_ring_atlas"))
+        create_reference_extracted_fire_atlas(ring_source, ring_path, "ground_ring")
+        candidates.setdefault("ground_ring_mask", []).append(derived_candidate(ring_path, "ground_ring_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
 
     if "impact_flash_mask" in target_names:
         flash_path = output_dir / f"{package_name}_impact_flash_mask.png"
-        create_fire_atlas_pass(flash_path, "impact_flash")
-        candidates.setdefault("impact_flash_mask", []).append(derived_candidate(flash_path, "procedural_impact_flash_atlas"))
+        create_reference_extracted_fire_atlas(ring_source, flash_path, "impact_flash")
+        candidates.setdefault("impact_flash_mask", []).append(derived_candidate(flash_path, "impact_flash_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
 
     if "ember_sprite_set" in target_names:
         ember_path = output_dir / f"{package_name}_ember_sprite_set.png"
@@ -352,12 +358,54 @@ def first_existing_candidate(candidates: list[dict[str, str]] | None) -> dict[st
     return None
 
 
-def derived_candidate(path: Path, role: str) -> dict[str, str]:
+def best_reference_for_layer(reference_paths: list[Path], layer_kind: str) -> Path | None:
+    if layer_kind in {"side_flames", "smoke"} and reference_paths:
+        return max(reference_paths, key=lambda path: path.stat().st_size)
+    scored: list[tuple[float, Path]] = []
+    for path in reference_paths:
+        try:
+            with Image.open(path) as source_image:
+                image = source_image.convert("RGB").resize((160, 96), Image.Resampling.BILINEAR)
+                score = reference_layer_score(image, layer_kind)
+        except Exception:
+            continue
+        scored.append((score, path))
+    if not scored:
+        return None
+    return max(scored, key=lambda item: item[0])[1]
+
+
+def reference_layer_score(image: Image.Image, layer_kind: str) -> float:
+    width, height = image.size
+    score = 0.0
+    for y in range(height):
+        y01 = y / max(height - 1, 1)
+        for x in range(width):
+            x01 = x / max(width - 1, 1)
+            r, g, b = image.getpixel((x, y))
+            lum = luminance01(r, g, b)
+            warm = warm_score01(r, g, b)
+            side = smoothstep01(0.12, 0.42, abs(x01 - 0.5))
+            lower = smoothstep01(0.46, 0.86, y01)
+            center = 1.0 - smoothstep01(0.0, 0.28, abs(x01 - 0.5))
+            if layer_kind == "ground_ring":
+                score += warm * lower * (0.45 + side * 0.55)
+            elif layer_kind == "side_flames":
+                score += warm * side * (0.35 + smoothstep01(0.28, 0.78, y01) * 0.65) * (1.0 - center * smoothstep01(0.62, 0.95, lum))
+            elif layer_kind == "smoke":
+                darkness = 1.0 - lum
+                score += darkness * lower * (0.35 + side * 0.65)
+            else:
+                score += warm * lum
+    return score / max(width * height, 1)
+
+
+def derived_candidate(path: Path, role: str, source: str = "derived_reference_bootstrap", confidence: str = "bootstrap") -> dict[str, str]:
     return {
         "path": str(path),
-        "source": "derived_reference_bootstrap",
+        "source": source,
         "role": role,
-        "confidence": "bootstrap",
+        "confidence": confidence,
     }
 
 
@@ -414,6 +462,169 @@ def create_smoke_heat_pass(source_path: Path, output_path: Path) -> None:
         output.putdata(pixels)
         output = output.filter(ImageFilter.GaussianBlur(radius=1.4))
         output.save(output_path)
+
+
+def create_reference_extracted_fire_atlas(source_path: Path, output_path: Path, layer_kind: str, columns: int = 4, rows: int = 4, frame_size: int = 256) -> None:
+    with Image.open(source_path) as source_image:
+        source = source_image.convert("RGBA")
+        layer = extract_fire_reference_layer(source, layer_kind)
+    if not layer.getchannel("A").getbbox():
+        create_fire_atlas_pass(output_path, fallback_fire_pass_kind(layer_kind), columns=columns, rows=rows, frame_size=frame_size)
+        return
+
+    atlas = Image.new("RGBA", (columns * frame_size, rows * frame_size), (0, 0, 0, 0))
+    frame_count = columns * rows
+    for index in range(frame_count):
+        phase = index / max(frame_count - 1, 1)
+        frame = render_reference_layer_frame(layer, layer_kind, phase, frame_size)
+        x = (index % columns) * frame_size
+        y = (index // columns) * frame_size
+        atlas.alpha_composite(frame, (x, y))
+    atlas.save(output_path)
+
+
+def extract_fire_reference_layer(source: Image.Image, layer_kind: str) -> Image.Image:
+    width, height = source.size
+    output = Image.new("RGBA", source.size, (0, 0, 0, 0))
+    pixels = []
+    for y in range(height):
+        y01 = y / max(height - 1, 1)
+        for x in range(width):
+            x01 = x / max(width - 1, 1)
+            r, g, b, a = source.getpixel((x, y))
+            if a <= 4:
+                pixels.append((0, 0, 0, 0))
+                continue
+            lum = luminance01(r, g, b)
+            warm = warm_score01(r, g, b)
+            hot = smoothstep01(0.48, 0.94, lum)
+            lower = smoothstep01(0.42, 0.82, y01)
+            side = smoothstep01(0.12, 0.36, abs(x01 - 0.5))
+            center = 1.0 - smoothstep01(0.0, 0.24, abs(x01 - 0.5))
+            if layer_kind == "flame_slashes":
+                vertical_window = smoothstep01(0.12, 0.28, y01) * (1.0 - smoothstep01(0.78, 0.96, y01))
+                alpha01 = warm * side * vertical_window * (1.0 - center * hot * 0.78)
+                color = boost_fire_color(r, g, b, 1.18)
+            elif layer_kind == "ground_ring":
+                alpha01 = warm * lower * (0.55 + side * 0.45) * (1.0 - center * hot * 0.48)
+                color = boost_fire_color(r, g, b, 1.08)
+            elif layer_kind == "impact_flash":
+                base_window = smoothstep01(0.38, 0.72, y01) * (1.0 - smoothstep01(0.96, 1.0, y01))
+                alpha01 = max(hot * base_window, warm * lum * lower * 0.72)
+                color = boost_fire_color(r, g, b, 1.35)
+            elif layer_kind == "smoke_heat":
+                darkness = 1.0 - lum
+                cool_dark = max(0.0, (b + g * 0.4 - r * 0.28) / 255.0)
+                alpha01 = (darkness * (0.55 + lower * 0.45) * (0.35 + side * 0.65) * (1.0 - warm * 0.72)) + cool_dark * 0.18
+                color = (58, 45, 37)
+            else:
+                alpha01 = warm * lum
+                color = boost_fire_color(r, g, b, 1.0)
+            alpha = int(clamp01(alpha01) * 255)
+            minimum_alpha = 28 if layer_kind != "smoke_heat" else 18
+            if alpha < minimum_alpha:
+                pixels.append((0, 0, 0, 0))
+            else:
+                sharpened_alpha = int(min(255, (alpha - minimum_alpha) * (1.35 if layer_kind != "smoke_heat" else 0.9)))
+                pixels.append((color[0], color[1], color[2], sharpened_alpha))
+    output.putdata(pixels)
+    blur = 1.4 if layer_kind == "smoke_heat" else 0.35
+    return output.filter(ImageFilter.GaussianBlur(radius=blur))
+
+
+def render_reference_layer_frame(layer: Image.Image, layer_kind: str, phase: float, frame_size: int) -> Image.Image:
+    bbox = layer.getchannel("A").getbbox()
+    if not bbox:
+        return Image.new("RGBA", (frame_size, frame_size), (0, 0, 0, 0))
+    cropped = layer.crop(expand_bbox(bbox, layer.size, 0.08))
+    scale, opacity, y_offset, rotation = layer_motion_values(layer_kind, phase)
+    cropped = multiply_alpha(cropped, opacity)
+    fit_size = fit_dimensions(cropped.size, frame_size, scale)
+    resized = cropped.resize(fit_size, Image.Resampling.LANCZOS)
+    if abs(rotation) > 0.01:
+        resized = resized.rotate(rotation, resample=Image.Resampling.BICUBIC, expand=True)
+    frame = Image.new("RGBA", (frame_size, frame_size), (0, 0, 0, 0))
+    x = (frame_size - resized.size[0]) // 2
+    y = (frame_size - resized.size[1]) // 2 + int(y_offset * frame_size)
+    frame.alpha_composite(resized, (x, y))
+    return frame
+
+
+def layer_motion_values(layer_kind: str, phase: float) -> tuple[float, float, float, float]:
+    pulse = math.sin(phase * math.pi)
+    if layer_kind == "flame_slashes":
+        return 0.9 + 0.18 * pulse, 0.35 + 0.65 * pulse, -0.03 * pulse, -5.0 + 10.0 * phase
+    if layer_kind == "ground_ring":
+        return 0.72 + 0.38 * smoothstep01(0.0, 0.7, phase), 1.0 - smoothstep01(0.78, 1.0, phase) * 0.85, 0.08, 16.0 * phase
+    if layer_kind == "impact_flash":
+        return 0.55 + 0.72 * phase, max(0.0, 1.0 - phase * 1.18), 0.02, 0.0
+    if layer_kind == "smoke_heat":
+        return 0.92 + 0.34 * phase, 0.18 + 0.38 * pulse, -0.04 - 0.06 * phase, 4.0 * math.sin(phase * math.tau)
+    return 1.0, 1.0, 0.0, 0.0
+
+
+def fallback_fire_pass_kind(layer_kind: str) -> str:
+    if layer_kind == "smoke_heat":
+        return "ground_ring"
+    if layer_kind == "impact_flash":
+        return "impact_flash"
+    if layer_kind == "ground_ring":
+        return "ground_ring"
+    return "flame_slashes"
+
+
+def expand_bbox(bbox: tuple[int, int, int, int], image_size: tuple[int, int], amount: float) -> tuple[int, int, int, int]:
+    left, top, right, bottom = bbox
+    width, height = image_size
+    pad_x = int((right - left) * amount)
+    pad_y = int((bottom - top) * amount)
+    return (max(0, left - pad_x), max(0, top - pad_y), min(width, right + pad_x), min(height, bottom + pad_y))
+
+
+def fit_dimensions(size: tuple[int, int], frame_size: int, scale: float) -> tuple[int, int]:
+    width, height = size
+    longest = max(width, height, 1)
+    target = max(1, int(frame_size * 0.86 * scale))
+    ratio = target / longest
+    return (max(1, int(width * ratio)), max(1, int(height * ratio)))
+
+
+def multiply_alpha(image: Image.Image, opacity: float) -> Image.Image:
+    opacity = clamp01(opacity)
+    output = image.copy()
+    alpha = output.getchannel("A").point(lambda value: int(value * opacity))
+    output.putalpha(alpha)
+    return output
+
+
+def luminance01(r: int, g: int, b: int) -> float:
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
+
+
+def warm_score01(r: int, g: int, b: int) -> float:
+    red_bias = clamp01((r - max(b, 24)) / 180.0)
+    green_support = clamp01((g - b * 0.35) / 210.0)
+    saturation = clamp01((max(r, g, b) - min(r, g, b)) / 160.0)
+    return clamp01(red_bias * 0.55 + green_support * 0.3 + saturation * 0.15)
+
+
+def boost_fire_color(r: int, g: int, b: int, amount: float) -> tuple[int, int, int]:
+    return (
+        int(min(255, r * amount + 18)),
+        int(min(255, g * (amount * 0.98) + 10)),
+        int(min(255, b * 0.82 + 4)),
+    )
+
+
+def smoothstep01(edge0: float, edge1: float, value: float) -> float:
+    if edge0 == edge1:
+        return 0.0
+    x = clamp01((value - edge0) / (edge1 - edge0))
+    return x * x * (3.0 - 2.0 * x)
+
+
+def clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
 
 
 def create_fire_atlas_pass(output_path: Path, pass_kind: str, columns: int = 4, rows: int = 4, frame_size: int = 256) -> None:
