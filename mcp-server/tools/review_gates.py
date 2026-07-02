@@ -197,13 +197,23 @@ def gate_bootstrap_quality(manifest: dict[str, Any]) -> dict[str, Any]:
     bootstrap = [
         entry.get("name")
         for entry in manifest.get("passes", [])
-        if (entry.get("selected_asset") or {}).get("source") == "derived_reference_bootstrap"
+        if entry.get("required") and (entry.get("selected_asset") or {}).get("source") == "derived_reference_bootstrap"
     ]
+    optional_bootstrap = [
+        entry.get("name")
+        for entry in manifest.get("passes", [])
+        if not entry.get("required") and (entry.get("selected_asset") or {}).get("source") == "derived_reference_bootstrap"
+    ]
+    status = "fail" if bootstrap else ("warning" if optional_bootstrap else "pass")
     return {
         "name": "final_quality_assets",
-        "status": "warning" if bootstrap else "pass",
-        "message": "Some passes are bootstrap derivations; replace with AI/simulation passes for final AAA quality." if bootstrap else "No bootstrap pass is selected.",
-        "data": {"bootstrap_passes": bootstrap},
+        "status": status,
+        "message": (
+            "Required passes are still bootstrap derivations; replace them with manual, AI, or simulation passes for final AAA quality."
+            if bootstrap
+            else ("Only optional passes are bootstrap derivations." if optional_bootstrap else "No bootstrap pass is selected.")
+        ),
+        "data": {"required_bootstrap_passes": bootstrap, "optional_bootstrap_passes": optional_bootstrap},
     }
 
 

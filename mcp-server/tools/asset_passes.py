@@ -32,12 +32,13 @@ def build_asset_pass_manifest(
     plan = spec.vfx_plan
     pass_specs = list(plan.asset_passes if plan else [])
     reference_media = find_package_media(package_path)
+    manual_outputs = collect_manual_pass_outputs(package_path)
     ai_outputs = collect_ai_outputs(package_path.name, ai_art_root)
     reference_candidates = reference_candidates_for_spec(spec.to_dict(), reference_media)
     derived_candidates = derive_bootstrap_candidates(package_path.name, pass_specs, reference_candidates, output_root)
 
     entries = [
-        asset_pass_entry(pass_spec, reference_candidates, derived_candidates, ai_outputs)
+        asset_pass_entry(pass_spec, manual_outputs, reference_candidates, derived_candidates, ai_outputs)
         for pass_spec in pass_specs
     ]
     required_entries = [entry for entry in entries if entry.get("required")]
@@ -220,15 +221,17 @@ def asset_pass_for_emitter(effect_type: str | None, emitter: dict[str, Any]) -> 
 
 def asset_pass_entry(
     pass_spec: dict[str, Any],
+    manual_outputs: list[dict[str, str]],
     reference_candidates: dict[str, list[dict[str, str]]],
     derived_candidates: dict[str, list[dict[str, str]]],
     ai_outputs: list[dict[str, str]],
 ) -> dict[str, Any]:
     name = str(pass_spec.get("name") or "unknown_pass")
     candidates = [
+        *classify_manual_outputs_for_pass(name, manual_outputs),
+        *classify_ai_outputs_for_pass(name, ai_outputs),
         *reference_candidates.get(name, []),
         *derived_candidates.get(name, []),
-        *classify_ai_outputs_for_pass(name, ai_outputs),
     ]
     selected = candidates[0] if candidates else None
     prompt = prompt_for_asset_pass(pass_spec)
@@ -635,6 +638,37 @@ def collect_ai_outputs(package_name: str, ai_art_root: Path) -> list[dict[str, s
     return outputs
 
 
+def collect_manual_pass_outputs(package_path: Path) -> list[dict[str, str]]:
+    passes_root = package_path / "passes"
+    if not passes_root.exists():
+        return []
+    outputs: list[dict[str, str]] = []
+    suffixes = IMAGE_SUFFIXES | ANIMATED_SUFFIXES
+    for path in sorted(passes_root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in suffixes:
+            continue
+        outputs.append(
+            {
+                "path": str(path),
+                "source": "manual_package_pass",
+                "filename": path.name,
+                "relative_path": str(path.relative_to(package_path)),
+                "confidence": "high",
+            }
+        )
+    return outputs
+
+
+def classify_manual_outputs_for_pass(pass_name: str, manual_outputs: list[dict[str, str]]) -> list[dict[str, str]]:
+    aliases = manual_aliases_for_pass(pass_name)
+    matched = []
+    for output in manual_outputs:
+        searchable = f"{output.get('filename', '')} {output.get('relative_path', '')}".lower()
+        if pass_name.lower() in searchable or any(alias in searchable for alias in aliases):
+            matched.append({**output, "matched_by": "manual_pass_name"})
+    return matched
+
+
 def classify_ai_outputs_for_pass(pass_name: str, ai_outputs: list[dict[str, str]]) -> list[dict[str, str]]:
     keywords = keywords_for_pass(pass_name)
     matched = []
@@ -649,6 +683,24 @@ def classify_ai_outputs_for_pass(pass_name: str, ai_outputs: list[dict[str, str]
         elif pass_name == "beauty_flipbook":
             fallback.append({**output, "matched_by": "beauty_fallback"})
     return matched or fallback[:1]
+
+
+def manual_aliases_for_pass(pass_name: str) -> list[str]:
+    aliases = {
+        "beauty_flipbook": ["beauty", "color", "emissive", "flipbook"],
+        "alpha_mask": ["alpha", "mask", "matte", "opacity"],
+        "motion_vectors": ["motion", "vector", "velocity", "mv"],
+        "distortion_flow": ["distortion", "distort", "flow", "heat_haze", "haze"],
+        "normal_or_lighting": ["normal", "lighting", "depth", "lit"],
+        "core_flame_flipbook": ["core", "pillar", "fire_pillar", "flame_core"],
+        "smoke_heat_flipbook": ["smoke", "heat", "wisp", "haze"],
+        "ground_ring_mask": ["ground", "ring", "rune", "circle"],
+        "flame_slash_flipbook": ["slash", "side_flame", "tongue", "flame_tongue"],
+        "impact_flash_mask": ["impact", "flash", "burst", "hit"],
+        "ember_sprite_set": ["ember", "spark", "sparks"],
+        "reference_motion_overlay": ["reference", "overlay", "target"],
+    }
+    return aliases.get(pass_name, [pass_name.lower()])
 
 
 def keywords_for_pass(pass_name: str) -> list[str]:
