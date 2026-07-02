@@ -262,9 +262,11 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         niagara["enabled"] = False
         emitter.setdefault("notes", []).append("Smoke preview uses a single low-opacity frame so it supports the fire without exposing atlas cards.")
     elif role == "detail_particles":
-        timeline.update({"delay": 0.12, "duration": 0.32, "opacity": [0.0, 0.9, 0.55, 0.0], "scale": [0.8, 1.0, 0.65, 0.25], "rotation_speed": 160.0})
+        timeline.update({"delay": 0.12, "duration": 0.32, "opacity": [0.0, 0.55, 0.32, 0.0], "scale": [0.55, 0.72, 0.44, 0.15], "rotation_speed": 130.0})
+        material["opacity"] = min(float(material.get("opacity", 0.78)), 0.46)
+        material["emissive_strength"] = min(float(material.get("emissive_strength", 10.0)), 6.0)
         card["enabled"] = False
-        niagara.update({"enabled": True, "location": [0, 0, 76], "rotation": [0, 0, 0], "scale": [0.55, 0.55, 0.55]})
+        niagara.update({"enabled": True, "location": [0, 0, 72], "rotation": [0, 0, 0], "scale": [0.22, 0.22, 0.22]})
 
 
 def apply_electric_production_preview(emitter: dict[str, Any]) -> None:
@@ -1208,56 +1210,68 @@ def create_fire_atlas_pass(output_path: Path, pass_kind: str, columns: int = 4, 
             draw_smoke_heat_frame(draw, frame_size, phase, index)
         elif pass_kind == "embers":
             draw_ember_frame(draw, frame_size, phase, index)
-        frame = frame.filter(ImageFilter.GaussianBlur(radius=2.6 if pass_kind == "smoke_heat" else (0.22 if pass_kind != "embers" else 0.05)))
+        frame = frame.filter(ImageFilter.GaussianBlur(radius=blur_radius_for_fire_pass(pass_kind)))
         x = (index % columns) * frame_size
         y = (index // columns) * frame_size
         atlas.alpha_composite(frame, (x, y))
     atlas.save(output_path)
 
 
+def blur_radius_for_fire_pass(pass_kind: str) -> float:
+    if pass_kind == "smoke_heat":
+        return 2.6
+    if pass_kind == "firestorm_core":
+        return 1.45
+    if pass_kind == "firestorm_slashes":
+        return 0.95
+    if pass_kind in {"normal_or_lighting", "depth_or_thickness", "layer_mask_pack", "sdf_or_vector_field"}:
+        return 0.0
+    if pass_kind == "embers":
+        return 0.05
+    return 0.22
+
+
 def draw_firestorm_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
     pulse = math.sin(phase * math.pi)
-    for tier in range(11):
-        t = tier / 10
-        y = size * (0.86 - 0.76 * t)
-        twist = math.sin(t * 8.0 + phase * math.tau * 1.25)
-        cx = size * (0.5 + twist * (0.08 + 0.08 * t))
-        width = size * (0.2 * (1.0 - t) + 0.045 + 0.035 * pulse)
-        height = size * (0.13 + 0.025 * math.sin(t * 6.0 + phase * 4.0))
-        alpha = int(74 + 130 * (1.0 - t * 0.55) * (0.55 + pulse * 0.45))
-        draw.ellipse((cx - width, y - height, cx + width, y + height), fill=(255, 80, 15, alpha))
-        draw.ellipse((cx - width * 0.52, y - height * 1.15, cx + width * 0.52, y + height * 1.15), fill=(255, 185, 48, min(230, alpha + 46)))
-        draw.ellipse((cx - width * 0.2, y - height * 1.28, cx + width * 0.2, y + height * 1.28), fill=(255, 250, 192, min(245, alpha + 58)))
-    for strand in range(5):
-        points = []
-        angle_offset = strand * math.tau / 5
-        for step in range(13):
-            t = step / 12
-            radius = size * (0.25 * (1.0 - t) + 0.035)
-            angle = angle_offset + t * math.tau * 1.25 + phase * math.tau
-            x = size * 0.5 + math.cos(angle) * radius
-            y = size * (0.86 - 0.72 * t)
-            width = size * (0.032 * (1.0 - t) + 0.008)
-            points.append((x, y, width))
-        draw.polygon(ribbon_polygon(points, 1.0), fill=(255, 112, 20, 96))
+    for tier in range(18):
+        t = tier / 17
+        y = size * (0.9 - 0.76 * t)
+        sway = math.sin(t * 5.2 + phase * math.tau * 0.9) * size * (0.035 + 0.065 * t)
+        cx = size * 0.5 + sway
+        outer_w = size * (0.28 * (1.0 - t) + 0.04)
+        outer_h = size * (0.09 + 0.045 * (1.0 - t) + 0.025 * pulse)
+        alpha = int((92 + 94 * pulse) * (1.0 - t * 0.5))
+        draw.ellipse((cx - outer_w, y - outer_h, cx + outer_w, y + outer_h), fill=(210, 30, 4, max(20, alpha - 42)))
+        draw.ellipse((cx - outer_w * 0.68, y - outer_h * 1.05, cx + outer_w * 0.68, y + outer_h * 1.05), fill=(255, 96, 14, max(30, alpha)))
+        draw.ellipse((cx - outer_w * 0.36, y - outer_h * 1.18, cx + outer_w * 0.36, y + outer_h * 1.18), fill=(255, 185, 52, min(220, alpha + 36)))
+        draw.ellipse((cx - outer_w * 0.13, y - outer_h * 1.36, cx + outer_w * 0.13, y + outer_h * 1.36), fill=(255, 248, 184, min(240, alpha + 54)))
+    for tongue in range(7):
+        base = tongue / 7
+        x = size * (0.5 + math.sin(base * 9.0 + phase * math.tau) * (0.13 + 0.04 * math.sin(base * 5.0)))
+        y = size * (0.68 - 0.4 * base)
+        w = size * (0.11 * (1.0 - base) + 0.018)
+        h = size * (0.2 * (1.0 - base) + 0.045)
+        draw.ellipse((x - w, y - h, x + w, y + h), fill=(255, 90, 14, 72))
+        draw.ellipse((x - w * 0.44, y - h * 1.06, x + w * 0.44, y + h * 1.06), fill=(255, 210, 92, 84))
 
 
 def draw_firestorm_slash_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
     pulse = math.sin(phase * math.pi)
-    for band in range(4):
-        points = []
-        offset = band * 0.22
-        for step in range(12):
-            t = step / 11
-            angle = (t * 1.35 + offset + phase * 0.55) * math.tau
-            radius = size * (0.18 + 0.32 * t)
+    for band in range(5):
+        direction = -1 if band % 2 else 1
+        y_offset = size * (0.05 * (band - 2))
+        for step in range(13):
+            t = step / 12
+            angle = (0.05 + t * 0.72 + band * 0.11 + phase * 0.28 * direction) * math.tau
+            radius = size * (0.08 + 0.38 * t)
             x = size * 0.5 + math.cos(angle) * radius
-            y = size * (0.72 - 0.44 * t) + math.sin(angle) * size * 0.07
-            width = size * (0.055 * (1.0 - t) + 0.014)
-            points.append((x, y, width))
-        draw.polygon(ribbon_polygon(points, 2.0), fill=(190, 28, 6, int(70 + 44 * pulse)))
-        draw.polygon(ribbon_polygon(points, 1.12), fill=(255, 96, 18, int(116 + 58 * pulse)))
-        draw.polygon(ribbon_polygon(points, 0.42), fill=(255, 232, 150, int(150 + 56 * pulse)))
+            y = size * 0.66 - t * size * 0.36 + math.sin(angle) * size * 0.08 + y_offset
+            w = size * (0.13 * (1.0 - t) + 0.018)
+            h = size * (0.045 * (1.0 - t) + 0.012)
+            alpha = int((72 + 58 * pulse) * (1.0 - t * 0.35))
+            draw.ellipse((x - w * 1.25, y - h * 1.8, x + w * 1.25, y + h * 1.8), fill=(150, 20, 4, max(20, alpha - 38)))
+            draw.ellipse((x - w, y - h, x + w, y + h), fill=(255, 82, 12, alpha))
+            draw.ellipse((x - w * 0.46, y - h * 0.56, x + w * 0.46, y + h * 0.56), fill=(255, 218, 108, min(210, alpha + 44)))
 
 
 def draw_firestorm_alpha_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
