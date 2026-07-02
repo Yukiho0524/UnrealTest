@@ -239,29 +239,31 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         niagara["enabled"] = False
         emitter.setdefault("notes", []).append("Production preview hides the reference-matched anchor so it cannot be mistaken for the authored effect.")
     elif role == "fire_pillar":
-        timeline.update({"delay": 0.07, "duration": 0.58, "opacity": [0.0, 0.92, 0.82, 0.0], "scale": [0.42, 1.12, 1.0, 0.68]})
-        material["opacity"] = max(float(material.get("opacity", 0.54)), 0.78)
-        material["emissive_strength"] = max(float(material.get("emissive_strength", 14.0)), 18.0)
-        card.update({"enabled": True, "location": [0, 0, 104], "rotation": [90, 0, 0], "scale": [0.88, 1.72, 1.0]})
         if is_firestorm or name == "central_fire_pillar":
+            timeline.update({"delay": 0.06, "duration": 0.68, "opacity": [0.0, 0.62, 0.46, 0.0], "scale": [0.62, 1.0, 0.92, 0.7], "rotation_speed": 12.0})
+            material["opacity"] = 0.7
+            material["emissive_strength"] = 14.0
+            card.update({"enabled": True, "location": [0, 0, 82], "rotation": [88, 0, 0], "scale": [1.18, 1.05, 1.0]})
             card["volume_mode"] = "cross_billboard_column"
             card["instances"] = [
-                {"location": [0, 0, 104], "rotation": [90, 60, 0], "scale": [0.78, 1.62, 1.0]},
-                {"location": [0, 0, 104], "rotation": [90, 120, 0], "scale": [0.72, 1.54, 1.0]},
-                {"location": [9, -5, 92], "rotation": [88, 32, -8], "scale": [0.5, 1.18, 1.0]},
-                {"location": [-8, 6, 88], "rotation": [88, -34, 10], "scale": [0.46, 1.08, 1.0]},
+                {"location": [0, 0, 82], "rotation": [88, 58, -10], "scale": [1.02, 1.0, 1.0]},
+                {"location": [0, 0, 82], "rotation": [88, 118, 12], "scale": [0.94, 0.96, 1.0]},
+                {"location": [12, -7, 72], "rotation": [86, 34, -20], "scale": [0.78, 0.78, 1.0]},
+                {"location": [-11, 8, 70], "rotation": [86, -38, 18], "scale": [0.74, 0.72, 1.0]},
             ]
             mesh.update(
                 {
-                    "enabled": True,
-                    "mesh": "cone",
-                    "instances": [
-                        {"mesh": "cone", "location": [0, 0, 84], "rotation": [0, 0, 0], "scale": [0.82, 0.82, 1.58]},
-                        {"mesh": "sphere", "location": [0, 0, 36], "rotation": [0, 0, 0], "scale": [0.72, 0.72, 0.38]},
-                    ],
+                    "enabled": False,
+                    "mesh": "none",
+                    "instances": [],
                 }
             )
-            emitter.setdefault("notes", []).append("Firestorm core uses crossed volume cards so the pillar keeps depth when viewed from different angles.")
+            emitter.setdefault("notes", []).append("Firestorm core is shortened and dimmed so the spiral walls, not a glowing spike, define the storm silhouette.")
+        else:
+            timeline.update({"delay": 0.07, "duration": 0.58, "opacity": [0.0, 0.92, 0.82, 0.0], "scale": [0.42, 1.12, 1.0, 0.68]})
+            material["opacity"] = max(float(material.get("opacity", 0.54)), 0.78)
+            material["emissive_strength"] = max(float(material.get("emissive_strength", 14.0)), 18.0)
+            card.update({"enabled": True, "location": [0, 0, 104], "rotation": [90, 0, 0], "scale": [0.88, 1.72, 1.0]})
         niagara["enabled"] = False
     elif role == "flame_slashes":
         if "back_spiral" in name:
@@ -270,10 +272,15 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             material["emissive_strength"] = max(float(material.get("emissive_strength", 7.5)), 9.0)
             card.update({"enabled": True, "location": [0, 7, 76], "rotation": [88, 0, 18], "scale": [1.55, 1.1, 1]})
             if is_firestorm or "back_spiral" in name:
+                timeline.update({"delay": 0.12, "duration": 0.86, "opacity": [0.0, 0.66, 0.54, 0.0], "scale": [0.6, 1.2, 1.08, 0.76], "rotation_speed": 34.0})
+                material["opacity"] = min(max(float(material.get("opacity", 0.52)), 0.58), 0.68)
+                material["emissive_strength"] = min(max(float(material.get("emissive_strength", 9.0)), 10.0), 12.5)
+                card.update({"enabled": True, "location": [0, 10, 66], "rotation": [86, 0, 24], "scale": [1.78, 0.98, 1]})
                 card["volume_mode"] = "rear_spiral_shell"
                 card["instances"] = [
-                    {"location": [-8, 12, 72], "rotation": [88, 48, 28], "scale": [1.2, 0.92, 1.0]},
-                    {"location": [9, 10, 82], "rotation": [88, -42, -10], "scale": [1.08, 0.86, 1.0]},
+                    {"location": [-12, 14, 66], "rotation": [86, 52, 34], "scale": [1.58, 0.86, 1.0]},
+                    {"location": [12, 12, 74], "rotation": [86, -46, -18], "scale": [1.42, 0.82, 1.0]},
+                    {"location": [0, 18, 86], "rotation": [85, 86, 10], "scale": [1.1, 0.7, 1.0]},
                 ]
         else:
             timeline.update({"delay": 0.1, "duration": 0.72, "opacity": [0.0, 0.82, 0.62, 0.0], "scale": [0.5, 1.14, 1.2, 0.78], "rotation_speed": -28.0})
@@ -281,10 +288,15 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             material["emissive_strength"] = max(float(material.get("emissive_strength", 8.5)), 13.0)
             card.update({"enabled": True, "location": [0, -6, 58], "rotation": [88, 0, -18], "scale": [1.82, 0.92, 1]})
             if is_firestorm or name == "side_flame_slashes":
+                timeline.update({"delay": 0.06, "duration": 0.78, "opacity": [0.0, 0.84, 0.64, 0.0], "scale": [0.62, 1.18, 1.08, 0.72], "rotation_speed": -42.0})
+                material["opacity"] = min(max(float(material.get("opacity", 0.68)), 0.7), 0.82)
+                material["emissive_strength"] = min(max(float(material.get("emissive_strength", 13.0)), 12.5), 15.5)
+                card.update({"enabled": True, "location": [0, -11, 54], "rotation": [86, 0, -24], "scale": [1.9, 1.02, 1]})
                 card["volume_mode"] = "front_spiral_shell"
                 card["instances"] = [
-                    {"location": [8, -12, 62], "rotation": [88, 44, -32], "scale": [1.32, 0.82, 1.0]},
-                    {"location": [-9, -8, 52], "rotation": [88, -46, 12], "scale": [1.12, 0.74, 1.0]},
+                    {"location": [12, -15, 58], "rotation": [86, 48, -38], "scale": [1.62, 0.88, 1.0]},
+                    {"location": [-13, -10, 48], "rotation": [86, -50, 18], "scale": [1.44, 0.82, 1.0]},
+                    {"location": [2, -18, 78], "rotation": [85, 84, -8], "scale": [1.14, 0.72, 1.0]},
                 ]
                 emitter.setdefault("notes", []).append("Firestorm side flames use offset spiral shell cards instead of a single flat ribbon.")
         niagara["enabled"] = False
@@ -314,12 +326,13 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         niagara["enabled"] = False
     elif role == "atmospheric_wisp":
         if is_firestorm or name == "smoke_dust_crown":
-            timeline.update({"delay": 0.18, "duration": 0.8, "opacity": [0.0, 0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0, 1.0], "rotation_speed": 0.0})
-            material["opacity"] = 0.0
-            material["emissive_strength"] = 0.0
-            card["enabled"] = False
+            timeline.update({"delay": 0.18, "duration": 0.92, "opacity": [0.0, 0.09, 0.07, 0.0], "scale": [0.72, 1.04, 1.16, 1.28], "rotation_speed": 8.0})
+            material["opacity"] = 0.08
+            material["emissive_strength"] = 0.16
+            material["blend_mode"] = "translucent"
+            card.update({"enabled": True, "location": [-5, 8, 66], "rotation": [86, 0, 10], "scale": [1.48, 0.88, 1.0]})
             niagara["enabled"] = False
-            emitter.setdefault("notes", []).append("Firestorm preview hides smoke cards until the generator can produce clean alpha; this prevents opaque black texture planes in viewport.")
+            emitter.setdefault("notes", []).append("Firestorm smoke crown is visible at very low opacity to break the bright spike silhouette without creating black cards.")
             return
         timeline.update({"delay": 0.18, "duration": 1.05, "opacity": [0.0, 0.24, 0.18, 0.0], "scale": [0.62, 1.0, 1.22, 1.46], "rotation_speed": 5.0})
         material["opacity"] = min(float(material.get("opacity", 0.2)), 0.1)
@@ -1730,9 +1743,9 @@ def blur_radius_for_fire_pass(pass_kind: str) -> float:
     if pass_kind == "smoke_heat":
         return 2.6
     if pass_kind == "firestorm_core":
-        return 2.8
+        return 1.45
     if pass_kind == "firestorm_slashes":
-        return 2.2
+        return 1.15
     if pass_kind == "firestorm_ground_ring":
         return 0.35
     if pass_kind in {"normal_or_lighting", "depth_or_thickness", "layer_mask_pack", "sdf_or_vector_field"}:
@@ -1744,85 +1757,138 @@ def blur_radius_for_fire_pass(pass_kind: str) -> float:
 
 def draw_firestorm_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
     pulse = math.sin(phase * math.pi)
-    base_y = size * 0.9
-    center = size * (0.5 + math.sin(phase * math.tau * 0.8) * 0.035)
-    draw_flame_tongue(draw, size, center, base_y, size * 0.79, size * 0.28, size * 0.03, phase, (83, 9, 2, 86), 1.0, steps=14)
-    draw_flame_tongue(draw, size, center - size * 0.045, base_y - size * 0.01, size * 0.68, size * 0.22, -size * 0.035, phase, (185, 33, 4, 126), 2.0, steps=13)
-    draw_flame_tongue(draw, size, center + size * 0.035, base_y - size * 0.04, size * 0.76, size * 0.18, size * 0.05, phase + 0.13, (255, 77, 7, 164), 3.0, steps=13)
-    draw_flame_tongue(draw, size, center, base_y - size * 0.075, size * 0.64, size * 0.115, -size * 0.015, phase + 0.22, (255, 166, 39, 178), 4.0, steps=12)
-    draw_flame_tongue(draw, size, center + size * 0.012, base_y - size * 0.13, size * 0.47, size * 0.052, size * 0.015, phase + 0.35, (255, 245, 182, 154), 5.0, steps=10)
+    center_x = size * (0.5 + math.sin(phase * math.tau * 0.7) * 0.025)
+    center_y = size * 0.67
+    base_y = size * 0.86
 
-    for lobe in range(7):
-        local = lobe / 6
+    for layer in range(5):
+        offset = layer / 4
+        angle = -0.85 + offset * 0.42 + phase * 0.32
+        draw_flame_ribbon(
+            draw,
+            size,
+            center_x - size * (0.18 - offset * 0.08),
+            base_y - size * (0.04 + offset * 0.055),
+            size * (0.34 + offset * 0.05),
+            size * (0.075 - offset * 0.006),
+            angle,
+            0.9 - offset * 0.12,
+            phase + offset * 0.11,
+            (160, 28, 3, int(62 + 28 * pulse)),
+            8.0 + layer,
+            steps=14,
+        )
+        draw_flame_ribbon(
+            draw,
+            size,
+            center_x + size * (0.18 - offset * 0.08),
+            base_y - size * (0.07 + offset * 0.048),
+            size * (0.32 + offset * 0.045),
+            size * (0.06 - offset * 0.005),
+            math.pi - angle,
+            -0.82 + offset * 0.1,
+            phase + 0.07 + offset * 0.13,
+            (255, 73, 7, int(72 + 38 * pulse)),
+            14.0 + layer,
+            steps=14,
+        )
+
+    for lobe in range(9):
+        local = lobe / 8
         side = -1 if lobe % 2 else 1
-        y = size * (0.82 - local * 0.45)
-        x = center + side * size * (0.1 + 0.06 * math.sin(local * 5.0 + phase * math.tau))
-        height = size * (0.18 - local * 0.055)
-        width = size * (0.05 - local * 0.016)
+        y = size * (0.8 - local * 0.34)
+        x = center_x + side * size * (0.055 + 0.12 * math.sin(local * math.pi))
+        height = size * (0.13 - local * 0.055)
+        width = size * (0.04 - local * 0.012)
         draw_flame_tongue(
             draw,
             size,
             x,
             y,
-            max(size * 0.07, height),
-            max(size * 0.018, width),
-            side * size * (0.035 + local * 0.018),
-            phase + local * 0.17,
-            (255, 92, 12, int(58 + 42 * pulse)),
-            12.0 + lobe,
+            max(size * 0.035, height),
+            max(size * 0.012, width),
+            side * size * (0.07 + local * 0.022),
+            phase + local * 0.19,
+            (255, 128, 22, int(44 + 36 * pulse)),
+            28.0 + lobe,
             steps=7,
         )
+
+    for ring in range(4):
+        radius = size * (0.09 + ring * 0.035 + pulse * 0.012)
+        height = radius * (1.65 - ring * 0.1)
+        box = (center_x - radius, center_y - height, center_x + radius, center_y + height)
+        start = phase * 220 + ring * 68
+        draw.arc(box, start=start, end=start + 112, fill=(255, 190, 74, int(52 - ring * 7)), width=max(2, int(size * (0.016 - ring * 0.002))))
 
 
 def draw_firestorm_slash_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
     pulse = math.sin(phase * math.pi)
-    origin_x = size * 0.34
-    origin_y = size * 0.78
-    for band in range(4):
-        band_phase = phase + band * 0.11
-        draw_flame_ribbon(
-            draw,
-            size,
-            origin_x + size * 0.015 * band,
-            origin_y - size * 0.045 * band,
-            size * (0.46 + band * 0.035),
-            size * (0.095 - band * 0.012),
-            0.08 + band * 0.13,
-            0.72 - band * 0.1,
-            band_phase,
-            (91, 8, 2, int(52 + 22 * pulse)),
-            21.0 + band,
-        )
+    origin_x = size * 0.22
+    origin_y = size * 0.74
+    for band in range(5):
+        band_phase = phase + band * 0.09
         draw_flame_ribbon(
             draw,
             size,
             origin_x + size * 0.02 * band,
-            origin_y - size * 0.052 * band,
-            size * (0.41 + band * 0.03),
-            size * (0.061 - band * 0.008),
-            0.1 + band * 0.13,
-            0.58 - band * 0.08,
-            band_phase + 0.08,
-            (255, 65, 8, int(88 + 34 * pulse)),
-            31.0 + band,
+            origin_y - size * 0.035 * band,
+            size * (0.58 + band * 0.045),
+            size * (0.072 - band * 0.006),
+            0.0 + band * 0.11,
+            1.05 - band * 0.09,
+            band_phase,
+            (112, 12, 2, int(58 + 24 * pulse)),
+            21.0 + band,
+            steps=16,
         )
         draw_flame_ribbon(
             draw,
             size,
-            origin_x + size * 0.026 * band,
-            origin_y - size * 0.06 * band,
-            size * (0.33 + band * 0.018),
-            size * (0.026 - band * 0.002),
-            0.12 + band * 0.12,
-            0.45 - band * 0.06,
-            band_phase + 0.14,
-            (255, 222, 116, int(74 + 38 * pulse)),
-            41.0 + band,
+            origin_x + size * 0.03 * band,
+            origin_y - size * 0.044 * band,
+            size * (0.52 + band * 0.04),
+            size * (0.046 - band * 0.004),
+            0.02 + band * 0.12,
+            0.88 - band * 0.08,
+            band_phase + 0.08,
+            (255, 68, 8, int(92 + 34 * pulse)),
+            31.0 + band,
+            steps=16,
         )
-    for spark in range(8):
+        draw_flame_ribbon(
+            draw,
+            size,
+            origin_x + size * 0.038 * band,
+            origin_y - size * 0.055 * band,
+            size * (0.38 + band * 0.028),
+            size * (0.018 - band * 0.0015),
+            0.04 + band * 0.12,
+            0.65 - band * 0.05,
+            band_phase + 0.14,
+            (255, 214, 96, int(46 + 30 * pulse)),
+            41.0 + band,
+            steps=14,
+        )
+    for band in range(3):
+        draw_flame_ribbon(
+            draw,
+            size,
+            size * (0.8 - band * 0.035),
+            size * (0.66 - band * 0.05),
+            size * (0.38 + band * 0.04),
+            size * (0.04 - band * 0.006),
+            math.pi * 0.95 - band * 0.14,
+            -0.85 + band * 0.08,
+            phase + 0.2 + band * 0.1,
+            (255, 88, 12, int(62 + 28 * pulse)),
+            61.0 + band,
+            steps=13,
+        )
+    for spark in range(12):
         local = ((spark * 37) % 100) / 100
         angle = 0.18 + local * 1.05 + phase * 0.55
-        radius = size * (0.25 + 0.28 * ((spark * 19) % 100) / 100)
+        radius = size * (0.22 + 0.36 * ((spark * 19) % 100) / 100)
         x = origin_x + math.cos(angle) * radius
         y = origin_y - math.sin(angle) * radius * 0.45
         r = size * (0.005 + 0.005 * ((spark + 3) % 4))
