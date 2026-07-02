@@ -320,14 +320,14 @@ def asset_pass_entry(
         "unreal_usage": pass_spec.get("unreal_usage"),
         "selected_asset": selected,
         "candidates": candidates,
-        "asset_metadata": asset_metadata_for_selected_asset(selected),
+        "asset_metadata": asset_metadata_for_selected_asset(selected, name),
         "quality_note": quality_note_for_selected_asset(selected),
         "generation_prompt": prompt,
         "negative_prompt": "watermark, text, logo, UI, character, weapon, environment, rectangular card border, atlas grid",
     }
 
 
-def asset_metadata_for_selected_asset(selected: dict[str, str] | None) -> dict[str, Any]:
+def asset_metadata_for_selected_asset(selected: dict[str, str] | None, pass_name: str | None = None) -> dict[str, Any]:
     if not selected:
         return {}
     path = Path(selected.get("path", ""))
@@ -340,18 +340,46 @@ def asset_metadata_for_selected_asset(selected: dict[str, str] | None) -> dict[s
         return {}
     if width < 2 or height < 2:
         return {}
-    columns = max(1, round(width / 256)) if width >= 256 else 1
-    rows = max(1, round(height / 256)) if height >= 256 else 1
-    atlas = {
+    atlas = atlas_metadata_for_asset(pass_name, selected, width, height)
+    return {
+        "width": width,
+        "height": height,
+        "atlas": atlas,
+    }
+
+
+def atlas_metadata_for_asset(pass_name: str | None, selected: dict[str, str], width: int, height: int) -> dict[str, Any] | None:
+    role = str(selected.get("role") or "").lower()
+    source = str(selected.get("source") or "").lower()
+    filename = Path(selected.get("path", "")).name.lower()
+    name = str(pass_name or "").lower()
+    if name == "reference_matched_composite" or source == "reference_matched_composite" or "reference_matched_preview" in filename:
+        return None
+    if source == "reference_media" and not any(token in role for token in ("animated", "flipbook", "sequence")):
+        return None
+    atlas_passes = {
+        "alpha_mask",
+        "beauty_flipbook",
+        "core_flame_flipbook",
+        "smoke_heat_flipbook",
+        "ground_ring_mask",
+        "flame_slash_flipbook",
+        "impact_flash_mask",
+        "ember_sprite_set",
+        "reference_motion_overlay",
+        "bolt_branch_set",
+    }
+    if name not in atlas_passes and not any(token in filename for token in ("flipbook", "atlas", "sprite_set")):
+        return None
+    columns = max(1, round(width / 256)) if width >= 512 else 1
+    rows = max(1, round(height / 256)) if height >= 512 else 1
+    if columns <= 1 and rows <= 1:
+        return None
+    return {
         "columns": columns,
         "rows": rows,
         "frame_count": max(1, columns * rows),
         "fps": 12.0,
-    }
-    return {
-        "width": width,
-        "height": height,
-        "atlas": atlas if columns > 1 or rows > 1 else None,
     }
 
 
