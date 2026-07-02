@@ -36,10 +36,11 @@ def build_asset_pass_manifest(
     manual_outputs = collect_manual_pass_outputs(package_path)
     ai_outputs = collect_ai_outputs(package_path.name, ai_art_root)
     reference_candidates = reference_candidates_for_spec(spec.to_dict(), reference_media)
+    ai_companion_candidates = derive_ai_companion_candidates(package_path.name, pass_specs, ai_outputs, output_root)
     derived_candidates = derive_bootstrap_candidates(package_path.name, pass_specs, reference_candidates, reference_media, output_root)
 
     entries = [
-        asset_pass_entry(pass_spec, manual_outputs, reference_candidates, derived_candidates, ai_outputs, package_path.name, output_root)
+        asset_pass_entry(pass_spec, manual_outputs, reference_candidates, ai_companion_candidates, derived_candidates, ai_outputs, package_path.name, output_root)
         for pass_spec in pass_specs
     ]
     required_entries = [entry for entry in entries if entry.get("required")]
@@ -414,6 +415,7 @@ def asset_pass_entry(
     pass_spec: dict[str, Any],
     manual_outputs: list[dict[str, str]],
     reference_candidates: dict[str, list[dict[str, str]]],
+    ai_companion_candidates: dict[str, list[dict[str, str]]],
     derived_candidates: dict[str, list[dict[str, str]]],
     ai_outputs: list[dict[str, str]],
     package_name: str,
@@ -423,6 +425,7 @@ def asset_pass_entry(
     candidates = [
         *classify_manual_outputs_for_pass(name, manual_outputs),
         *classify_ai_outputs_for_pass(name, ai_outputs),
+        *ai_companion_candidates.get(name, []),
         *reference_candidates.get(name, []),
         *derived_candidates.get(name, []),
     ]
@@ -632,6 +635,8 @@ def validate_asset_pass_candidate(
         warnings.append({"type": "smoke_pass_may_render_as_sheet", "alpha_coverage": alpha_coverage, "opaque_ratio": opaque_ratio})
     if source in {"derived_reference_bootstrap", "reference_layer_extraction", "procedural_layer_synthesis", "reference_matched_composite"}:
         warnings.append({"type": "bootstrap_or_reference_source", "source": source})
+    if source == "ai_output_derivative":
+        warnings.append({"type": "ai_derived_companion_pass", "message": "Useful AI-derived companion data, but replace with provider-native or simulation-baked passes for final quality."})
 
     return validation_result(issues, warnings)
 
@@ -727,9 +732,14 @@ def production_contract_summary(entries: list[dict[str, Any]]) -> dict[str, Any]
         for entry in entries
         if (entry.get("selected_asset") or {}).get("source") in {"derived_reference_bootstrap", "reference_layer_extraction", "procedural_layer_synthesis", "reference_matched_composite"}
     )
+    ai_derived_selected = sorted(
+        entry.get("name")
+        for entry in entries
+        if (entry.get("selected_asset") or {}).get("source") == "ai_output_derivative"
+    )
     if failing_required:
         status = "fail"
-    elif warning_required or bootstrap_selected or len(production_ready_advanced) < 3:
+    elif warning_required or bootstrap_selected or ai_derived_selected or len(production_ready_advanced) < 3:
         status = "warning"
     else:
         status = "pass"
@@ -739,6 +749,7 @@ def production_contract_summary(entries: list[dict[str, Any]]) -> dict[str, Any]
         "warning_required_passes": warning_required,
         "production_ready_advanced_passes": production_ready_advanced,
         "bootstrap_or_reference_passes": bootstrap_selected,
+        "ai_derived_companion_passes": ai_derived_selected,
         "minimum_advanced_pass_count": 3,
     }
 
@@ -854,6 +865,128 @@ def frame_energy_score(frame: Image.Image) -> float:
         lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
         score += (a / 255.0) * (0.35 + lum * 0.65)
     return score
+
+
+def derive_ai_companion_candidates(
+    package_name: str,
+    pass_specs: list[dict[str, Any]],
+    ai_outputs: list[dict[str, str]],
+    output_root: Path,
+) -> dict[str, list[dict[str, str]]]:
+    target_names = {str(pass_spec.get("name") or "") for pass_spec in pass_specs}
+    source = best_ai_companion_source(ai_outputs)
+    if not source:
+        return {}
+    source_path = Path(str(source.get("path") or ""))
+    if not source_path.exists() or source_path.suffix.lower() not in IMAGE_SUFFIXES:
+        return {}
+
+    output_dir = output_root / package_name / "ai-derived"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    candidates: dict[str, list[dict[str, str]]] = {}
+    provenance = f"from_{safe_file_token(source_path.stem)}"
+
+    if "alpha_mask" in target_names and not has_ai_candidate(ai_outputs, "alpha_mask"):
+        alpha_path = output_dir / f"{package_name}_alpha_mask_from_ai.png"
+        create_alpha_mask_from_source(source_path, alpha_path)
+        candidates.setdefault("alpha_mask", []).append(
+            derived_candidate(alpha_path, f"ai_alpha_mask_{provenance}", source="ai_output_derivative", confidence="medium")
+        )
+
+    if "distortion_flow" in target_names and not has_ai_candidate(ai_outputs, "distortion_flow"):
+        flow_path = output_dir / f"{package_name}_distortion_flow_from_ai.png"
+        create_distortion_flow_pass(flow_path)
+        candidates.setdefault("distortion_flow", []).append(
+            derived_candidate(flow_path, f"ai_companion_distortion_{provenance}", source="ai_output_derivative", confidence="medium")
+        )
+
+    if "normal_or_lighting" in target_names and not has_ai_candidate(ai_outputs, "normal_or_lighting"):
+        normal_path = output_dir / f"{package_name}_normal_or_lighting_from_ai.png"
+        create_normal_or_lighting_pass(source_path, normal_path)
+        candidates.setdefault("normal_or_lighting", []).append(
+            derived_candidate(normal_path, f"ai_normal_lighting_{provenance}", source="ai_output_derivative", confidence="medium")
+        )
+
+    if "depth_or_thickness" in target_names and not has_ai_candidate(ai_outputs, "depth_or_thickness"):
+        depth_path = output_dir / f"{package_name}_depth_or_thickness_from_ai.png"
+        create_depth_or_thickness_pass(source_path, depth_path)
+        candidates.setdefault("depth_or_thickness", []).append(
+            derived_candidate(depth_path, f"ai_depth_thickness_{provenance}", source="ai_output_derivative", confidence="medium")
+        )
+
+    if "layer_mask_pack" in target_names and not has_ai_candidate(ai_outputs, "layer_mask_pack"):
+        mask_pack_path = output_dir / f"{package_name}_layer_mask_pack_from_ai.png"
+        create_layer_mask_pack_pass(source_path, mask_pack_path)
+        candidates.setdefault("layer_mask_pack", []).append(
+            derived_candidate(mask_pack_path, f"ai_layer_masks_{provenance}", source="ai_output_derivative", confidence="medium")
+        )
+
+    if "sdf_or_vector_field" in target_names and not has_ai_candidate(ai_outputs, "sdf_or_vector_field"):
+        field_path = output_dir / f"{package_name}_sdf_or_vector_field_from_ai.png"
+        create_sdf_or_vector_field_pass(source_path, field_path)
+        candidates.setdefault("sdf_or_vector_field", []).append(
+            derived_candidate(field_path, f"ai_vector_field_{provenance}", source="ai_output_derivative", confidence="medium")
+        )
+
+    if "renderer_layout_metadata" in target_names and not has_ai_candidate(ai_outputs, "renderer_layout_metadata"):
+        metadata_path = output_dir / f"{package_name}_renderer_layout_metadata_from_ai.json"
+        create_ai_renderer_layout_metadata(metadata_path, package_name, source_path)
+        candidates.setdefault("renderer_layout_metadata", []).append(
+            derived_candidate(metadata_path, f"ai_layout_metadata_{provenance}", source="ai_output_derivative", confidence="medium")
+        )
+    return candidates
+
+
+def best_ai_companion_source(ai_outputs: list[dict[str, str]]) -> dict[str, str] | None:
+    priorities = [
+        "core_flame_flipbook",
+        "beauty_flipbook",
+        "flame_slash_flipbook",
+        "smoke_heat_flipbook",
+        "impact_flash_mask",
+    ]
+    image_outputs = [
+        output for output in ai_outputs
+        if Path(str(output.get("path") or "")).suffix.lower() in IMAGE_SUFFIXES and Path(str(output.get("path") or "")).exists()
+    ]
+    for pass_name in priorities:
+        for output in image_outputs:
+            if pass_name in (output.get("candidate_passes") or []):
+                return output
+    return image_outputs[0] if image_outputs else None
+
+
+def has_ai_candidate(ai_outputs: list[dict[str, str]], pass_name: str) -> bool:
+    return any(pass_name in (output.get("candidate_passes") or []) for output in ai_outputs)
+
+
+def create_alpha_mask_from_source(source_path: Path, output_path: Path, size: int = 512) -> None:
+    alpha = reference_foreground_alpha(source_path, size)
+    output = Image.merge("RGBA", (alpha, alpha, alpha, alpha))
+    output.save(output_path)
+
+
+def create_ai_renderer_layout_metadata(output_path: Path, package_name: str, source_path: Path) -> None:
+    payload = {
+        "schema_version": 1,
+        "package": package_name,
+        "source_asset": str(source_path),
+        "default_atlas": {
+            "columns": 1,
+            "rows": 1,
+            "frame_count": 1,
+            "fps": 12,
+            "frame_order": "single_frame_or_provider_atlas",
+            "color_space": "srgb_for_beauty_linear_for_data",
+            "pivot": [0.5, 0.5],
+            "bounds": "match_ai_source_bounds",
+        },
+        "intended_renderers": ["sprite", "mesh_card", "ground_card"],
+        "notes": [
+            "AI-derived metadata. Replace with provider-exported atlas metadata for final production flipbooks.",
+        ],
+    }
+    output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def derive_bootstrap_candidates(
