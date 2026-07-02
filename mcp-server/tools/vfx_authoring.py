@@ -54,6 +54,198 @@ def production_notes_for_plan(effect_type: str, visual_profile: dict[str, Any], 
     return notes
 
 
+def quality_target_for_plan(effect_type: str, visual_profile: dict[str, Any], emitters: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "tier": "aaa_reference_match",
+        "goal": "Generate an editable Unreal Niagara effect that can approach shipped-game quality from a small reference set.",
+        "minimum_similarity": {
+            "silhouette": "match the dominant reference read before adding detail",
+            "timing": "match reference anticipation, peak, trail, and fade",
+            "palette": "preserve core/edge/haze value hierarchy",
+            "motion": "avoid template fountain/spray behavior unless present in the reference",
+        },
+        "production_constraints": {
+            "not_allowed": [
+                "single static billboard as final effect",
+                "uniform particle spray as main shape",
+                "visible flipbook atlas/grid",
+                "opaque rectangular cards",
+            ],
+            "required": [
+                "layered emitters with clear roles",
+                "alpha-shaped sprites or flipbooks",
+                "material-driven emissive, opacity, and distortion controls",
+                "preview asset that plays in Unreal with Realtime enabled",
+            ],
+        },
+        "effect_type": effect_type,
+        "reference_profile": {
+            "animated_count": visual_profile.get("animated_count", 0),
+            "shape_hint": visual_profile.get("shape_hint"),
+            "motion_hint": visual_profile.get("motion_hint"),
+            "sparks_hint": visual_profile.get("sparks_hint", False),
+        },
+        "emitter_roles": [emitter.get("role") for emitter in emitters],
+    }
+
+
+def asset_passes_for_plan(effect_type: str, visual_profile: dict[str, Any], emitters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    passes = [
+        {
+            "name": "beauty_flipbook",
+            "source": "ai_or_simulation",
+            "format": "png_sequence_or_atlas",
+            "purpose": "Main color/emissive animation reference with transparent or black background.",
+            "unreal_usage": "SubUV/flipbook sprite material",
+            "required": True,
+        },
+        {
+            "name": "alpha_mask",
+            "source": "ai_segmentation_or_luminance_extract",
+            "format": "single_channel_png_sequence_or_atlas",
+            "purpose": "Remove rectangular cards and preserve torn/soft silhouettes.",
+            "unreal_usage": "Opacity input and overdraw control",
+            "required": True,
+        },
+        {
+            "name": "motion_vectors",
+            "source": "simulation_or_video_optical_flow",
+            "format": "rg_vector_atlas",
+            "purpose": "Interpolate flipbook frames and add directional smear without extra frames.",
+            "unreal_usage": "Material flipbook interpolation or Niagara dynamic material parameter",
+            "required": False,
+        },
+        {
+            "name": "distortion_flow",
+            "source": "simulation_or_noise_synthesis",
+            "format": "rg_flow_texture",
+            "purpose": "Heat haze, smoke curl, flame edge breakup, or electric shimmer.",
+            "unreal_usage": "Translucent distortion/refraction material layer",
+            "required": False,
+        },
+        {
+            "name": "normal_or_lighting",
+            "source": "simulation_bake_or_ai_normal_estimate",
+            "format": "normal_map_or_6_point_lighting",
+            "purpose": "Add volume response for smoke, fire lobes, and magic clouds.",
+            "unreal_usage": "Lit/unlit hybrid material parameters",
+            "required": False,
+        },
+    ]
+
+    if effect_type == "fire_or_flame":
+        passes.extend(
+            [
+                {
+                    "name": "core_flame_flipbook",
+                    "source": "embergen_fluidninja_or_ai_video",
+                    "format": "premultiplied_emissive_atlas",
+                    "purpose": "White/yellow vertical core with orange torn edges.",
+                    "unreal_usage": "Primary fire pillar emitter",
+                    "required": True,
+                },
+                {
+                    "name": "smoke_heat_flipbook",
+                    "source": "simulation_or_ai_video",
+                    "format": "low_emissive_translucent_atlas",
+                    "purpose": "Dark crown, heat wisp, and linger after fire peak.",
+                    "unreal_usage": "Atmospheric wisp emitter plus distortion layer",
+                    "required": True,
+                },
+                {
+                    "name": "ground_ring_mask",
+                    "source": "procedural_or_ai_stroke",
+                    "format": "radial_mask_texture",
+                    "purpose": "Molten ring/rune anchor that sells impact scale.",
+                    "unreal_usage": "Ground card or mesh ring emitter",
+                    "required": False,
+                },
+            ]
+        )
+    elif effect_type == "electric_arc":
+        passes.extend(
+            [
+                {
+                    "name": "bolt_branch_set",
+                    "source": "procedural_ai_or_vector_authoring",
+                    "format": "alpha_sprites_or_ribbon_masks",
+                    "purpose": "Readable main bolt plus branch silhouettes.",
+                    "unreal_usage": "Sprite or ribbon renderers with flicker",
+                    "required": True,
+                },
+                {
+                    "name": "impact_flash_mask",
+                    "source": "procedural_or_ai",
+                    "format": "radial_alpha_texture",
+                    "purpose": "Short contact flash and ground energy pulse.",
+                    "unreal_usage": "Impact core emitter",
+                    "required": True,
+                },
+            ]
+        )
+
+    if any(emitter.get("role") == "reference_motion" for emitter in emitters):
+        passes.append(
+            {
+                "name": "reference_motion_overlay",
+                "source": "sampled_reference_gif_or_image_sequence",
+                "format": "flipbook_atlas",
+                "purpose": "Temporary visual target used to compare generated editable layers against the reference.",
+                "unreal_usage": "Preview-only or low-opacity final overlay",
+                "required": True,
+            }
+        )
+
+    return passes
+
+
+def review_gates_for_plan(effect_type: str, visual_profile: dict[str, Any], emitters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    gates = [
+        {
+            "name": "reference_read",
+            "pass_condition": "At thumbnail size, the effect reads as the same category and main silhouette as the reference.",
+            "failure_action": "Adjust primary body/card/flipbook before adding particles.",
+        },
+        {
+            "name": "motion_match",
+            "pass_condition": "Peak timing, direction, and fade order match the reference or designer prompt.",
+            "failure_action": "Retune layer delays, lifetime, SubUV fps, velocity, and alpha-over-life.",
+        },
+        {
+            "name": "material_quality",
+            "pass_condition": "No visible atlas grid or rectangular billboard; emissive core, edge alpha, and haze/distortion are separated.",
+            "failure_action": "Regenerate alpha/motion/distortion passes and verify material graph inputs.",
+        },
+        {
+            "name": "layer_balance",
+            "pass_condition": "Primary layer dominates; accents, sparks, smoke, and glow support instead of becoming noise.",
+            "failure_action": "Lower spawn density and opacity on secondary emitters.",
+        },
+        {
+            "name": "engine_readiness",
+            "pass_condition": "Blueprint/Niagara preview plays in Unreal viewport with Realtime enabled and does not crash.",
+            "failure_action": "Remove unstable preview worlds and validate generated assets through Editor Python.",
+        },
+    ]
+    if effect_type == "fire_or_flame":
+        gates.append(
+            {
+                "name": "fire_specific_read",
+                "pass_condition": "Impact flash leads, ground ring anchors, flame core rises, embers trail, smoke lingers.",
+                "failure_action": "Split or reorder fire emitters; do not compensate by increasing spark count.",
+            }
+        )
+    if effect_type == "electric_arc":
+        gates.append(
+            {
+                "name": "lightning_specific_read",
+                "pass_condition": "Main bolt and branches are readable before particles; spark spray is sparse.",
+                "failure_action": "Use bolt/ribbon masks and reduce ion spark density.",
+            }
+        )
+    return gates
+
+
 def composition_layers_for_plan(effect_type: str, emitters: list[dict[str, Any]], has_reference_card: bool) -> list[dict[str, Any]]:
     layers: list[dict[str, Any]] = []
     if has_reference_card:

@@ -72,6 +72,9 @@ class VFXPlan:
     reference_card_source: str | None = None
     composition_layers: list[dict] = field(default_factory=list)
     production_notes: list[str] = field(default_factory=list)
+    quality_target: dict = field(default_factory=dict)
+    asset_passes: list[dict] = field(default_factory=list)
+    review_gates: list[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

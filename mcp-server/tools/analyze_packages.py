@@ -9,7 +9,13 @@ from schemas import VFXEmitterPlan, VFXParticles, VFXPlan, VFXSource, VFXSpec, V
 from tools.analyze_images import IMAGE_EXTENSIONS, _classify_from_filename
 from tools.image_features import analyze_media_files
 from tools.reference_sprites import create_reference_card_source, create_reference_flipbook_source, create_reference_sprite_source
-from tools.vfx_authoring import composition_layers_for_plan, production_notes_for_plan
+from tools.vfx_authoring import (
+    asset_passes_for_plan,
+    composition_layers_for_plan,
+    production_notes_for_plan,
+    quality_target_for_plan,
+    review_gates_for_plan,
+)
 
 
 CONFIG_FILE = "config.json"
@@ -221,6 +227,9 @@ def build_vfx_plan(
             reference_card_source=reference_card_source,
             composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
             production_notes=production_notes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+            quality_target=quality_target_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+            asset_passes=asset_passes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+            review_gates=review_gates_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
         )
 
     if effect_type == "glowing_particles" or (effect_type != "electric_arc" and visual_profile.get("shape_hint") == "glowing_square_particles"):
@@ -261,6 +270,9 @@ def build_vfx_plan(
             reference_card_source=reference_card_source,
             composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
             production_notes=production_notes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+            quality_target=quality_target_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+            asset_passes=asset_passes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+            review_gates=review_gates_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
         )
 
     if effect_type == "fire_or_flame":
@@ -402,6 +414,9 @@ def build_vfx_plan(
             reference_card_source=reference_card_source,
             composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
             production_notes=production_notes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+            quality_target=quality_target_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+            asset_passes=asset_passes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+            review_gates=review_gates_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
         )
 
     if effect_type == "electric_arc":
@@ -486,6 +501,9 @@ def build_vfx_plan(
             reference_card_source=reference_card_source,
             composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
             production_notes=production_notes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+            quality_target=quality_target_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+            asset_passes=asset_passes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+            review_gates=review_gates_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
         )
 
     emitters = [
@@ -511,6 +529,9 @@ def build_vfx_plan(
         reference_card_source=reference_card_source,
         composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
         production_notes=production_notes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+        quality_target=quality_target_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+        asset_passes=asset_passes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+        review_gates=review_gates_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
     )
 
 

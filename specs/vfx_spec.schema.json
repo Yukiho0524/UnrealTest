@@ -141,6 +141,24 @@
             "type": "string"
           }
         },
+        "quality_target": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "asset_passes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "review_gates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
         "emitters": {
           "type": "array",
           "items": {
