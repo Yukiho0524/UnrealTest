@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from tools.analyze_packages import find_package_media
+from tools.analyze_packages import analyze_effect_package, find_package_media
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
@@ -113,7 +113,9 @@ class ComfyUIProvider(ArtProvider):
         history = self.wait_for_history(base_url, prompt_id, timeout_seconds)
         manifest["history"] = history
         outputs = download_history_images(base_url, history, output_dir)
+        outputs = annotate_outputs_with_asset_passes(request.package_path, outputs)
         manifest["outputs"] = outputs
+        manifest["asset_pass_candidates"] = summarize_asset_pass_candidates(outputs)
         manifest["status"] = "succeeded" if outputs else "finished_no_images"
         manifest["message"] = "AI art pass finished." if outputs else "ComfyUI finished, but no image outputs were found."
         write_manifest(output_dir, manifest)
@@ -239,6 +241,63 @@ def download_history_images(base_url: str, history: dict[str, Any], output_dir: 
             output_path.write_bytes(data)
             outputs.append({"filename": filename, "path": str(output_path)})
     return outputs
+
+
+def annotate_outputs_with_asset_passes(package_path: Path, outputs: list[dict[str, str]]) -> list[dict[str, Any]]:
+    if not outputs:
+        return []
+    try:
+        spec = analyze_effect_package(package_path)
+        pass_specs = (spec.vfx_plan.asset_passes if spec.vfx_plan else [])
+    except Exception:
+        pass_specs = []
+    pass_names = [str(pass_spec.get("name")) for pass_spec in pass_specs if pass_spec.get("name")]
+    annotated = []
+    for output in outputs:
+        filename = str(output.get("filename") or Path(str(output.get("path", ""))).name).lower()
+        candidates = [name for name in pass_names if filename_matches_pass(filename, name)]
+        if not candidates and "beauty_flipbook" in pass_names:
+            candidates = ["beauty_flipbook"]
+        annotated.append({**output, "candidate_passes": candidates})
+    return annotated
+
+
+def summarize_asset_pass_candidates(outputs: list[dict[str, Any]]) -> dict[str, list[str]]:
+    summary: dict[str, list[str]] = {}
+    for output in outputs:
+        path = str(output.get("path") or "")
+        for pass_name in output.get("candidate_passes") or []:
+            summary.setdefault(pass_name, []).append(path)
+    return summary
+
+
+def filename_matches_pass(filename: str, pass_name: str) -> bool:
+    return any(keyword in filename for keyword in keywords_for_pass(pass_name))
+
+
+def keywords_for_pass(pass_name: str) -> list[str]:
+    name = pass_name.lower()
+    if "alpha" in name or "mask" in name:
+        return ["alpha", "mask", "matte", "opacity"]
+    if "motion" in name:
+        return ["motion", "vector", "velocity", "mv"]
+    if "distortion" in name or "flow" in name:
+        return ["distort", "flow", "heat", "normal"]
+    if "normal" in name or "lighting" in name:
+        return ["normal", "depth", "lighting", "light"]
+    if "smoke" in name:
+        return ["smoke", "heat", "wisp"]
+    if "core" in name or "flame" in name:
+        return ["core", "flame", "fire", "beauty"]
+    if "bolt" in name:
+        return ["bolt", "branch", "lightning", "arc"]
+    if "impact" in name:
+        return ["impact", "flash", "burst"]
+    if "ring" in name:
+        return ["ring", "rune", "ground"]
+    if "reference" in name:
+        return ["reference", "overlay"]
+    return [name]
 
 
 def choose_upload_reference(media_files: list[Path]) -> Path | None:

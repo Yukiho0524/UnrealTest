@@ -8,6 +8,7 @@ from tools.analyze_images import analyze_reference_folder
 from tools.analyze_packages import analyze_effect_package, list_effect_packages
 from tools.art_providers import generate_art_pass
 from tools.asset_passes import build_asset_pass_manifest
+from tools.review_gates import review_effect_package
 from tools.unreal_bridge import write_package_spec, write_spec_for_unreal
 
 
@@ -38,6 +39,10 @@ def main() -> int:
     prepare_assets.add_argument("package", type=Path)
     prepare_assets.add_argument("--out", type=Path, default=Path("generated/asset-passes"))
     prepare_assets.add_argument("--ai-art-root", type=Path, default=Path("generated/ai-art"))
+
+    review = subparsers.add_parser("review", help="Evaluate generated VFX against production review gates.")
+    review.add_argument("package", type=Path)
+    review.add_argument("--destination", default=None)
 
     ui = subparsers.add_parser("ui", help="Start the local VFX MCP web UI.")
     ui.add_argument("--host", default="127.0.0.1")
@@ -79,6 +84,11 @@ def main() -> int:
 
     if args.command == "prepare-assets":
         result = build_asset_pass_manifest(args.package, output_root=args.out, ai_art_root=args.ai_art_root)
+        print(json.dumps(result, indent=2))
+        return 0
+
+    if args.command == "review":
+        result = review_effect_package(args.package, destination_path=args.destination)
         print(json.dumps(result, indent=2))
         return 0
 

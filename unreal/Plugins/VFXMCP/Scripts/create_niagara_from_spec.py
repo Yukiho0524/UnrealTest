@@ -652,11 +652,13 @@ def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str)
     material_path = f"{destination_path}/{material_name}"
     instance_path = f"{destination_path}/{instance_name}"
     texture_path = f"{destination_path}/{texture_name}"
+    alpha_texture_path = f"{destination_path}/{texture_name}_Alpha"
 
     result = {
         "material_path": material_path,
         "material_instance_path": instance_path,
         "texture_path": texture_path,
+        "alpha_texture_path": None,
         "palette": spec["color_palette"],
         "errors": [],
         "created": False,
@@ -664,8 +666,11 @@ def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str)
 
     try:
         texture = create_or_replace_sprite_texture(unreal_module, texture_name, destination_path, spec)
-        material = create_or_replace_material(unreal_module, material_name, destination_path, spec, texture)
-        material_instance = create_or_replace_material_instance(unreal_module, instance_name, destination_path, material, spec, texture)
+        alpha_texture = create_or_replace_alpha_texture(unreal_module, f"{texture_name}_Alpha", destination_path, spec)
+        if alpha_texture:
+            result["alpha_texture_path"] = alpha_texture_path
+        material = create_or_replace_material(unreal_module, material_name, destination_path, spec, texture, alpha_texture)
+        material_instance = create_or_replace_material_instance(unreal_module, instance_name, destination_path, material, spec, texture, alpha_texture)
         result["created"] = bool(material and material_instance)
         return result
     except Exception as exc:
@@ -698,6 +703,37 @@ def create_or_replace_sprite_texture(unreal_module, texture_name: str, destinati
     configure_texture_asset(unreal_module, texture)
     annotate_asset(unreal_module, texture, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(texture)
+    return texture
+
+
+def create_or_replace_alpha_texture(unreal_module, texture_name: str, destination_path: str, spec: dict):
+    alpha_source = primary_alpha_source_path(spec)
+    if not alpha_source:
+        return None
+    texture = import_texture_from_source(unreal_module, texture_name, destination_path, alpha_source, spec)
+    configure_alpha_texture_asset(unreal_module, texture)
+    unreal_module.EditorAssetLibrary.save_loaded_asset(texture)
+    return texture
+
+
+def import_texture_from_source(unreal_module, texture_name: str, destination_path: str, source_path: Path, spec: dict):
+    texture_path = f"{destination_path}/{texture_name}"
+    if unreal_module.EditorAssetLibrary.does_asset_exist(texture_path):
+        unreal_module.EditorAssetLibrary.delete_asset(texture_path)
+
+    task = unreal_module.AssetImportTask()
+    task.set_editor_property("filename", str(source_path))
+    task.set_editor_property("destination_path", destination_path)
+    task.set_editor_property("destination_name", texture_name)
+    task.set_editor_property("automated", True)
+    task.set_editor_property("replace_existing", True)
+    task.set_editor_property("save", True)
+    unreal_module.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
+
+    texture = unreal_module.EditorAssetLibrary.load_asset(texture_path)
+    if not texture:
+        raise RuntimeError(f"Could not import texture: {texture_path}")
+    annotate_asset(unreal_module, texture, spec)
     return texture
 
 
@@ -1091,7 +1127,15 @@ def configure_texture_asset(unreal_module, texture) -> None:
         try_set_editor_property(texture, "mip_gen_settings", unreal_module.TextureMipGenSettings.TMGS_NO_MIPMAPS)
 
 
-def create_or_replace_material(unreal_module, material_name: str, destination_path: str, spec: dict, sprite_texture=None):
+def configure_alpha_texture_asset(unreal_module, texture) -> None:
+    try_set_editor_property(texture, "srgb", False)
+    if hasattr(unreal_module, "TextureCompressionSettings"):
+        try_set_editor_property(texture, "compression_settings", unreal_module.TextureCompressionSettings.TC_MASKS)
+    if hasattr(unreal_module, "TextureMipGenSettings"):
+        try_set_editor_property(texture, "mip_gen_settings", unreal_module.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+
+
+def create_or_replace_material(unreal_module, material_name: str, destination_path: str, spec: dict, sprite_texture=None, alpha_texture=None):
     material_path = f"{destination_path}/{material_name}"
     if unreal_module.EditorAssetLibrary.does_asset_exist(material_path):
         unreal_module.EditorAssetLibrary.delete_asset(material_path)
@@ -1103,13 +1147,13 @@ def create_or_replace_material(unreal_module, material_name: str, destination_pa
         raise RuntimeError(f"Could not create material: {material_path}")
 
     configure_material_properties(unreal_module, material, spec)
-    build_sprite_material_graph(unreal_module, material, spec, sprite_texture)
+    build_sprite_material_graph(unreal_module, material, spec, sprite_texture, alpha_texture)
     annotate_asset(unreal_module, material, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(material)
     return material
 
 
-def create_or_replace_material_instance(unreal_module, instance_name: str, destination_path: str, material, spec: dict, sprite_texture=None):
+def create_or_replace_material_instance(unreal_module, instance_name: str, destination_path: str, material, spec: dict, sprite_texture=None, alpha_texture=None):
     instance_path = f"{destination_path}/{instance_name}"
     if unreal_module.EditorAssetLibrary.does_asset_exist(instance_path):
         unreal_module.EditorAssetLibrary.delete_asset(instance_path)
@@ -1128,6 +1172,8 @@ def create_or_replace_material_instance(unreal_module, instance_name: str, desti
     unreal_module.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(material_instance, "Opacity", inferred_opacity(spec))
     if sprite_texture:
         unreal_module.MaterialEditingLibrary.set_material_instance_texture_parameter_value(material_instance, "SpriteTexture", sprite_texture)
+    if alpha_texture:
+        unreal_module.MaterialEditingLibrary.set_material_instance_texture_parameter_value(material_instance, "AlphaTexture", alpha_texture)
     annotate_asset(unreal_module, material_instance, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(material_instance)
     return material_instance
@@ -1246,7 +1292,7 @@ def configure_material_properties(unreal_module, material, spec: dict) -> None:
     material.set_editor_property("use_material_attributes", False)
 
 
-def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_texture=None) -> None:
+def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_texture=None, alpha_texture=None) -> None:
     library = unreal_module.MaterialEditingLibrary
     palette = palette_as_linear_colors(spec["color_palette"])
 
@@ -1256,6 +1302,13 @@ def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_text
         texture_sample.set_editor_property("parameter_name", "SpriteTexture")
         texture_sample.set_editor_property("texture", sprite_texture)
         connect_flipbook_uv_if_needed(unreal_module, material, texture_sample, spec)
+
+    alpha_sample = None
+    if alpha_texture and hasattr(unreal_module, "MaterialExpressionTextureSampleParameter2D"):
+        alpha_sample = library.create_material_expression(material, unreal_module.MaterialExpressionTextureSampleParameter2D, -980, 410)
+        alpha_sample.set_editor_property("parameter_name", "AlphaTexture")
+        alpha_sample.set_editor_property("texture", alpha_texture)
+        connect_flipbook_uv_if_needed(unreal_module, material, alpha_sample, spec)
 
     particle_color = library.create_material_expression(material, unreal_module.MaterialExpressionParticleColor, -760, 40)
     core_color = library.create_material_expression(material, unreal_module.MaterialExpressionVectorParameter, -760, 220)
@@ -1273,13 +1326,24 @@ def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_text
     opacity.set_editor_property("parameter_name", "Opacity")
     opacity.set_editor_property("default_value", inferred_opacity(spec))
     opacity_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -60, 300)
+    alpha_mask_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -210, 410) if alpha_sample else None
 
     library.connect_material_expressions(particle_color, "RGB", particle_tint_multiply, "A")
     library.connect_material_expressions(core_color, "", particle_tint_multiply, "B")
     if texture_sample:
         library.connect_material_expressions(texture_sample, "RGB", texture_color_multiply, "A")
         library.connect_material_expressions(particle_tint_multiply, "", texture_color_multiply, "B")
-        library.connect_material_expressions(texture_sample, "A", opacity_multiply, "A")
+        if alpha_sample and alpha_mask_multiply:
+            library.connect_material_expressions(texture_sample, "A", alpha_mask_multiply, "A")
+            library.connect_material_expressions(alpha_sample, "A", alpha_mask_multiply, "B")
+            library.connect_material_expressions(alpha_mask_multiply, "", opacity_multiply, "A")
+        else:
+            library.connect_material_expressions(texture_sample, "A", opacity_multiply, "A")
+        library.connect_material_expressions(opacity, "", opacity_multiply, "B")
+        opacity_output = opacity_multiply
+    elif alpha_sample:
+        library.connect_material_expressions(particle_tint_multiply, "", texture_color_multiply, "A")
+        library.connect_material_expressions(alpha_sample, "A", opacity_multiply, "A")
         library.connect_material_expressions(opacity, "", opacity_multiply, "B")
         opacity_output = opacity_multiply
     else:
@@ -1520,6 +1584,16 @@ def primary_sprite_source_path(spec: dict) -> Path | None:
         source_path = Path(source)
         if source_path.exists():
             return source_path
+    return None
+
+
+def primary_alpha_source_path(spec: dict) -> Path | None:
+    source = material_setting(spec, "alpha_source")
+    if not source:
+        return None
+    source_path = Path(str(source))
+    if source_path.exists():
+        return source_path
     return None
 
 

@@ -9,6 +9,7 @@ from project_registry import find_unreal_projects
 from tools.analyze_packages import analyze_effect_package, list_effect_packages
 from tools.art_providers import generate_art_pass
 from tools.asset_passes import apply_asset_pass_manifest_to_spec_dict, build_asset_pass_manifest
+from tools.review_gates import review_effect_package
 from tools.unreal_bridge import create_niagara_from_spec_command, open_unreal_asset, run_unreal_generation, write_package_spec, write_spec_dict
 
 
@@ -76,6 +77,13 @@ def run_ui(host: str, port: int, references_root: Path, output_root: Path) -> No
                 package_path = package_path_from_payload(references_root, payload)
                 result = build_asset_pass_manifest(package_path)
                 self.respond_json({"assetPassManifest": result})
+                return
+            if path == "/api/review":
+                payload = self.read_json()
+                package_path = package_path_from_payload(references_root, payload)
+                destination_path = payload.get("destinationPath") or f"/Game/VFX/Generated/{package_path.name}"
+                result = review_effect_package(package_path, destination_path=destination_path)
+                self.respond_json({"review": result})
                 return
             if path == "/api/generate-unreal":
                 payload = self.read_json()
@@ -346,6 +354,7 @@ def render_index_html() -> str:
         <button class="secondary" id="prepareAssets">Prepare AAA Passes</button>
         <button class="secondary" id="generateUnreal">Generate Unreal Assets</button>
         <button class="secondary" id="openUnreal">Open In Unreal</button>
+        <button class="secondary" id="review">Review Gates</button>
 
         <div class="meta" id="meta"></div>
       </aside>
@@ -453,6 +462,14 @@ def render_index_html() -> str:
     document.querySelector("#openUnreal").addEventListener("click", async () => {
       output.textContent = "Opening Unreal Editor and focusing the generated VFX asset...";
       show(await request("/api/open-unreal", {
+        method: "POST",
+        body: JSON.stringify(selectedPayload())
+      }));
+    });
+
+    document.querySelector("#review").addEventListener("click", async () => {
+      output.textContent = "Reviewing generated VFX gates...";
+      show(await request("/api/review", {
         method: "POST",
         body: JSON.stringify(selectedPayload())
       }));

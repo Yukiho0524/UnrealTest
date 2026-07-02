@@ -5,7 +5,7 @@ import copy
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageFilter
+from PIL import Image, ImageFile, ImageFilter
 
 from tools.analyze_packages import analyze_effect_package, find_package_media
 
@@ -15,6 +15,7 @@ DEFAULT_ASSET_PASS_ROOT = WORKSPACE_ROOT / "generated" / "asset-passes"
 DEFAULT_AI_ART_ROOT = WORKSPACE_ROOT / "generated" / "ai-art"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tga", ".exr", ".hdr"}
 ANIMATED_SUFFIXES = {".gif", ".mp4", ".mov", ".webm"}
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 def build_asset_pass_manifest(
@@ -73,6 +74,9 @@ def apply_asset_pass_manifest_to_spec_dict(spec: dict[str, Any], manifest: dict[
     patched = copy.deepcopy(spec)
     plan = patched.get("vfx_plan") or {}
     passes_by_name = {entry.get("name"): entry for entry in manifest.get("passes", [])}
+    alpha_pass = passes_by_name.get("alpha_mask")
+    alpha_selected = (alpha_pass or {}).get("selected_asset") or {}
+    alpha_path = alpha_selected.get("path")
     for emitter in plan.get("emitters") or []:
         pass_name = asset_pass_for_emitter(patched.get("effect_type"), emitter)
         if not pass_name:
@@ -90,6 +94,9 @@ def apply_asset_pass_manifest_to_spec_dict(spec: dict[str, Any], manifest: dict[
         atlas = asset_pass.get("asset_metadata", {}).get("atlas")
         if atlas:
             material["flipbook"] = atlas
+        if alpha_path and Path(alpha_path).exists():
+            material["alpha_source"] = alpha_path
+            material["alpha_usage"] = "multiply_texture_alpha"
     apply_production_preview_layers(patched, manifest)
     patched["vfx_plan"] = plan
     patched.setdefault("notes", []).append(
@@ -429,6 +436,7 @@ def collect_ai_outputs(package_name: str, ai_art_root: Path) -> list[dict[str, s
                         "source": str(manifest.get("provider") or "ai_art"),
                         "manifest": str(manifest_path),
                         "filename": path.name,
+                        "candidate_passes": item.get("candidate_passes") or [],
                         "confidence": "medium",
                     }
                 )
@@ -441,7 +449,10 @@ def classify_ai_outputs_for_pass(pass_name: str, ai_outputs: list[dict[str, str]
     fallback = []
     for output in ai_outputs:
         filename = output.get("filename", "").lower()
-        if any(keyword in filename for keyword in keywords):
+        candidate_passes = output.get("candidate_passes") or []
+        if pass_name in candidate_passes:
+            matched.append({**output, "matched_by": "provider_manifest"})
+        elif any(keyword in filename for keyword in keywords):
             matched.append({**output, "matched_by": "filename_keyword"})
         elif pass_name == "beauty_flipbook":
             fallback.append({**output, "matched_by": "beauty_fallback"})
