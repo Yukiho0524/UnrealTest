@@ -340,10 +340,10 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         niagara["enabled"] = False
     elif role == "ground_energy_ring":
         timeline.update({"delay": 0.02, "duration": 0.9, "opacity": [0.0, 0.42, 0.34, 0.0], "scale": [0.68, 0.92, 0.9, 0.98], "rotation_speed": 6.0})
-        material["opacity"] = 0.42 if is_firestorm else max(float(material.get("opacity", 0.72)), 0.76)
-        material["emissive_strength"] = 2.8 if is_firestorm else material.get("emissive_strength", 8.0)
+        material["opacity"] = 0.48 if is_firestorm else max(float(material.get("opacity", 0.72)), 0.76)
+        material["emissive_strength"] = 5.2 if is_firestorm else material.get("emissive_strength", 8.0)
         if is_firestorm:
-            material["blend_mode"] = "translucent"
+            material["blend_mode"] = "additive"
         card.update({"enabled": True, "location": [0, 0, 1.2], "rotation": [0, 0, 0], "scale": [1.48, 1.48, 1]})
         if is_firestorm or name == "ground_rune_ring":
             mesh.update(
@@ -1834,34 +1834,16 @@ def draw_firestorm_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: float
         start = phase * 360 + band * 54
         width = max(2, int(size * (0.008 + t * 0.008)))
         box = (center - radius, y - height, center + radius, y + height)
-        draw.arc(box, start=start, end=start + 185, fill=(120, 18, 3, int(42 + 16 * pulse)), width=width + 4)
-        draw.arc(box, start=start + 18, end=start + 138, fill=(255, 70, 8, int(54 + 26 * pulse)), width=width)
+        outer, core, hot = fire_ice_tornado_palette(t, pulse)
+        draw.arc(box, start=start, end=start + 185, fill=outer, width=width + 4)
+        draw.arc(box, start=start + 18, end=start + 138, fill=core, width=width)
         if band % 2 == 0:
-            draw.arc(box, start=start + 38, end=start + 88, fill=(255, 198, 72, int(44 + 18 * pulse)), width=max(1, width // 2))
+            draw.arc(box, start=start + 38, end=start + 88, fill=hot, width=max(1, width // 2))
 
-    for ribbon in range(2):
-        offset = ribbon / 3
-        start_x = center_x + math.cos(phase * math.tau + offset * math.tau) * size * 0.035
-        start_y = bottom_y - size * (0.08 + offset * 0.03)
-        draw_flame_ribbon(
-            draw,
-            size,
-            start_x,
-            start_y,
-            size * (0.24 + offset * 0.06),
-            size * (0.018 + offset * 0.006),
-            -1.32 + offset * 0.26,
-            0.82 + offset * 0.08,
-            phase + offset * 0.17,
-            (240, 56, 6, int(28 + 18 * pulse)),
-            18.0 + ribbon,
-            steps=10,
-        )
-
-    for tongue in range(4):
-        t = tongue / 3
+    for tongue in range(3):
+        t = tongue / 2
         side = -1 if tongue % 2 else 1
-        y = size * (0.68 - t * 0.3)
+        y = size * (0.62 - t * 0.25)
         radius = size * (0.05 + t * 0.11)
         x = center_x + side * radius
         draw_flame_tongue(
@@ -1869,11 +1851,11 @@ def draw_firestorm_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: float
             size,
             x,
             y,
-            size * (0.052 - t * 0.012),
+            size * (0.042 - t * 0.01),
             size * (0.014 + t * 0.004),
             side * size * (0.032 + t * 0.02),
             phase + t * 0.23,
-            (255, 120, 20, int(20 + 18 * pulse)),
+            (130, 240, 255, int(16 + 14 * pulse)) if t < 0.55 else (255, 112, 18, int(16 + 14 * pulse)),
             34.0 + tongue,
             steps=6,
         )
@@ -1901,10 +1883,25 @@ def draw_firestorm_slash_frame(draw: ImageDraw.ImageDraw, size: int, phase: floa
         start = phase * 300 + band * 58
         width = max(2, int(size * (0.006 + t * 0.006)))
         box = (x - radius, y - height, x + radius, y + height)
-        draw.arc(box, start=start, end=start + 150, fill=(104, 14, 2, int(42 + 18 * pulse)), width=width + 3)
-        draw.arc(box, start=start + 16, end=start + 106, fill=(245, 58, 7, int(56 + 22 * pulse)), width=width)
+        outer, core, hot = fire_ice_tornado_palette(t, pulse)
+        draw.arc(box, start=start, end=start + 150, fill=outer, width=width + 3)
+        draw.arc(box, start=start + 16, end=start + 106, fill=core, width=width)
         if band % 2 == 1:
-            draw.arc(box, start=start + 34, end=start + 68, fill=(255, 184, 72, int(40 + 18 * pulse)), width=max(1, width // 2))
+            draw.arc(box, start=start + 34, end=start + 68, fill=hot, width=max(1, width // 2))
+
+
+def fire_ice_tornado_palette(height01: float, pulse: float) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int], tuple[int, int, int, int]]:
+    if height01 < 0.58:
+        blend = smoothstep01(0.0, 0.58, height01)
+        outer = (18, int(118 + 40 * blend), 160, int(52 + 18 * pulse))
+        core = (62, int(222 + 18 * blend), 255, int(72 + 24 * pulse))
+        hot = (214, 252, 255, int(54 + 22 * pulse))
+        return outer, core, hot
+    blend = smoothstep01(0.58, 1.0, height01)
+    outer = (118, int(18 + 18 * blend), 3, int(48 + 18 * pulse))
+    core = (255, int(66 + 54 * blend), 8, int(70 + 24 * pulse))
+    hot = (255, int(190 + 34 * blend), 86, int(58 + 20 * pulse))
+    return outer, core, hot
 
 
 def draw_firestorm_ground_ring_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
@@ -1917,15 +1914,15 @@ def draw_firestorm_ground_ring_frame(draw: ImageDraw.ImageDraw, size: int, phase
 
     draw.ellipse(
         (cx - outer_rx, cy - outer_ry, cx + outer_rx, cy + outer_ry),
-        fill=(16, 6, 3, 132),
+        fill=(4, 36, 48, 104),
     )
     draw.ellipse(
         (cx - size * 0.31, cy - size * 0.19, cx + size * 0.31, cy + size * 0.19),
-        fill=(44, 11, 4, 84),
+        fill=(18, 136, 164, 92),
     )
     draw.ellipse(
         (cx - inner_rx, cy - inner_ry, cx + inner_rx, cy + inner_ry),
-        fill=(4, 2, 1, 152),
+        fill=(205, 250, 255, 108),
     )
 
     for crack in range(11):
@@ -1943,10 +1940,10 @@ def draw_firestorm_ground_ring_frame(draw: ImageDraw.ImageDraw, size: int, phase
             y = cy + math.sin(local_angle) * radius * 0.62
             points.append((x, y))
         base_width = max(2, int(size * (0.009 + 0.003 * pulse)))
-        draw.line(points, fill=(74, 12, 2, 130), width=base_width + 4, joint="curve")
-        draw.line(points, fill=(235, 52, 6, 152), width=base_width + 1, joint="curve")
+        draw.line(points, fill=(16, 102, 128, 126), width=base_width + 4, joint="curve")
+        draw.line(points, fill=(82, 226, 255, 150), width=base_width + 1, joint="curve")
         if crack % 3 == 0:
-            draw.line(points[1:4], fill=(255, 184, 72, 120), width=max(1, base_width // 2), joint="curve")
+            draw.line(points[1:4], fill=(230, 255, 255, 116), width=max(1, base_width // 2), joint="curve")
 
     for radius_index, radius_scale in enumerate((0.2, 0.32)):
         radius = size * (radius_scale + 0.012 * pulse)
@@ -1957,9 +1954,9 @@ def draw_firestorm_ground_ring_frame(draw: ImageDraw.ImageDraw, size: int, phase
             start = segment * (360 / segment_count) + phase * 46 * (1 if radius_index % 2 == 0 else -1)
             length = 22 + 11 * ((segment * 31 + radius_index * 17) % 100) / 100
             box = (cx - radius, cy - height, cx + radius, cy + height)
-            draw.arc(box, start=start, end=start + length, fill=(104, 16, 3, 96), width=width + 4)
-            draw.arc(box, start=start + 1, end=start + length * 0.86, fill=(240, 62, 8, 128), width=width)
-            draw.arc(box, start=start + 4, end=start + length * 0.46, fill=(255, 206, 96, 92), width=max(1, width // 2))
+            draw.arc(box, start=start, end=start + length, fill=(8, 94, 126, 96), width=width + 4)
+            draw.arc(box, start=start + 1, end=start + length * 0.86, fill=(60, 226, 255, 136), width=width)
+            draw.arc(box, start=start + 4, end=start + length * 0.46, fill=(224, 255, 255, 106), width=max(1, width // 2))
 
     for ember in range(7):
         local = ember / 7
@@ -1969,7 +1966,7 @@ def draw_firestorm_ground_ring_frame(draw: ImageDraw.ImageDraw, size: int, phase
         y = cy + math.sin(angle) * radius * 0.62
         rx = size * (0.006 + 0.007 * ((ember * 11) % 100) / 100)
         ry = rx * (0.45 + 0.22 * pulse)
-        draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(255, 118, 22, int(38 + 28 * pulse)))
+        draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(140, 244, 255, int(38 + 28 * pulse)))
 
 
 def draw_firestorm_alpha_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:

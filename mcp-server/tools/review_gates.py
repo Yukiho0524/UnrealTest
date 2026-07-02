@@ -30,6 +30,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_fire_spatial_design(patched_spec, unreal_result),
         gate_firestorm_3d_volume_preview(patched_spec, unreal_result),
         gate_firestorm_visual_balance(patched_spec),
+        gate_fire_ice_tornado_palette(manifest),
         gate_alpha_mask_applied(patched_spec, manifest),
         gate_reference_overlay_not_primary(patched_spec, unreal_result),
         gate_texture_card_budget(patched_spec, manifest, unreal_result),
@@ -459,6 +460,96 @@ def gate_firestorm_visual_balance(spec: dict[str, Any]) -> dict[str, Any]:
         "message": "Firestorm preview keeps emissive intensity, card count, and ground footprint restrained." if not issues else "Firestorm preview is likely to read as an overbright card pile or spike burst.",
         "data": {"issues": issues},
     }
+
+
+def gate_fire_ice_tornado_palette(manifest: dict[str, Any]) -> dict[str, Any]:
+    selected = {
+        entry.get("name"): entry.get("selected_asset") or {}
+        for entry in manifest.get("passes", [])
+        if entry.get("selected_asset")
+    }
+    core_path = selected.get("core_flame_flipbook", {}).get("preview_frame_path") or selected.get("core_flame_flipbook", {}).get("path")
+    slash_path = selected.get("flame_slash_flipbook", {}).get("preview_frame_path") or selected.get("flame_slash_flipbook", {}).get("path")
+    ground_path = selected.get("ground_ring_mask", {}).get("preview_frame_path") or selected.get("ground_ring_mask", {}).get("path")
+    if not (core_path and slash_path and ground_path):
+        return {
+            "name": "fire_ice_tornado_palette",
+            "status": "warning",
+            "message": "Fire/ice tornado palette could not be checked because preview frames are missing.",
+            "data": {"core_path": core_path, "slash_path": slash_path, "ground_path": ground_path},
+        }
+    try:
+        from PIL import Image
+        core = Image.open(core_path).convert("RGBA")
+        slash = Image.open(slash_path).convert("RGBA")
+        ground = Image.open(ground_path).convert("RGBA")
+    except Exception as exc:
+        return {
+            "name": "fire_ice_tornado_palette",
+            "status": "warning",
+            "message": "Fire/ice tornado palette could not read generated preview frames.",
+            "data": {"error": str(exc)},
+        }
+
+    core_metrics = split_palette_metrics(core)
+    slash_metrics = split_palette_metrics(slash)
+    ground_metrics = whole_image_palette_metrics(ground)
+    issues = []
+    if core_metrics["top_warmth"] < 0.12 or slash_metrics["top_warmth"] < 0.12:
+        issues.append({"type": "top_fire_band_not_warm_enough", "core": core_metrics["top_warmth"], "slash": slash_metrics["top_warmth"]})
+    if core_metrics["bottom_cyan"] < 0.12 or slash_metrics["bottom_cyan"] < 0.12:
+        issues.append({"type": "bottom_ice_band_not_cyan_enough", "core": core_metrics["bottom_cyan"], "slash": slash_metrics["bottom_cyan"]})
+    if ground_metrics["cyan"] < 0.18:
+        issues.append({"type": "ground_energy_not_cyan_enough", "ground": ground_metrics["cyan"]})
+    return {
+        "name": "fire_ice_tornado_palette",
+        "status": "pass" if not issues else "fail",
+        "message": "Generated tornado uses the reference-like orange upper fire band, cyan lower vortex, and cyan ground pool." if not issues else "Generated tornado does not match the reference fire/ice color split.",
+        "data": {"issues": issues, "core": core_metrics, "slash": slash_metrics, "ground": ground_metrics},
+    }
+
+
+def split_palette_metrics(image: Any) -> dict[str, float]:
+    width, height = image.size
+    top = image.crop((0, 0, width, height // 2))
+    bottom = image.crop((0, height // 2, width, height))
+    return {
+        "top_warmth": round(warmth_ratio(top), 3),
+        "top_cyan": round(cyan_ratio(top), 3),
+        "bottom_warmth": round(warmth_ratio(bottom), 3),
+        "bottom_cyan": round(cyan_ratio(bottom), 3),
+    }
+
+
+def whole_image_palette_metrics(image: Any) -> dict[str, float]:
+    return {
+        "warmth": round(warmth_ratio(image), 3),
+        "cyan": round(cyan_ratio(image), 3),
+    }
+
+
+def warmth_ratio(image: Any) -> float:
+    warm = total = 0.0
+    for r, g, b, a in image.getdata():
+        alpha = a / 255.0
+        if alpha <= 0.02:
+            continue
+        total += alpha
+        if r > g * 1.15 and r > b * 1.8:
+            warm += alpha
+    return warm / total if total else 0.0
+
+
+def cyan_ratio(image: Any) -> float:
+    cyan = total = 0.0
+    for r, g, b, a in image.getdata():
+        alpha = a / 255.0
+        if alpha <= 0.02:
+            continue
+        total += alpha
+        if b > r * 1.25 and g > r * 1.15:
+            cyan += alpha
+    return cyan / total if total else 0.0
 
 
 def gate_alpha_mask_applied(spec: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
