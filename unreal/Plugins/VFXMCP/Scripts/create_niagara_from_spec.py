@@ -282,6 +282,8 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
 
         root_handle = blueprint_root_handle(unreal_module, blueprint)
         plane_mesh = unreal_module.EditorAssetLibrary.load_asset("/Engine/BasicShapes/Plane")
+        cone_mesh = unreal_module.EditorAssetLibrary.load_asset("/Engine/BasicShapes/Cone")
+        sphere_mesh = unreal_module.EditorAssetLibrary.load_asset("/Engine/BasicShapes/Sphere")
         if not plane_mesh:
             result["errors"].append("Could not load /Engine/BasicShapes/Plane for Blueprint preview cards.")
 
@@ -322,6 +324,23 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
                     component["timeline"] = preview_timeline_for_emitter(emitter)
                     if transform_index:
                         component["volume_instance"] = transform_index + 1
+                    result["components"].append(component)
+            for mesh_index, mesh_transform in enumerate(preview_mesh_transforms_for_emitter(emitter, index), start=1):
+                mesh_asset = preview_mesh_for_kind(mesh_transform.get("mesh"), cone_mesh, sphere_mesh)
+                if mesh_asset and material_path:
+                    component = add_static_mesh_component_to_blueprint(
+                        unreal_module,
+                        blueprint,
+                        root_handle,
+                        f"VolumeMesh_{index}_{safe_asset_token(emitter.get('name', 'layer'))}_{mesh_index}",
+                        mesh_asset,
+                        material_path,
+                        location=mesh_transform["location"],
+                        rotation=mesh_transform["rotation"],
+                        scale=mesh_transform["scale"],
+                    )
+                    component["timeline"] = preview_timeline_for_emitter(emitter)
+                    component["volume_mesh"] = mesh_transform.get("mesh")
                     result["components"].append(component)
             niagara_transform = preview_niagara_transform_for_emitter(emitter, index)
             if niagara_transform:
@@ -500,6 +519,33 @@ def preview_card_transforms_for_emitter(emitter: dict, index: int) -> list[dict]
             )
         )
     return transforms
+
+
+def preview_mesh_transforms_for_emitter(emitter: dict, index: int) -> list[dict]:
+    settings = emitter.get("unreal_settings", {})
+    mesh_settings = ((settings.get("preview") or {}).get("mesh") or {}) if isinstance(settings, dict) else {}
+    if mesh_settings.get("enabled") is False:
+        return []
+    transforms = []
+    for entry in mesh_settings.get("instances") or []:
+        if not isinstance(entry, dict):
+            continue
+        transform = normalize_transform(
+            entry,
+            default_location=(0.0, 0.0, 80.0),
+            default_rotation=(0.0, 0.0, 0.0),
+            default_scale=(1.0, 1.0, 1.0),
+        )
+        transform["mesh"] = str(entry.get("mesh") or mesh_settings.get("mesh") or "cone")
+        transforms.append(transform)
+    return transforms
+
+
+def preview_mesh_for_kind(kind: str | None, cone_mesh, sphere_mesh):
+    normalized = str(kind or "").lower()
+    if normalized in {"sphere", "orb", "glow_sphere"}:
+        return sphere_mesh
+    return cone_mesh or sphere_mesh
 
 
 def preview_niagara_transform_for_emitter(emitter: dict, index: int) -> dict | None:

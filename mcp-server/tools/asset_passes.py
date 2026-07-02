@@ -214,6 +214,7 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
     timeline = settings.setdefault("timeline", {})
     preview = settings.setdefault("preview", {})
     card = preview.setdefault("card", {})
+    mesh = preview.setdefault("mesh", {})
     niagara = preview.setdefault("niagara", {})
     is_firestorm = "firestorm" in name.lower() or "firestorm" in str(emitter.get("motion", "")).lower() or "firestorm" in str(material.get("style", "")).lower()
 
@@ -246,6 +247,16 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                 {"location": [9, -5, 92], "rotation": [88, 32, -8], "scale": [0.5, 1.18, 1.0]},
                 {"location": [-8, 6, 88], "rotation": [88, -34, 10], "scale": [0.46, 1.08, 1.0]},
             ]
+            mesh.update(
+                {
+                    "enabled": True,
+                    "mesh": "cone",
+                    "instances": [
+                        {"mesh": "cone", "location": [0, 0, 84], "rotation": [0, 0, 0], "scale": [0.82, 0.82, 1.58]},
+                        {"mesh": "sphere", "location": [0, 0, 36], "rotation": [0, 0, 0], "scale": [0.72, 0.72, 0.38]},
+                    ],
+                }
+            )
             emitter.setdefault("notes", []).append("Firestorm core uses crossed volume cards so the pillar keeps depth when viewed from different angles.")
         niagara["enabled"] = False
     elif role == "flame_slashes":
@@ -287,6 +298,15 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             card["instances"] = [
                 {"location": [0, 0, 24], "rotation": [88, 90, 0], "scale": [0.66, 0.42, 1.0]},
             ]
+            mesh.update(
+                {
+                    "enabled": True,
+                    "mesh": "sphere",
+                    "instances": [
+                        {"mesh": "sphere", "location": [0, 0, 22], "rotation": [0, 0, 0], "scale": [0.48, 0.48, 0.26]},
+                    ],
+                }
+            )
         niagara["enabled"] = False
     elif role == "atmospheric_wisp":
         if is_firestorm or name == "smoke_dust_crown":
@@ -1250,6 +1270,87 @@ def clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
 
 
+def signed_noise(value: float, seed: float = 0.0) -> float:
+    raw = math.sin(value * 12.9898 + seed * 78.233) * 43758.5453
+    return (raw - math.floor(raw)) * 2.0 - 1.0
+
+
+def draw_flame_tongue(
+    draw: ImageDraw.ImageDraw,
+    size: int,
+    center_x: float,
+    base_y: float,
+    height: float,
+    base_width: float,
+    lean: float,
+    phase: float,
+    fill: tuple[int, int, int, int],
+    seed: float,
+    steps: int = 10,
+) -> None:
+    left: list[tuple[float, float]] = []
+    right: list[tuple[float, float]] = []
+    for step in range(steps + 1):
+        t = step / steps
+        y = base_y - height * t
+        taper = (1.0 - t) ** 0.72
+        width = base_width * (0.08 + taper * 0.92)
+        sway = math.sin(t * 5.8 + phase * math.tau * 1.35 + seed) * size * (0.016 + t * 0.034)
+        jitter = signed_noise(t * 4.3 + phase * 2.0, seed) * size * 0.018 * taper
+        x = center_x + lean * t + sway + jitter
+        edge = signed_noise(t * 9.0 + phase * 3.0, seed + 4.0) * width * 0.2
+        left.append((x - width + edge, y))
+        right.append((x + width + edge * 0.5, y))
+    tip = right[-1]
+    polygon = [*left, tip, *reversed(right[:-1])]
+    draw.polygon(polygon, fill=fill)
+
+
+def draw_flame_ribbon(
+    draw: ImageDraw.ImageDraw,
+    size: int,
+    origin_x: float,
+    origin_y: float,
+    length: float,
+    width: float,
+    angle: float,
+    curvature: float,
+    phase: float,
+    fill: tuple[int, int, int, int],
+    seed: float,
+    steps: int = 12,
+) -> None:
+    centers: list[tuple[float, float]] = []
+    for step in range(steps + 1):
+        t = step / steps
+        curl = math.sin(t * math.pi) * curvature
+        local_angle = angle + curl + math.sin(phase * math.tau + t * 5.0 + seed) * 0.12
+        distance = length * t
+        x = origin_x + math.cos(local_angle) * distance
+        y = origin_y - math.sin(local_angle) * distance * 0.58
+        y += math.sin(t * 8.0 + phase * math.tau + seed) * size * 0.018
+        centers.append((x, y))
+
+    left: list[tuple[float, float]] = []
+    right: list[tuple[float, float]] = []
+    for index, (x, y) in enumerate(centers):
+        t = index / steps
+        if index < len(centers) - 1:
+            nx = centers[index + 1][0] - x
+            ny = centers[index + 1][1] - y
+        else:
+            nx = x - centers[index - 1][0]
+            ny = y - centers[index - 1][1]
+        length_norm = max(0.001, math.hypot(nx, ny))
+        px = -ny / length_norm
+        py = nx / length_norm
+        local_width = width * (1.0 - t) ** 0.68 + size * 0.006
+        rough = 1.0 + signed_noise(t * 6.2 + phase * 3.0, seed) * 0.24
+        left.append((x + px * local_width * rough, y + py * local_width * rough))
+        right.append((x - px * local_width * (2.0 - rough), y - py * local_width * (2.0 - rough)))
+    draw.polygon([*left, *reversed(right)], fill=fill)
+
+
 def create_fire_atlas_pass(output_path: Path, pass_kind: str, columns: int = 4, rows: int = 4, frame_size: int = 256) -> None:
     atlas = Image.new("RGBA", (columns * frame_size, rows * frame_size), (0, 0, 0, 0))
     frame_count = columns * rows
@@ -1294,9 +1395,9 @@ def blur_radius_for_fire_pass(pass_kind: str) -> float:
     if pass_kind == "smoke_heat":
         return 2.6
     if pass_kind == "firestorm_core":
-        return 1.45
+        return 2.8
     if pass_kind == "firestorm_slashes":
-        return 0.95
+        return 2.2
     if pass_kind == "firestorm_ground_ring":
         return 0.35
     if pass_kind in {"normal_or_lighting", "depth_or_thickness", "layer_mask_pack", "sdf_or_vector_field"}:
@@ -1308,65 +1409,89 @@ def blur_radius_for_fire_pass(pass_kind: str) -> float:
 
 def draw_firestorm_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
     pulse = math.sin(phase * math.pi)
-    for stream in range(5):
-        offset = (stream - 2) * 0.045
-        phase_offset = phase * math.tau * (0.72 + stream * 0.08) + stream * 1.37
-        points = []
-        for step in range(13):
-            t = step / 12
-            taper = (1.0 - t) ** 0.8
-            x = size * (0.5 + offset * taper + math.sin(t * 7.5 + phase_offset) * (0.055 + 0.025 * t))
-            y = size * (0.9 - 0.74 * t + math.cos(t * 5.0 + phase_offset) * 0.018)
-            width = size * (0.105 * taper + 0.012)
-            points.append((x, y, width))
-        draw.polygon(ribbon_polygon(points, 2.0), fill=(96, 6, 2, int(56 + 34 * pulse)))
-        draw.polygon(ribbon_polygon(points, 1.28), fill=(255, 66, 8, int(112 + 42 * pulse)))
-        draw.polygon(ribbon_polygon(points, 0.72), fill=(255, 172, 38, int(164 + 46 * pulse)))
-        if stream in {1, 2, 3}:
-            draw.polygon(ribbon_polygon(points, 0.32), fill=(255, 248, 190, int(188 + 42 * pulse)))
-    for tongue in range(9):
-        local = tongue / 8
-        angle = local * math.tau * 1.4 + phase * math.tau * 0.85
-        base_x = size * (0.5 + math.sin(angle) * (0.16 - local * 0.06))
-        base_y = size * (0.76 - local * 0.48)
-        length = size * (0.18 * (1.0 - local) + 0.045)
-        width = size * (0.04 * (1.0 - local) + 0.012)
-        tip = (base_x + math.cos(angle) * width * 1.6, base_y - length)
-        left = (base_x - width, base_y + length * 0.25)
-        right = (base_x + width, base_y + length * 0.18)
-        draw.polygon([left, tip, right], fill=(255, 106, 18, int(58 + 54 * pulse)))
-        inner = ((left[0] * 0.55 + tip[0] * 0.45, left[1] * 0.55 + tip[1] * 0.45), tip, (right[0] * 0.55 + tip[0] * 0.45, right[1] * 0.55 + tip[1] * 0.45))
-        draw.polygon(inner, fill=(255, 226, 120, int(48 + 52 * pulse)))
+    base_y = size * 0.9
+    center = size * (0.5 + math.sin(phase * math.tau * 0.8) * 0.035)
+    draw_flame_tongue(draw, size, center, base_y, size * 0.79, size * 0.28, size * 0.03, phase, (83, 9, 2, 86), 1.0, steps=14)
+    draw_flame_tongue(draw, size, center - size * 0.045, base_y - size * 0.01, size * 0.68, size * 0.22, -size * 0.035, phase, (185, 33, 4, 126), 2.0, steps=13)
+    draw_flame_tongue(draw, size, center + size * 0.035, base_y - size * 0.04, size * 0.76, size * 0.18, size * 0.05, phase + 0.13, (255, 77, 7, 164), 3.0, steps=13)
+    draw_flame_tongue(draw, size, center, base_y - size * 0.075, size * 0.64, size * 0.115, -size * 0.015, phase + 0.22, (255, 166, 39, 178), 4.0, steps=12)
+    draw_flame_tongue(draw, size, center + size * 0.012, base_y - size * 0.13, size * 0.47, size * 0.052, size * 0.015, phase + 0.35, (255, 245, 182, 154), 5.0, steps=10)
+
+    for lobe in range(7):
+        local = lobe / 6
+        side = -1 if lobe % 2 else 1
+        y = size * (0.82 - local * 0.45)
+        x = center + side * size * (0.1 + 0.06 * math.sin(local * 5.0 + phase * math.tau))
+        height = size * (0.18 - local * 0.055)
+        width = size * (0.05 - local * 0.016)
+        draw_flame_tongue(
+            draw,
+            size,
+            x,
+            y,
+            max(size * 0.07, height),
+            max(size * 0.018, width),
+            side * size * (0.035 + local * 0.018),
+            phase + local * 0.17,
+            (255, 92, 12, int(58 + 42 * pulse)),
+            12.0 + lobe,
+            steps=7,
+        )
 
 
 def draw_firestorm_slash_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
     pulse = math.sin(phase * math.pi)
-    for band in range(7):
-        direction = -1 if band % 2 else 1
-        points = []
-        y_offset = size * (0.035 * (band - 3))
-        for step in range(10):
-            t = step / 9
-            angle = (0.04 + t * 0.58 + band * 0.095 + phase * 0.36 * direction) * math.tau
-            radius = size * (0.1 + 0.42 * t)
-            x = size * 0.5 + math.cos(angle) * radius
-            y = size * 0.7 - t * size * 0.34 + math.sin(angle) * size * 0.11 + y_offset
-            width = size * (0.06 * (1.0 - t) + 0.015)
-            points.append((x, y, width))
-        alpha = int((68 + 62 * pulse) * (1.0 - band * 0.045))
-        draw.polygon(ribbon_polygon(points, 2.35), fill=(84, 8, 2, max(18, alpha - 46)))
-        draw.polygon(ribbon_polygon(points, 1.35), fill=(255, 64, 10, alpha))
-        draw.polygon(ribbon_polygon(points, 0.58), fill=(255, 202, 76, min(210, alpha + 38)))
-        draw.polygon(ribbon_polygon(points, 0.24), fill=(255, 250, 206, min(190, alpha + 24)))
-    for spark in range(18):
+    origin_x = size * 0.34
+    origin_y = size * 0.78
+    for band in range(4):
+        band_phase = phase + band * 0.11
+        draw_flame_ribbon(
+            draw,
+            size,
+            origin_x + size * 0.015 * band,
+            origin_y - size * 0.045 * band,
+            size * (0.46 + band * 0.035),
+            size * (0.095 - band * 0.012),
+            0.08 + band * 0.13,
+            0.72 - band * 0.1,
+            band_phase,
+            (91, 8, 2, int(52 + 22 * pulse)),
+            21.0 + band,
+        )
+        draw_flame_ribbon(
+            draw,
+            size,
+            origin_x + size * 0.02 * band,
+            origin_y - size * 0.052 * band,
+            size * (0.41 + band * 0.03),
+            size * (0.061 - band * 0.008),
+            0.1 + band * 0.13,
+            0.58 - band * 0.08,
+            band_phase + 0.08,
+            (255, 65, 8, int(88 + 34 * pulse)),
+            31.0 + band,
+        )
+        draw_flame_ribbon(
+            draw,
+            size,
+            origin_x + size * 0.026 * band,
+            origin_y - size * 0.06 * band,
+            size * (0.33 + band * 0.018),
+            size * (0.026 - band * 0.002),
+            0.12 + band * 0.12,
+            0.45 - band * 0.06,
+            band_phase + 0.14,
+            (255, 222, 116, int(74 + 38 * pulse)),
+            41.0 + band,
+        )
+    for spark in range(8):
         local = ((spark * 37) % 100) / 100
-        angle = local * math.tau + phase * math.tau * 0.8
-        radius = size * (0.16 + 0.32 * ((spark * 19) % 100) / 100)
-        x = size * 0.5 + math.cos(angle) * radius
-        y = size * (0.62 - 0.24 * local) + math.sin(angle) * size * 0.08
-        r = size * (0.007 + 0.008 * ((spark + 3) % 4))
-        draw.ellipse((x - r * 2.0, y - r * 2.0, x + r * 2.0, y + r * 2.0), fill=(255, 78, 12, int(42 + 58 * pulse)))
-        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 236, 166, int(84 + 74 * pulse)))
+        angle = 0.18 + local * 1.05 + phase * 0.55
+        radius = size * (0.25 + 0.28 * ((spark * 19) % 100) / 100)
+        x = origin_x + math.cos(angle) * radius
+        y = origin_y - math.sin(angle) * radius * 0.45
+        r = size * (0.005 + 0.005 * ((spark + 3) % 4))
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 224, 150, int(52 + 54 * pulse)))
 
 
 def draw_firestorm_ground_ring_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
