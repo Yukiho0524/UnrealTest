@@ -285,7 +285,7 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             material["emissive_strength"] = 0.0
             card["enabled"] = False
             niagara["enabled"] = False
-            emitter.setdefault("notes", []).append("Firestorm preview hides placeholder Niagara sparks because the engine template renders them as triangle shards instead of authored ember sprites.")
+            emitter.setdefault("notes", []).append("Firestorm preview bakes spark accents into the authored flame/ground atlases and hides the unstable standalone ember component.")
             return
         timeline.update({"delay": 0.12, "duration": 0.32, "opacity": [0.0, 0.55, 0.32, 0.0], "scale": [0.55, 0.72, 0.44, 0.15], "rotation_speed": 130.0})
         material["opacity"] = min(float(material.get("opacity", 0.78)), 0.46)
@@ -358,7 +358,7 @@ def playable_firestorm_atlas(selected: dict[str, str], emitter: dict[str, Any]) 
             selected.get("path"),
         )
     ).lower()
-    return "firestorm" in text and emitter.get("role") in {"fire_pillar", "flame_slashes", "ground_energy_ring", "impact_core"}
+    return "firestorm" in text and emitter.get("role") in {"fire_pillar", "flame_slashes", "ground_energy_ring", "impact_core", "detail_particles"}
 
 
 def asset_pass_entry(
@@ -679,7 +679,7 @@ def derive_bootstrap_candidates(
 
     if "ground_ring_mask" in target_names:
         ring_path = output_dir / f"{package_name}_ground_ring_mask.png"
-        create_fire_atlas_pass(ring_path, "ground_ring")
+        create_fire_atlas_pass(ring_path, "firestorm_ground_ring")
         candidates.setdefault("ground_ring_mask", []).append(derived_candidate(ring_path, "procedural_ground_ring_anchor", source="procedural_layer_synthesis", confidence="medium"))
 
     if "impact_flash_mask" in target_names:
@@ -1235,6 +1235,8 @@ def create_fire_atlas_pass(output_path: Path, pass_kind: str, columns: int = 4, 
             draw_firestorm_core_frame(draw, frame_size, phase)
         elif pass_kind == "firestorm_slashes":
             draw_firestorm_slash_frame(draw, frame_size, phase)
+        elif pass_kind == "firestorm_ground_ring":
+            draw_firestorm_ground_ring_frame(draw, frame_size, phase)
         elif pass_kind == "alpha_mask":
             draw_firestorm_alpha_frame(draw, frame_size, phase)
         elif pass_kind == "normal_or_lighting":
@@ -1269,6 +1271,8 @@ def blur_radius_for_fire_pass(pass_kind: str) -> float:
         return 1.45
     if pass_kind == "firestorm_slashes":
         return 0.95
+    if pass_kind == "firestorm_ground_ring":
+        return 0.35
     if pass_kind in {"normal_or_lighting", "depth_or_thickness", "layer_mask_pack", "sdf_or_vector_field"}:
         return 0.0
     if pass_kind == "embers":
@@ -1278,45 +1282,99 @@ def blur_radius_for_fire_pass(pass_kind: str) -> float:
 
 def draw_firestorm_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
     pulse = math.sin(phase * math.pi)
-    for tier in range(18):
-        t = tier / 17
-        y = size * (0.9 - 0.76 * t)
-        sway = math.sin(t * 5.2 + phase * math.tau * 0.9) * size * (0.035 + 0.065 * t)
-        cx = size * 0.5 + sway
-        outer_w = size * (0.28 * (1.0 - t) + 0.04)
-        outer_h = size * (0.09 + 0.045 * (1.0 - t) + 0.025 * pulse)
-        alpha = int((92 + 94 * pulse) * (1.0 - t * 0.5))
-        draw.ellipse((cx - outer_w, y - outer_h, cx + outer_w, y + outer_h), fill=(210, 30, 4, max(20, alpha - 42)))
-        draw.ellipse((cx - outer_w * 0.68, y - outer_h * 1.05, cx + outer_w * 0.68, y + outer_h * 1.05), fill=(255, 96, 14, max(30, alpha)))
-        draw.ellipse((cx - outer_w * 0.36, y - outer_h * 1.18, cx + outer_w * 0.36, y + outer_h * 1.18), fill=(255, 185, 52, min(220, alpha + 36)))
-        draw.ellipse((cx - outer_w * 0.13, y - outer_h * 1.36, cx + outer_w * 0.13, y + outer_h * 1.36), fill=(255, 248, 184, min(240, alpha + 54)))
-    for tongue in range(7):
-        base = tongue / 7
-        x = size * (0.5 + math.sin(base * 9.0 + phase * math.tau) * (0.13 + 0.04 * math.sin(base * 5.0)))
-        y = size * (0.68 - 0.4 * base)
-        w = size * (0.11 * (1.0 - base) + 0.018)
-        h = size * (0.2 * (1.0 - base) + 0.045)
-        draw.ellipse((x - w, y - h, x + w, y + h), fill=(255, 90, 14, 72))
-        draw.ellipse((x - w * 0.44, y - h * 1.06, x + w * 0.44, y + h * 1.06), fill=(255, 210, 92, 84))
+    for stream in range(5):
+        offset = (stream - 2) * 0.045
+        phase_offset = phase * math.tau * (0.72 + stream * 0.08) + stream * 1.37
+        points = []
+        for step in range(13):
+            t = step / 12
+            taper = (1.0 - t) ** 0.8
+            x = size * (0.5 + offset * taper + math.sin(t * 7.5 + phase_offset) * (0.055 + 0.025 * t))
+            y = size * (0.9 - 0.74 * t + math.cos(t * 5.0 + phase_offset) * 0.018)
+            width = size * (0.105 * taper + 0.012)
+            points.append((x, y, width))
+        draw.polygon(ribbon_polygon(points, 2.0), fill=(96, 6, 2, int(56 + 34 * pulse)))
+        draw.polygon(ribbon_polygon(points, 1.28), fill=(255, 66, 8, int(112 + 42 * pulse)))
+        draw.polygon(ribbon_polygon(points, 0.72), fill=(255, 172, 38, int(164 + 46 * pulse)))
+        if stream in {1, 2, 3}:
+            draw.polygon(ribbon_polygon(points, 0.32), fill=(255, 248, 190, int(188 + 42 * pulse)))
+    for tongue in range(9):
+        local = tongue / 8
+        angle = local * math.tau * 1.4 + phase * math.tau * 0.85
+        base_x = size * (0.5 + math.sin(angle) * (0.16 - local * 0.06))
+        base_y = size * (0.76 - local * 0.48)
+        length = size * (0.18 * (1.0 - local) + 0.045)
+        width = size * (0.04 * (1.0 - local) + 0.012)
+        tip = (base_x + math.cos(angle) * width * 1.6, base_y - length)
+        left = (base_x - width, base_y + length * 0.25)
+        right = (base_x + width, base_y + length * 0.18)
+        draw.polygon([left, tip, right], fill=(255, 106, 18, int(58 + 54 * pulse)))
+        inner = ((left[0] * 0.55 + tip[0] * 0.45, left[1] * 0.55 + tip[1] * 0.45), tip, (right[0] * 0.55 + tip[0] * 0.45, right[1] * 0.55 + tip[1] * 0.45))
+        draw.polygon(inner, fill=(255, 226, 120, int(48 + 52 * pulse)))
 
 
 def draw_firestorm_slash_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
     pulse = math.sin(phase * math.pi)
-    for band in range(5):
+    for band in range(7):
         direction = -1 if band % 2 else 1
-        y_offset = size * (0.05 * (band - 2))
-        for step in range(13):
-            t = step / 12
-            angle = (0.05 + t * 0.72 + band * 0.11 + phase * 0.28 * direction) * math.tau
-            radius = size * (0.08 + 0.38 * t)
+        points = []
+        y_offset = size * (0.035 * (band - 3))
+        for step in range(10):
+            t = step / 9
+            angle = (0.04 + t * 0.58 + band * 0.095 + phase * 0.36 * direction) * math.tau
+            radius = size * (0.1 + 0.42 * t)
             x = size * 0.5 + math.cos(angle) * radius
-            y = size * 0.66 - t * size * 0.36 + math.sin(angle) * size * 0.08 + y_offset
-            w = size * (0.13 * (1.0 - t) + 0.018)
-            h = size * (0.045 * (1.0 - t) + 0.012)
-            alpha = int((72 + 58 * pulse) * (1.0 - t * 0.35))
-            draw.ellipse((x - w * 1.25, y - h * 1.8, x + w * 1.25, y + h * 1.8), fill=(150, 20, 4, max(20, alpha - 38)))
-            draw.ellipse((x - w, y - h, x + w, y + h), fill=(255, 82, 12, alpha))
-            draw.ellipse((x - w * 0.46, y - h * 0.56, x + w * 0.46, y + h * 0.56), fill=(255, 218, 108, min(210, alpha + 44)))
+            y = size * 0.7 - t * size * 0.34 + math.sin(angle) * size * 0.11 + y_offset
+            width = size * (0.06 * (1.0 - t) + 0.015)
+            points.append((x, y, width))
+        alpha = int((68 + 62 * pulse) * (1.0 - band * 0.045))
+        draw.polygon(ribbon_polygon(points, 2.35), fill=(84, 8, 2, max(18, alpha - 46)))
+        draw.polygon(ribbon_polygon(points, 1.35), fill=(255, 64, 10, alpha))
+        draw.polygon(ribbon_polygon(points, 0.58), fill=(255, 202, 76, min(210, alpha + 38)))
+        draw.polygon(ribbon_polygon(points, 0.24), fill=(255, 250, 206, min(190, alpha + 24)))
+    for spark in range(18):
+        local = ((spark * 37) % 100) / 100
+        angle = local * math.tau + phase * math.tau * 0.8
+        radius = size * (0.16 + 0.32 * ((spark * 19) % 100) / 100)
+        x = size * 0.5 + math.cos(angle) * radius
+        y = size * (0.62 - 0.24 * local) + math.sin(angle) * size * 0.08
+        r = size * (0.007 + 0.008 * ((spark + 3) % 4))
+        draw.ellipse((x - r * 2.0, y - r * 2.0, x + r * 2.0, y + r * 2.0), fill=(255, 78, 12, int(42 + 58 * pulse)))
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 236, 166, int(84 + 74 * pulse)))
+
+
+def draw_firestorm_ground_ring_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    pulse = math.sin(phase * math.pi)
+    cx = cy = size / 2
+    for radius_index, radius_scale in enumerate((0.17, 0.29, 0.39)):
+        radius = size * (radius_scale + 0.035 * pulse + 0.018 * phase * (radius_index + 1))
+        height = radius * (0.55 + radius_index * 0.05)
+        width = max(2, int(size * (0.018 + 0.008 * radius_index + 0.008 * pulse)))
+        for segment in range(10 + radius_index * 2):
+            start = segment * (360 / (10 + radius_index * 2)) + phase * 74 * (1 if radius_index % 2 == 0 else -1)
+            length = 12 + 15 * ((segment * 37 + radius_index * 19) % 100) / 100
+            box = (cx - radius, cy - height, cx + radius, cy + height)
+            draw.arc(box, start=start, end=start + length, fill=(98, 10, 2, 120), width=width + 5)
+            draw.arc(box, start=start + 1, end=start + length * 0.82, fill=(255, 74, 8, 190), width=width)
+            draw.arc(box, start=start + 3, end=start + length * 0.52, fill=(255, 232, 145, 180), width=max(1, width // 2))
+    for shard in range(18):
+        local = shard / 18
+        angle = local * math.tau + phase * math.tau * (0.35 + (shard % 3) * 0.08)
+        radius = size * (0.2 + 0.23 * ((shard * 23) % 100) / 100)
+        x = cx + math.cos(angle) * radius
+        y = cy + math.sin(angle) * radius * 0.62
+        rx = size * (0.012 + 0.016 * ((shard * 11) % 100) / 100)
+        ry = rx * (0.45 + 0.45 * pulse)
+        draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(255, 118, 22, int(70 + 78 * pulse)))
+        draw.ellipse((x - rx * 0.45, y - ry * 0.45, x + rx * 0.45, y + ry * 0.45), fill=(255, 240, 170, int(80 + 78 * pulse)))
+    for spark in range(14):
+        local = ((spark * 41) % 100) / 100
+        angle = local * math.tau + phase * math.tau * 1.1
+        radius = size * (0.1 + 0.36 * ((spark * 13) % 100) / 100)
+        x = cx + math.cos(angle) * radius
+        y = cy + math.sin(angle) * radius * 0.62
+        r = size * (0.006 + 0.008 * ((spark + 2) % 3))
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 236, 170, int(70 + 70 * pulse)))
 
 
 def draw_firestorm_alpha_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
@@ -1462,16 +1520,18 @@ def draw_ember_frame(draw: ImageDraw.ImageDraw, size: int, phase: float, seed: i
         x0 = (index % cols) * cell
         y0 = (index // rows) * cell
         local = (seed * 17 + index * 29) % 100 / 100
-        angle = local * math.tau + phase * 0.5
+        angle = local * math.tau + phase * 1.8
         cx = x0 + cell * (0.48 + 0.16 * math.sin(local * 9.0))
         cy = y0 + cell * (0.48 + 0.14 * math.cos(local * 7.0))
-        radius = cell * (0.08 + 0.08 * ((index + seed) % 5) / 4)
-        points = []
-        for vertex in range(3):
-            a = angle + vertex * math.tau / 3
-            points.append((cx + math.cos(a) * radius * 1.5, cy + math.sin(a) * radius))
-        draw.polygon(points, fill=(255, 224, 174, 230))
-        draw.polygon([(cx, cy), *points[:2]], fill=(255, 124, 26, 160))
+        radius = cell * (0.035 + 0.055 * ((index + seed) % 5) / 4)
+        tail = cell * (0.08 + 0.12 * local)
+        tx = math.cos(angle) * tail
+        ty = math.sin(angle) * tail * 0.55
+        width = max(1, int(radius * 0.75))
+        draw.line((cx - tx, cy - ty, cx + tx * 0.25, cy + ty * 0.25), fill=(255, 92, 18, 110), width=width + 2)
+        draw.ellipse((cx - radius * 1.9, cy - radius * 1.9, cx + radius * 1.9, cy + radius * 1.9), fill=(255, 92, 18, 64))
+        draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=(255, 172, 40, 174))
+        draw.ellipse((cx - radius * 0.42, cy - radius * 0.42, cx + radius * 0.42, cy + radius * 0.42), fill=(255, 246, 198, 220))
 
 
 def ribbon_polygon(points: list[tuple[float, float, float]], scale: float) -> list[tuple[float, float]]:

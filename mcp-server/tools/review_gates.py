@@ -291,6 +291,8 @@ def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any]
         "central_fire_pillar": {"z": (82, 126), "scale_xy_max": 1.8, "component_type": "StaticMeshComponent"},
         "ember_sparks": {"z": (56, 110), "scale_xy_max": 0.8, "component_type": "NiagaraComponent"},
     }
+    if firestorm_preview:
+        expected_bands["ember_sparks"] = {"z": (56, 110), "scale_xy_max": 0.9, "component_type": "StaticMeshComponent"}
     for emitter_name, rule in expected_bands.items():
         if firestorm_preview and emitter_name in hidden_emitters:
             continue
