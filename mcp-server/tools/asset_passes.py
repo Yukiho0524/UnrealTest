@@ -207,6 +207,7 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
     preview = settings.setdefault("preview", {})
     card = preview.setdefault("card", {})
     niagara = preview.setdefault("niagara", {})
+    is_firestorm = "firestorm" in name.lower() or "firestorm" in str(emitter.get("motion", "")).lower() or "firestorm" in str(material.get("style", "")).lower()
 
     if role == "reference_motion":
         material["opacity"] = min(float(material.get("opacity", 0.72)), 0.16)
@@ -254,6 +255,14 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         card.update({"enabled": True, "location": [0, -1, 24], "rotation": [88, 0, 0], "scale": [0.92, 0.58, 1]})
         niagara["enabled"] = False
     elif role == "atmospheric_wisp":
+        if is_firestorm or name == "smoke_dust_crown":
+            timeline.update({"delay": 0.18, "duration": 0.8, "opacity": [0.0, 0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0, 1.0], "rotation_speed": 0.0})
+            material["opacity"] = 0.0
+            material["emissive_strength"] = 0.0
+            card["enabled"] = False
+            niagara["enabled"] = False
+            emitter.setdefault("notes", []).append("Firestorm preview hides smoke cards until the generator can produce clean alpha; this prevents opaque black texture planes in viewport.")
+            return
         timeline.update({"delay": 0.18, "duration": 1.05, "opacity": [0.0, 0.24, 0.18, 0.0], "scale": [0.62, 1.0, 1.22, 1.46], "rotation_speed": 5.0})
         material["opacity"] = min(float(material.get("opacity", 0.2)), 0.1)
         material["emissive_strength"] = min(float(material.get("emissive_strength", 0.35)), 0.22)
@@ -262,6 +271,14 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         niagara["enabled"] = False
         emitter.setdefault("notes", []).append("Smoke preview uses a single low-opacity frame so it supports the fire without exposing atlas cards.")
     elif role == "detail_particles":
+        if is_firestorm or name == "ember_sparks":
+            timeline.update({"delay": 0.12, "duration": 0.45, "opacity": [0.0, 0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0, 1.0], "rotation_speed": 0.0})
+            material["opacity"] = 0.0
+            material["emissive_strength"] = 0.0
+            card["enabled"] = False
+            niagara["enabled"] = False
+            emitter.setdefault("notes", []).append("Firestorm preview hides placeholder Niagara sparks because the engine template renders them as triangle shards instead of authored ember sprites.")
+            return
         timeline.update({"delay": 0.12, "duration": 0.32, "opacity": [0.0, 0.55, 0.32, 0.0], "scale": [0.55, 0.72, 0.44, 0.15], "rotation_speed": 130.0})
         material["opacity"] = min(float(material.get("opacity", 0.78)), 0.46)
         material["emissive_strength"] = min(float(material.get("emissive_strength", 10.0)), 6.0)

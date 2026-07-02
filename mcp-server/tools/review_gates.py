@@ -271,6 +271,18 @@ def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any]
         }
     components = preview_components(unreal_result)
     issues = []
+    emitters = ((spec.get("vfx_plan") or {}).get("emitters") or [])
+    hidden_emitters = {
+        str(emitter.get("name") or "")
+        for emitter in emitters
+        if (((emitter.get("unreal_settings") or {}).get("preview") or {}).get("card") or {}).get("enabled") is False
+        and (((emitter.get("unreal_settings") or {}).get("preview") or {}).get("niagara") or {}).get("enabled") is not True
+    }
+    firestorm_preview = str(spec.get("name", "")).lower() == "firestorm" or any(
+        "firestorm" in str(emitter.get("motion", "")).lower()
+        or "firestorm" in str(((emitter.get("unreal_settings") or {}).get("material") or {}).get("style", "")).lower()
+        for emitter in emitters
+    )
     expected_bands = {
         "ground_rune_ring": {"z": (0, 8), "scale_xy_max": 2.6, "component_type": "StaticMeshComponent"},
         "impact_flash": {"z": (10, 34), "scale_xy_max": 1.2, "component_type": "StaticMeshComponent"},
@@ -280,6 +292,8 @@ def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any]
         "ember_sparks": {"z": (56, 110), "scale_xy_max": 0.8, "component_type": "NiagaraComponent"},
     }
     for emitter_name, rule in expected_bands.items():
+        if firestorm_preview and emitter_name in hidden_emitters:
+            continue
         component = matching_component(components, emitter_name, str(rule["component_type"]))
         if not component:
             issues.append({"emitter": emitter_name, "type": "missing_component_for_fire_spatial_design"})
