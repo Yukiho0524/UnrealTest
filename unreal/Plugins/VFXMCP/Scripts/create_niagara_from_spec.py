@@ -302,21 +302,27 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
         for index, system in enumerate(systems, start=1):
             emitter = system.get("emitter_plan") or {}
             material_path = (system.get("materials") or {}).get("material_instance_path")
-            transform = preview_card_transform_for_emitter(emitter, index)
-            if plane_mesh and material_path and transform:
-                component = add_static_mesh_component_to_blueprint(
-                    unreal_module,
-                    blueprint,
-                    root_handle,
-                    f"LayerCard_{index}_{safe_asset_token(emitter.get('name', 'layer'))}",
-                    plane_mesh,
-                    material_path,
-                    location=transform["location"],
-                    rotation=transform["rotation"],
-                    scale=transform["scale"],
-                )
-                component["timeline"] = preview_timeline_for_emitter(emitter)
-                result["components"].append(component)
+            transforms = preview_card_transforms_for_emitter(emitter, index)
+            for transform_index, transform in enumerate(transforms):
+                component_name = f"LayerCard_{index}_{safe_asset_token(emitter.get('name', 'layer'))}"
+                if transform_index:
+                    component_name = f"{component_name}_Volume_{transform_index + 1}"
+                if plane_mesh and material_path and transform:
+                    component = add_static_mesh_component_to_blueprint(
+                        unreal_module,
+                        blueprint,
+                        root_handle,
+                        component_name,
+                        plane_mesh,
+                        material_path,
+                        location=transform["location"],
+                        rotation=transform["rotation"],
+                        scale=transform["scale"],
+                    )
+                    component["timeline"] = preview_timeline_for_emitter(emitter)
+                    if transform_index:
+                        component["volume_instance"] = transform_index + 1
+                    result["components"].append(component)
             niagara_transform = preview_niagara_transform_for_emitter(emitter, index)
             if niagara_transform:
                 component = add_niagara_component_to_blueprint(
@@ -473,6 +479,27 @@ def preview_card_transform_for_emitter(emitter: dict, index: int) -> dict | None
     if role in {"detail_particles", "accent_particles"}:
         return None
     return {"location": (index * 3.0, 0.0, 145.0 + index * 5.0), "rotation": (90.0, 0.0, 0.0), "scale": (1.0, 1.0, 1.0)}
+
+
+def preview_card_transforms_for_emitter(emitter: dict, index: int) -> list[dict]:
+    primary = preview_card_transform_for_emitter(emitter, index)
+    if not primary:
+        return []
+    settings = emitter.get("unreal_settings", {})
+    card = settings.get("preview", {}).get("card", {}) if isinstance(settings, dict) else {}
+    transforms = [primary]
+    for instance in card.get("instances") or []:
+        if not isinstance(instance, dict):
+            continue
+        transforms.append(
+            normalize_transform(
+                instance,
+                default_location=primary["location"],
+                default_rotation=primary["rotation"],
+                default_scale=primary["scale"],
+            )
+        )
+    return transforms
 
 
 def preview_niagara_transform_for_emitter(emitter: dict, index: int) -> dict | None:

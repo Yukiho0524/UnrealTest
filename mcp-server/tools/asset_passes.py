@@ -238,6 +238,15 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         material["opacity"] = max(float(material.get("opacity", 0.54)), 0.78)
         material["emissive_strength"] = max(float(material.get("emissive_strength", 14.0)), 18.0)
         card.update({"enabled": True, "location": [0, 0, 104], "rotation": [90, 0, 0], "scale": [0.88, 1.72, 1.0]})
+        if is_firestorm or name == "central_fire_pillar":
+            card["volume_mode"] = "cross_billboard_column"
+            card["instances"] = [
+                {"location": [0, 0, 104], "rotation": [90, 60, 0], "scale": [0.78, 1.62, 1.0]},
+                {"location": [0, 0, 104], "rotation": [90, 120, 0], "scale": [0.72, 1.54, 1.0]},
+                {"location": [9, -5, 92], "rotation": [88, 32, -8], "scale": [0.5, 1.18, 1.0]},
+                {"location": [-8, 6, 88], "rotation": [88, -34, 10], "scale": [0.46, 1.08, 1.0]},
+            ]
+            emitter.setdefault("notes", []).append("Firestorm core uses crossed volume cards so the pillar keeps depth when viewed from different angles.")
         niagara["enabled"] = False
     elif role == "flame_slashes":
         if "back_spiral" in name:
@@ -245,11 +254,24 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             material["opacity"] = max(float(material.get("opacity", 0.48)), 0.5)
             material["emissive_strength"] = max(float(material.get("emissive_strength", 7.5)), 9.0)
             card.update({"enabled": True, "location": [0, 7, 76], "rotation": [88, 0, 18], "scale": [1.55, 1.1, 1]})
+            if is_firestorm or "back_spiral" in name:
+                card["volume_mode"] = "rear_spiral_shell"
+                card["instances"] = [
+                    {"location": [-8, 12, 72], "rotation": [88, 48, 28], "scale": [1.2, 0.92, 1.0]},
+                    {"location": [9, 10, 82], "rotation": [88, -42, -10], "scale": [1.08, 0.86, 1.0]},
+                ]
         else:
             timeline.update({"delay": 0.1, "duration": 0.72, "opacity": [0.0, 0.82, 0.62, 0.0], "scale": [0.5, 1.14, 1.2, 0.78], "rotation_speed": -28.0})
             material["opacity"] = max(float(material.get("opacity", 0.5)), 0.68)
             material["emissive_strength"] = max(float(material.get("emissive_strength", 8.5)), 13.0)
             card.update({"enabled": True, "location": [0, -6, 58], "rotation": [88, 0, -18], "scale": [1.82, 0.92, 1]})
+            if is_firestorm or name == "side_flame_slashes":
+                card["volume_mode"] = "front_spiral_shell"
+                card["instances"] = [
+                    {"location": [8, -12, 62], "rotation": [88, 44, -32], "scale": [1.32, 0.82, 1.0]},
+                    {"location": [-9, -8, 52], "rotation": [88, -46, 12], "scale": [1.12, 0.74, 1.0]},
+                ]
+                emitter.setdefault("notes", []).append("Firestorm side flames use offset spiral shell cards instead of a single flat ribbon.")
         niagara["enabled"] = False
     elif role == "ground_energy_ring":
         timeline.update({"delay": 0.02, "duration": 0.72, "opacity": [0.0, 0.9, 0.72, 0.0], "scale": [0.55, 1.12, 1.04, 1.28], "rotation_speed": 18.0})
@@ -261,6 +283,10 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         material["opacity"] = max(float(material.get("opacity", 0.8)), 0.86)
         material["emissive_strength"] = max(float(material.get("emissive_strength", 22.0)), 24.0)
         card.update({"enabled": True, "location": [0, -1, 24], "rotation": [88, 0, 0], "scale": [0.92, 0.58, 1]})
+        if is_firestorm or name == "impact_flash":
+            card["instances"] = [
+                {"location": [0, 0, 24], "rotation": [88, 90, 0], "scale": [0.66, 0.42, 1.0]},
+            ]
         niagara["enabled"] = False
     elif role == "atmospheric_wisp":
         if is_firestorm or name == "smoke_dust_crown":
