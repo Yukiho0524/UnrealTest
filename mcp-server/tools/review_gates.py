@@ -26,6 +26,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_reference_matched_anchor(patched_spec, manifest, unreal_result),
         gate_production_preview(patched_spec, unreal_result),
         gate_preview_component_contract(patched_spec, unreal_result),
+        gate_unreal_material_creation(unreal_result),
         gate_fire_spatial_design(patched_spec, unreal_result),
         gate_firestorm_3d_volume_preview(patched_spec, unreal_result),
         gate_alpha_mask_applied(patched_spec, manifest),
@@ -260,6 +261,36 @@ def gate_preview_component_contract(spec: dict[str, Any], unreal_result: dict[st
         "status": "pass" if ok else "fail",
         "message": "Preview components are present and match the expected transforms/material ranges." if ok else "Preview components do not match the expected placement or parameter contract.",
         "data": {"checked": checked, "issues": issues},
+    }
+
+
+def gate_unreal_material_creation(unreal_result: dict[str, Any] | None) -> dict[str, Any]:
+    systems = (((unreal_result or {}).get("bundle") or {}).get("systems") or [])
+    issues = []
+    for system in systems:
+        materials = system.get("materials") or {}
+        if not materials:
+            continue
+        if materials.get("created") is not True or materials.get("errors"):
+            issues.append(
+                {
+                    "system": system.get("asset_path"),
+                    "material_path": materials.get("material_path"),
+                    "material_instance_path": materials.get("material_instance_path"),
+                    "created": materials.get("created"),
+                    "errors": materials.get("errors") or [],
+                }
+            )
+    preview_errors = (((unreal_result or {}).get("bundle") or {}).get("preview") or {}).get("errors") or []
+    ok = not issues and not preview_errors
+    return {
+        "name": "unreal_material_creation",
+        "status": "pass" if ok else "fail",
+        "message": "Unreal material assets were created and preview components have valid material instances." if ok else "One or more Unreal materials failed, which can produce grey checker preview geometry.",
+        "data": {
+            "material_issues": issues,
+            "preview_errors": preview_errors,
+        },
     }
 
 

@@ -305,6 +305,10 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
         for index, system in enumerate(systems, start=1):
             emitter = system.get("emitter_plan") or {}
             material_path = (system.get("materials") or {}).get("material_instance_path")
+            material_asset = unreal_module.EditorAssetLibrary.load_asset(material_path) if material_path else None
+            if material_path and not material_asset:
+                result["errors"].append(f"Preview skipped emitter with missing material instance: {material_path}")
+                continue
             transforms = preview_card_transforms_for_emitter(emitter, index)
             for transform_index, transform in enumerate(transforms):
                 component_name = f"LayerCard_{index}_{safe_asset_token(emitter.get('name', 'layer'))}"
@@ -762,6 +766,8 @@ def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str)
             result["alpha_texture_path"] = alpha_texture_path
         if distortion_texture:
             result["distortion_texture_path"] = distortion_texture_path
+        delete_asset_if_exists(unreal_module, instance_path)
+        delete_asset_if_exists(unreal_module, material_path)
         material = create_or_replace_material(unreal_module, material_name, destination_path, spec, texture, alpha_texture, distortion_texture)
         material_instance = create_or_replace_material_instance(unreal_module, instance_name, destination_path, material, spec, texture, alpha_texture, distortion_texture)
         result["created"] = bool(material and material_instance)
@@ -1275,8 +1281,6 @@ def set_texture_mip_setting(unreal_module, texture, *setting_names: str) -> None
 
 def create_or_replace_material(unreal_module, material_name: str, destination_path: str, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None):
     material_path = f"{destination_path}/{material_name}"
-    if unreal_module.EditorAssetLibrary.does_asset_exist(material_path):
-        unreal_module.EditorAssetLibrary.delete_asset(material_path)
 
     asset_tools = unreal_module.AssetToolsHelpers.get_asset_tools()
     factory = unreal_module.MaterialFactoryNew()
@@ -1293,8 +1297,6 @@ def create_or_replace_material(unreal_module, material_name: str, destination_pa
 
 def create_or_replace_material_instance(unreal_module, instance_name: str, destination_path: str, material, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None):
     instance_path = f"{destination_path}/{instance_name}"
-    if unreal_module.EditorAssetLibrary.does_asset_exist(instance_path):
-        unreal_module.EditorAssetLibrary.delete_asset(instance_path)
 
     asset_tools = unreal_module.AssetToolsHelpers.get_asset_tools()
     factory = unreal_module.MaterialInstanceConstantFactoryNew()
@@ -1318,6 +1320,18 @@ def create_or_replace_material_instance(unreal_module, instance_name: str, desti
     annotate_asset(unreal_module, material_instance, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(material_instance)
     return material_instance
+
+
+def delete_asset_if_exists(unreal_module, asset_path: str) -> bool:
+    if not unreal_module.EditorAssetLibrary.does_asset_exist(asset_path):
+        return True
+    asset = unreal_module.EditorAssetLibrary.load_asset(asset_path)
+    if asset and hasattr(asset, "modify"):
+        try:
+            asset.modify()
+        except Exception:
+            pass
+    return bool(unreal_module.EditorAssetLibrary.delete_asset(asset_path))
 
 
 def assign_material_to_niagara_renderers(unreal_module, asset_path: str, material_instance_path: str | None) -> dict:
