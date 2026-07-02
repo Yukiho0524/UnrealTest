@@ -275,6 +275,9 @@ def build_vfx_plan(
             review_gates=review_gates_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
         )
 
+    if effect_type == "fire_or_flame" and (config or {}).get("preset") == "firestorm":
+        return build_firestorm_vfx_plan(motion, fire_palette(palette), particles, visual_profile, reference_card_source, config)
+
     if effect_type == "fire_or_flame":
         fire_palette_values = fire_palette(palette)
         emitters = []
@@ -532,6 +535,121 @@ def build_vfx_plan(
         quality_target=quality_target_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
         asset_passes=asset_passes_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
         review_gates=review_gates_for_plan(effect_type, visual_profile, [emitter.__dict__ for emitter in emitters]),
+    )
+
+
+def build_firestorm_vfx_plan(
+    motion: str,
+    palette: list[str],
+    particles: VFXParticles,
+    visual_profile: dict[str, Any],
+    reference_card_source: str | None,
+    config: dict[str, Any] | None,
+) -> VFXPlan:
+    emitters = [
+        VFXEmitterPlan(
+            name="ground_rune_ring",
+            role="ground_energy_ring",
+            sprite_shape="fire_rune_ring",
+            material_style="fire_ground_rune_ring_firestorm_vortex",
+            motion="counter_clockwise_ground_vortex",
+            spawn_rate=1.0,
+            lifetime_seconds=1.35,
+            start_size=280.0,
+            end_size=430.0,
+            color_palette=[palette[1], palette[0], "#4A0B04"],
+            notes=["Large molten spiral ring that anchors the firestorm at ground level."],
+        ),
+        VFXEmitterPlan(
+            name="central_fire_pillar",
+            role="fire_pillar",
+            sprite_shape="fire_pillar",
+            material_style="fire_pillar_core_firestorm",
+            motion="rising_tornado_core",
+            spawn_rate=1.0,
+            lifetime_seconds=1.05,
+            start_size=120.0,
+            end_size=360.0,
+            color_palette=palette,
+            notes=["Tall hot tornado core; this is the main silhouette."],
+        ),
+        VFXEmitterPlan(
+            name="side_flame_slashes",
+            role="flame_slashes",
+            sprite_shape="flame_slash",
+            material_style="fire_side_slashes_front_spiral",
+            motion="spiral_lash_clockwise",
+            spawn_rate=3.0,
+            lifetime_seconds=0.92,
+            start_size=110.0,
+            end_size=310.0,
+            color_palette=palette[1:],
+            notes=["Broad foreground flame ribbon curling around the core."],
+        ),
+        VFXEmitterPlan(
+            name="back_spiral_flame_wall",
+            role="flame_slashes",
+            sprite_shape="flame_slash",
+            material_style="outer_flame_back_spiral",
+            motion="spiral_lash_counter_clockwise",
+            spawn_rate=3.0,
+            lifetime_seconds=0.98,
+            start_size=95.0,
+            end_size=300.0,
+            color_palette=[palette[2], palette[1], "#5A0C04"],
+            notes=["Offset rear flame ribbon to make the storm feel volumetric."],
+        ),
+        VFXEmitterPlan(
+            name="impact_flash",
+            role="impact_core",
+            sprite_shape="impact_flash",
+            material_style="fire_impact_flash_white_hot",
+            motion="white_hot_pulse",
+            spawn_rate=1.0,
+            lifetime_seconds=0.34,
+            start_size=135.0,
+            end_size=250.0,
+            color_palette=palette[:3],
+            notes=["Brief overexposed flash at the base of the vortex."],
+        ),
+        VFXEmitterPlan(
+            name="smoke_dust_crown",
+            role="atmospheric_wisp",
+            sprite_shape="smoke_wisp",
+            material_style="translucent_smoke_dust_firestorm",
+            motion="rolling_smoke_crown",
+            spawn_rate=10.0,
+            lifetime_seconds=1.35,
+            start_size=125.0,
+            end_size=330.0,
+            color_palette=["#211814", "#5E4030", palette[2]],
+            notes=["Low dark rolling crown that frames the bright vortex."],
+        ),
+        VFXEmitterPlan(
+            name="ember_sparks",
+            role="detail_particles",
+            sprite_shape="shard",
+            material_style="orange_emissive_firestorm_sparks",
+            motion="spiral_spark_shear",
+            spawn_rate=max(36.0, particles.spawn_rate * 0.4),
+            lifetime_seconds=0.58,
+            start_size=7.0,
+            end_size=1.0,
+            color_palette=[palette[0], palette[1], palette[2]],
+            notes=["Arc-shaped ember spray following the vortex, not a uniform fountain."],
+        ),
+    ]
+    emitters = apply_unreal_settings(emitters, config)
+    return VFXPlan(
+        visual_intent="Cinematic firestorm: molten ground vortex, white-hot tornado core, two offset spiral flame walls, rolling smoke crown, impact flash, and ember shear.",
+        primary_emitter="central_fire_pillar",
+        emitters=emitters,
+        reference_card_source=reference_card_source,
+        composition_layers=composition_layers_for_plan("fire_or_flame", [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
+        production_notes=production_notes_for_plan("fire_or_flame", visual_profile, [emitter.__dict__ for emitter in emitters]),
+        quality_target=quality_target_for_plan("fire_or_flame", visual_profile, [emitter.__dict__ for emitter in emitters]),
+        asset_passes=asset_passes_for_plan("fire_or_flame", visual_profile, [emitter.__dict__ for emitter in emitters]),
+        review_gates=review_gates_for_plan("fire_or_flame", visual_profile, [emitter.__dict__ for emitter in emitters]),
     )
 
 

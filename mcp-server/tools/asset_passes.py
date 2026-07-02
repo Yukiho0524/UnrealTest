@@ -200,6 +200,7 @@ def apply_production_preview_layers(spec: dict[str, Any], manifest: dict[str, An
 
 def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
     role = emitter.get("role")
+    name = str(emitter.get("name") or "")
     settings = emitter.setdefault("unreal_settings", {})
     material = settings.setdefault("material", {})
     timeline = settings.setdefault("timeline", {})
@@ -230,10 +231,16 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         card.update({"enabled": True, "location": [0, 0, 104], "rotation": [90, 0, 0], "scale": [0.88, 1.72, 1.0]})
         niagara["enabled"] = False
     elif role == "flame_slashes":
-        timeline.update({"delay": 0.1, "duration": 0.52, "opacity": [0.0, 0.78, 0.58, 0.0], "scale": [0.55, 1.08, 1.16, 0.82]})
-        material["opacity"] = max(float(material.get("opacity", 0.5)), 0.62)
-        material["emissive_strength"] = max(float(material.get("emissive_strength", 8.5)), 11.0)
-        card.update({"enabled": True, "location": [0, -3, 48], "rotation": [88, 0, -14], "scale": [1.72, 0.82, 1]})
+        if "back_spiral" in name:
+            timeline.update({"delay": 0.16, "duration": 0.78, "opacity": [0.0, 0.52, 0.42, 0.0], "scale": [0.48, 1.18, 1.24, 0.72], "rotation_speed": 22.0})
+            material["opacity"] = max(float(material.get("opacity", 0.48)), 0.5)
+            material["emissive_strength"] = max(float(material.get("emissive_strength", 7.5)), 9.0)
+            card.update({"enabled": True, "location": [0, 7, 76], "rotation": [88, 0, 18], "scale": [1.55, 1.1, 1]})
+        else:
+            timeline.update({"delay": 0.1, "duration": 0.72, "opacity": [0.0, 0.82, 0.62, 0.0], "scale": [0.5, 1.14, 1.2, 0.78], "rotation_speed": -28.0})
+            material["opacity"] = max(float(material.get("opacity", 0.5)), 0.68)
+            material["emissive_strength"] = max(float(material.get("emissive_strength", 8.5)), 13.0)
+            card.update({"enabled": True, "location": [0, -6, 58], "rotation": [88, 0, -18], "scale": [1.82, 0.92, 1]})
         niagara["enabled"] = False
     elif role == "ground_energy_ring":
         timeline.update({"delay": 0.02, "duration": 0.72, "opacity": [0.0, 0.9, 0.72, 0.0], "scale": [0.55, 1.12, 1.04, 1.28], "rotation_speed": 18.0})
@@ -564,17 +571,18 @@ def derive_bootstrap_candidates(
     beauty = first_existing_candidate(reference_candidates.get("beauty_flipbook", []))
     reference_motion = first_existing_candidate(reference_candidates.get("reference_motion_overlay", []))
     source = beauty or reference_motion
-    if not source:
+    procedural_only = "firestorm" in package_name.lower()
+    if not source and not procedural_only:
         return {}
 
-    source_path = Path(source["path"])
-    if not source_path.suffix.lower() in IMAGE_SUFFIXES:
+    source_path = Path(source["path"]) if source else None
+    if source_path and not source_path.suffix.lower() in IMAGE_SUFFIXES:
         return {}
 
     static_references = [path for path in reference_media if path.suffix.lower() in IMAGE_SUFFIXES]
     target_reference = best_reference_for_layer(static_references, "target_fire") or (static_references[0] if static_references else source_path)
     core_source = best_reference_for_layer(static_references, "core_flame") or target_reference
-    side_source = best_reference_for_layer(static_references, "side_flames") or source_path
+    side_source = best_reference_for_layer(static_references, "side_flames") or source_path or target_reference
     ring_source = best_reference_for_layer(static_references, "ground_ring") or side_source
     smoke_source = best_reference_for_layer(static_references, "smoke") or side_source
 
@@ -583,15 +591,30 @@ def derive_bootstrap_candidates(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     candidates: dict[str, list[dict[str, str]]] = {}
+    if "beauty_flipbook" in target_names and procedural_only:
+        beauty_path = output_dir / f"{package_name}_beauty_flipbook.png"
+        create_fire_atlas_pass(beauty_path, "firestorm_core")
+        candidates.setdefault("beauty_flipbook", []).append(
+            derived_candidate(beauty_path, "procedural_firestorm_beauty", source="procedural_layer_synthesis", confidence="medium")
+        )
+
     if "alpha_mask" in target_names:
         alpha_path = output_dir / f"{package_name}_alpha_mask.png"
-        create_reference_extracted_fire_atlas(target_reference, alpha_path, "alpha_mask")
-        candidates.setdefault("alpha_mask", []).append(derived_candidate(alpha_path, "alpha_from_reference_layers", source="reference_layer_extraction", confidence="medium"))
+        if target_reference:
+            create_reference_extracted_fire_atlas(target_reference, alpha_path, "alpha_mask")
+            candidates.setdefault("alpha_mask", []).append(derived_candidate(alpha_path, "alpha_from_reference_layers", source="reference_layer_extraction", confidence="medium"))
+        else:
+            create_fire_atlas_pass(alpha_path, "alpha_mask")
+            candidates.setdefault("alpha_mask", []).append(derived_candidate(alpha_path, "procedural_firestorm_alpha", source="procedural_layer_synthesis", confidence="medium"))
 
     if "core_flame_flipbook" in target_names:
         core_path = output_dir / f"{package_name}_core_flame_flipbook.png"
-        create_reference_extracted_fire_atlas(core_source, core_path, "core_flame")
-        candidates.setdefault("core_flame_flipbook", []).append(derived_candidate(core_path, "core_flame_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
+        if core_source:
+            create_reference_extracted_fire_atlas(core_source, core_path, "core_flame")
+            candidates.setdefault("core_flame_flipbook", []).append(derived_candidate(core_path, "core_flame_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
+        else:
+            create_fire_atlas_pass(core_path, "firestorm_core")
+            candidates.setdefault("core_flame_flipbook", []).append(derived_candidate(core_path, "procedural_firestorm_core", source="procedural_layer_synthesis", confidence="medium"))
 
     if "smoke_heat_flipbook" in target_names:
         smoke_path = output_dir / f"{package_name}_smoke_heat_flipbook.png"
@@ -600,8 +623,12 @@ def derive_bootstrap_candidates(
 
     if "flame_slash_flipbook" in target_names:
         slash_path = output_dir / f"{package_name}_flame_slash_flipbook.png"
-        create_reference_extracted_fire_atlas(side_source, slash_path, "flame_slashes")
-        candidates.setdefault("flame_slash_flipbook", []).append(derived_candidate(slash_path, "side_flames_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
+        if side_source:
+            create_reference_extracted_fire_atlas(side_source, slash_path, "flame_slashes")
+            candidates.setdefault("flame_slash_flipbook", []).append(derived_candidate(slash_path, "side_flames_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
+        else:
+            create_fire_atlas_pass(slash_path, "firestorm_slashes")
+            candidates.setdefault("flame_slash_flipbook", []).append(derived_candidate(slash_path, "procedural_firestorm_spiral_slashes", source="procedural_layer_synthesis", confidence="medium"))
 
     if "ground_ring_mask" in target_names:
         ring_path = output_dir / f"{package_name}_ground_ring_mask.png"
@@ -610,13 +637,21 @@ def derive_bootstrap_candidates(
 
     if "impact_flash_mask" in target_names:
         flash_path = output_dir / f"{package_name}_impact_flash_mask.png"
-        create_reference_extracted_fire_atlas(ring_source, flash_path, "impact_flash")
-        candidates.setdefault("impact_flash_mask", []).append(derived_candidate(flash_path, "impact_flash_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
+        if ring_source:
+            create_reference_extracted_fire_atlas(ring_source, flash_path, "impact_flash")
+            candidates.setdefault("impact_flash_mask", []).append(derived_candidate(flash_path, "impact_flash_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
+        else:
+            create_fire_atlas_pass(flash_path, "impact_flash")
+            candidates.setdefault("impact_flash_mask", []).append(derived_candidate(flash_path, "procedural_firestorm_impact_flash", source="procedural_layer_synthesis", confidence="medium"))
 
     if "ember_sprite_set" in target_names:
         ember_path = output_dir / f"{package_name}_ember_sprite_set.png"
-        create_reference_extracted_fire_atlas(target_reference, ember_path, "embers")
-        candidates.setdefault("ember_sprite_set", []).append(derived_candidate(ember_path, "embers_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
+        if target_reference:
+            create_reference_extracted_fire_atlas(target_reference, ember_path, "embers")
+            candidates.setdefault("ember_sprite_set", []).append(derived_candidate(ember_path, "embers_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
+        else:
+            create_fire_atlas_pass(ember_path, "embers")
+            candidates.setdefault("ember_sprite_set", []).append(derived_candidate(ember_path, "procedural_firestorm_embers", source="procedural_layer_synthesis", confidence="medium"))
 
     if "distortion_flow" in target_names:
         flow_path = output_dir / f"{package_name}_distortion_flow.png"
@@ -625,28 +660,40 @@ def derive_bootstrap_candidates(
 
     if "normal_or_lighting" in target_names:
         normal_path = output_dir / f"{package_name}_normal_or_lighting.png"
-        create_normal_or_lighting_pass(target_reference, normal_path)
+        if target_reference:
+            create_normal_or_lighting_pass(target_reference, normal_path)
+        else:
+            create_fire_atlas_pass(normal_path, "normal_or_lighting", columns=2, rows=2, frame_size=256)
         candidates.setdefault("normal_or_lighting", []).append(
             derived_candidate(normal_path, "ai_ready_normal_lighting_bootstrap")
         )
 
     if "depth_or_thickness" in target_names:
         depth_path = output_dir / f"{package_name}_depth_or_thickness.png"
-        create_depth_or_thickness_pass(target_reference, depth_path)
+        if target_reference:
+            create_depth_or_thickness_pass(target_reference, depth_path)
+        else:
+            create_fire_atlas_pass(depth_path, "depth_or_thickness", columns=2, rows=2, frame_size=256)
         candidates.setdefault("depth_or_thickness", []).append(
             derived_candidate(depth_path, "ai_ready_depth_thickness_bootstrap")
         )
 
     if "layer_mask_pack" in target_names:
         mask_pack_path = output_dir / f"{package_name}_layer_mask_pack.png"
-        create_layer_mask_pack_pass(target_reference, mask_pack_path)
+        if target_reference:
+            create_layer_mask_pack_pass(target_reference, mask_pack_path)
+        else:
+            create_fire_atlas_pass(mask_pack_path, "layer_mask_pack", columns=2, rows=2, frame_size=256)
         candidates.setdefault("layer_mask_pack", []).append(
             derived_candidate(mask_pack_path, "ai_ready_layer_mask_pack_bootstrap")
         )
 
     if "sdf_or_vector_field" in target_names:
         field_path = output_dir / f"{package_name}_sdf_or_vector_field.png"
-        create_sdf_or_vector_field_pass(target_reference, field_path)
+        if target_reference:
+            create_sdf_or_vector_field_pass(target_reference, field_path)
+        else:
+            create_fire_atlas_pass(field_path, "sdf_or_vector_field", columns=1, rows=1, frame_size=256)
         candidates.setdefault("sdf_or_vector_field", []).append(
             derived_candidate(field_path, "ai_ready_sdf_vector_field_bootstrap")
         )
@@ -658,7 +705,7 @@ def derive_bootstrap_candidates(
             derived_candidate(metadata_path, "renderer_layout_metadata_bootstrap")
         )
 
-    similarity_report = create_similarity_report(package_name, target_reference, output_dir)
+    similarity_report = create_similarity_report(package_name, target_reference, output_dir) if target_reference else {}
     if "reference_matched_composite" in target_names:
         preview_path = similarity_report.get("preview")
         if preview_path and Path(preview_path).exists():
@@ -1137,7 +1184,21 @@ def create_fire_atlas_pass(output_path: Path, pass_kind: str, columns: int = 4, 
         phase = index / max(frame_count - 1, 1)
         frame = Image.new("RGBA", (frame_size, frame_size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(frame, "RGBA")
-        if pass_kind == "flame_slashes":
+        if pass_kind == "firestorm_core":
+            draw_firestorm_core_frame(draw, frame_size, phase)
+        elif pass_kind == "firestorm_slashes":
+            draw_firestorm_slash_frame(draw, frame_size, phase)
+        elif pass_kind == "alpha_mask":
+            draw_firestorm_alpha_frame(draw, frame_size, phase)
+        elif pass_kind == "normal_or_lighting":
+            draw_firestorm_normal_frame(draw, frame_size, phase)
+        elif pass_kind == "depth_or_thickness":
+            draw_firestorm_depth_frame(draw, frame_size, phase)
+        elif pass_kind == "layer_mask_pack":
+            draw_firestorm_layer_mask_frame(draw, frame_size, phase)
+        elif pass_kind == "sdf_or_vector_field":
+            draw_firestorm_field_frame(draw, frame_size, phase)
+        elif pass_kind == "flame_slashes":
             draw_flame_slash_frame(draw, frame_size, phase)
         elif pass_kind == "ground_ring":
             draw_ground_ring_frame(draw, frame_size, phase)
@@ -1152,6 +1213,114 @@ def create_fire_atlas_pass(output_path: Path, pass_kind: str, columns: int = 4, 
         y = (index // columns) * frame_size
         atlas.alpha_composite(frame, (x, y))
     atlas.save(output_path)
+
+
+def draw_firestorm_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    pulse = math.sin(phase * math.pi)
+    for tier in range(11):
+        t = tier / 10
+        y = size * (0.86 - 0.76 * t)
+        twist = math.sin(t * 8.0 + phase * math.tau * 1.25)
+        cx = size * (0.5 + twist * (0.08 + 0.08 * t))
+        width = size * (0.2 * (1.0 - t) + 0.045 + 0.035 * pulse)
+        height = size * (0.13 + 0.025 * math.sin(t * 6.0 + phase * 4.0))
+        alpha = int(74 + 130 * (1.0 - t * 0.55) * (0.55 + pulse * 0.45))
+        draw.ellipse((cx - width, y - height, cx + width, y + height), fill=(255, 80, 15, alpha))
+        draw.ellipse((cx - width * 0.52, y - height * 1.15, cx + width * 0.52, y + height * 1.15), fill=(255, 185, 48, min(230, alpha + 46)))
+        draw.ellipse((cx - width * 0.2, y - height * 1.28, cx + width * 0.2, y + height * 1.28), fill=(255, 250, 192, min(245, alpha + 58)))
+    for strand in range(5):
+        points = []
+        angle_offset = strand * math.tau / 5
+        for step in range(13):
+            t = step / 12
+            radius = size * (0.25 * (1.0 - t) + 0.035)
+            angle = angle_offset + t * math.tau * 1.25 + phase * math.tau
+            x = size * 0.5 + math.cos(angle) * radius
+            y = size * (0.86 - 0.72 * t)
+            width = size * (0.032 * (1.0 - t) + 0.008)
+            points.append((x, y, width))
+        draw.polygon(ribbon_polygon(points, 1.0), fill=(255, 112, 20, 96))
+
+
+def draw_firestorm_slash_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    pulse = math.sin(phase * math.pi)
+    for band in range(4):
+        points = []
+        offset = band * 0.22
+        for step in range(12):
+            t = step / 11
+            angle = (t * 1.35 + offset + phase * 0.55) * math.tau
+            radius = size * (0.18 + 0.32 * t)
+            x = size * 0.5 + math.cos(angle) * radius
+            y = size * (0.72 - 0.44 * t) + math.sin(angle) * size * 0.07
+            width = size * (0.055 * (1.0 - t) + 0.014)
+            points.append((x, y, width))
+        draw.polygon(ribbon_polygon(points, 2.0), fill=(190, 28, 6, int(70 + 44 * pulse)))
+        draw.polygon(ribbon_polygon(points, 1.12), fill=(255, 96, 18, int(116 + 58 * pulse)))
+        draw.polygon(ribbon_polygon(points, 0.42), fill=(255, 232, 150, int(150 + 56 * pulse)))
+
+
+def draw_firestorm_alpha_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    draw_firestorm_core_frame(draw, size, phase)
+    draw_firestorm_slash_frame(draw, size, phase)
+    cx = cy = size / 2
+    draw.ellipse((cx - size * 0.42, cy + size * 0.16, cx + size * 0.42, cy + size * 0.54), fill=(255, 255, 255, 138))
+
+
+def draw_firestorm_normal_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    for y in range(size):
+        ny = (y / max(size - 1, 1) - 0.5) * 2
+        for x in range(size):
+            nx = (x / max(size - 1, 1) - 0.5) * 2
+            distance = min(1.0, math.hypot(nx * 0.9, ny * 1.2))
+            angle = math.atan2(ny, nx) + phase * math.tau
+            r = int(128 + math.cos(angle) * (1.0 - distance) * 86)
+            g = int(128 + math.sin(angle) * (1.0 - distance) * 86)
+            b = int(170 + 72 * (1.0 - distance))
+            a = int(255 * (1.0 - smoothstep01(0.72, 1.0, distance)))
+            draw.point((x, y), fill=(r, g, min(255, b), a))
+
+
+def draw_firestorm_depth_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    for y in range(size):
+        y01 = y / max(size - 1, 1)
+        for x in range(size):
+            x01 = x / max(size - 1, 1)
+            radial = 1.0 - min(1.0, math.hypot((x01 - 0.5) * 1.55, (y01 - 0.58) * 1.8))
+            column = math.exp(-abs(x01 - 0.5 - math.sin(y01 * 9.0 + phase * math.tau) * 0.07) * 8.0)
+            value = int(255 * clamp01(radial * 0.44 + column * 0.42))
+            draw.point((x, y), fill=(value, value, value, value))
+
+
+def draw_firestorm_layer_mask_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    for y in range(size):
+        y01 = y / max(size - 1, 1)
+        for x in range(size):
+            x01 = x / max(size - 1, 1)
+            dx = x01 - 0.5
+            dy = y01 - 0.58
+            distance = min(1.0, math.hypot(dx * 1.3, dy * 1.8))
+            angle = math.atan2(dy, dx) + phase * math.tau
+            core = int(255 * clamp01((1.0 - abs(dx) * 5.0) * (1.0 - smoothstep01(0.05, 0.94, y01))))
+            edge = int(255 * clamp01((1.0 - distance) * (0.45 + 0.55 * math.sin(angle * 3.0) ** 2)))
+            smoke = int(255 * clamp01(smoothstep01(0.1, 0.78, y01) * (1.0 - core / 255.0) * 0.62))
+            sparks = int(255 * clamp01((1.0 - distance) * smoothstep01(0.18, 0.66, abs(math.sin(angle * 5.0)))))
+            draw.point((x, y), fill=(core, edge, smoke, sparks))
+
+
+def draw_firestorm_field_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    for y in range(size):
+        y01 = y / max(size - 1, 1)
+        for x in range(size):
+            x01 = x / max(size - 1, 1)
+            dx = x01 - 0.5
+            dy = y01 - 0.58
+            angle = math.atan2(dy, dx) + math.pi / 2
+            radius = min(1.0, math.hypot(dx, dy) * 2.0)
+            u = int(128 + math.cos(angle + phase * math.tau) * (1.0 - radius) * 92)
+            v = int(128 + math.sin(angle + phase * math.tau) * (1.0 - radius) * 92)
+            sdf = int(255 * (1.0 - smoothstep01(0.18, 0.72, radius)))
+            draw.point((x, y), fill=(u, v, sdf, 255))
 
 
 def draw_flame_slash_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:

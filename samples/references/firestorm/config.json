@@ -1,0 +1,60 @@
+{
+  "name": "firestorm",
+  "effect_type": "fire_or_flame",
+  "preset": "firestorm",
+  "motion": "cinematic_spiral_firestorm",
+  "duration_seconds": 1.35,
+  "looping": true,
+  "lock_color_palette": true,
+  "color_palette": ["#FFF7B8", "#FFB12A", "#FF4A10", "#250604"],
+  "reference_card": {
+    "enabled": false
+  },
+  "layer_overrides": {
+    "central_fire_pillar": {
+      "material": {
+        "opacity": 0.88,
+        "emissive_strength": 24.0
+      }
+    },
+    "side_flame_slashes": {
+      "material": {
+        "opacity": 0.74,
+        "emissive_strength": 15.0
+      }
+    },
+    "back_spiral_flame_wall": {
+      "material": {
+        "opacity": 0.52,
+        "emissive_strength": 10.5
+      }
+    },
+    "ground_rune_ring": {
+      "material": {
+        "opacity": 0.82,
+        "emissive_strength": 12.5
+      }
+    },
+    "impact_flash": {
+      "material": {
+        "opacity": 0.9,
+        "emissive_strength": 30.0
+      }
+    },
+    "smoke_dust_crown": {
+      "material": {
+        "opacity": 0.12,
+        "emissive_strength": 0.2,
+        "blend_mode": "translucent"
+      }
+    },
+    "ember_sparks": {
+      "niagara": {
+        "spawn_rate": 48.0,
+        "lifetime_seconds": 0.58,
+        "start_size": 7.0,
+        "end_size": 1.0
+      }
+    }
+  }
+}

@@ -69,6 +69,13 @@ def gate_required_passes(manifest: dict[str, Any]) -> dict[str, Any]:
 
 def gate_similarity_target(manifest: dict[str, Any]) -> dict[str, Any]:
     report = manifest.get("similarity_report") or {}
+    if not manifest.get("reference_media") and not report:
+        return {
+            "name": "reference_similarity_80",
+            "status": "pass",
+            "message": "No reference target was provided; procedural showcase packages skip the similarity gate.",
+            "data": {"target": 0.8, "score": None, "report_status": "skipped_no_reference"},
+        }
     score = (report.get("score") or {}).get("overall")
     alpha = report.get("alpha") or {}
     opaque_card_risk = bool(alpha.get("opaque_card_risk"))
@@ -161,6 +168,13 @@ def gate_distortion_pass_link(spec: dict[str, Any], manifest: dict[str, Any]) ->
 
 
 def gate_reference_matched_anchor(spec: dict[str, Any], manifest: dict[str, Any], unreal_result: dict[str, Any] | None) -> dict[str, Any]:
+    if not manifest.get("reference_media"):
+        return {
+            "name": "reference_matched_viewport_anchor",
+            "status": "pass",
+            "message": "No reference media was provided; procedural showcase preview does not require a reference-matched anchor.",
+            "data": {"has_emitter": False, "components": [], "caveat": "Use visual review instead of reference matching for this package."},
+        }
     emitters = ((spec.get("vfx_plan") or {}).get("emitters") or [])
     has_emitter = any(emitter.get("role") == "reference_matched_composite" for emitter in emitters)
     composite_entry = next((entry for entry in manifest.get("passes", []) if entry.get("name") == "reference_matched_composite"), {})
