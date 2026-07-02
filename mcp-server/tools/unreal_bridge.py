@@ -21,6 +21,14 @@ def write_package_spec(spec: VFXSpec, output_dir: Path) -> Path:
     return output_path
 
 
+def write_spec_dict(spec: dict, output_dir: Path, name: str | None = None) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    spec_name = name or str(spec.get("name") or "effect")
+    output_path = output_dir / f"{spec_name}.vfxspec.json"
+    output_path.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+    return output_path
+
+
 def create_niagara_from_spec_command(spec_path: Path, destination_path: str) -> list[str]:
     return [
         "unreal-python",
@@ -36,7 +44,7 @@ def run_unreal_generation(
     script_path: Path,
     spec_path: Path,
     destination_path: str,
-    timeout_seconds: int = 180,
+    timeout_seconds: int = 420,
 ) -> dict:
     if not editor_path.exists():
         raise FileNotFoundError(f"UnrealEditor-Cmd.exe was not found: {editor_path}")
@@ -58,13 +66,27 @@ def run_unreal_generation(
         "-nosplash",
     ]
 
-    completed = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "command": command,
+            "runner": str(runner_path),
+            "resultFile": str(result_path),
+            "result": read_unreal_result(result_path),
+            "returnCode": None,
+            "stdout": exc.stdout or "",
+            "stderr": exc.stderr or "",
+            "succeeded": False,
+            "status": "timeout",
+            "message": f"Unreal generation exceeded {timeout_seconds} seconds.",
+        }
 
     return {
         "command": command,

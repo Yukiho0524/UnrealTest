@@ -7,6 +7,7 @@ from pathlib import Path
 from tools.analyze_images import analyze_reference_folder
 from tools.analyze_packages import analyze_effect_package, list_effect_packages
 from tools.art_providers import generate_art_pass
+from tools.asset_passes import build_asset_pass_manifest
 from tools.unreal_bridge import write_package_spec, write_spec_for_unreal
 
 
@@ -32,6 +33,11 @@ def main() -> int:
     art_generate.add_argument("--out", type=Path, default=Path("generated/ai-art"))
     art_generate.add_argument("--base-url", default="http://127.0.0.1:8188")
     art_generate.add_argument("--workflow", default=None)
+
+    prepare_assets = subparsers.add_parser("prepare-assets", help="Build an asset pass manifest for one effect package.")
+    prepare_assets.add_argument("package", type=Path)
+    prepare_assets.add_argument("--out", type=Path, default=Path("generated/asset-passes"))
+    prepare_assets.add_argument("--ai-art-root", type=Path, default=Path("generated/ai-art"))
 
     ui = subparsers.add_parser("ui", help="Start the local VFX MCP web UI.")
     ui.add_argument("--host", default="127.0.0.1")
@@ -68,6 +74,11 @@ def main() -> int:
                 "workflow_path": args.workflow,
             },
         )
+        print(json.dumps(result, indent=2))
+        return 0
+
+    if args.command == "prepare-assets":
+        result = build_asset_pass_manifest(args.package, output_root=args.out, ai_art_root=args.ai_art_root)
         print(json.dumps(result, indent=2))
         return 0
 

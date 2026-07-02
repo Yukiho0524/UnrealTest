@@ -63,12 +63,29 @@ Designer references
 
 ## 下一步實作順序
 
-1. 讓 `VFXSpec.vfx_plan` 輸出 `quality_target`、`asset_passes`、`review_gates`。
-2. 讓 AI art provider 的 manifest 能標記輸出的 pass type，不只收集圖片。
-3. 建立 `asset_pass_manifest.json`，把 beauty/alpha/motion/distortion 等檔案交給 Unreal importer。
-4. Unreal 材質支援 alpha atlas、motion-vector flipbook interpolation、distortion pass。
-5. Niagara 生成器支援 layer delay、burst timing、curve-driven alpha/size/color。
-6. 做 viewport screenshot/thumbnail 自動評估，至少能偵測 atlas grid、矩形卡、過量粒子噴射。
+1. 讓 `VFXSpec.vfx_plan` 輸出 `quality_target`、`asset_passes`、`review_gates`。已完成。
+2. 建立 `asset_pass_manifest.json`，把 beauty/alpha/motion/distortion 等檔案交給 Unreal importer。已完成第一版。
+3. 若 reference flipbook 已存在，先自動派生 bootstrap `alpha_mask`、`core_flame_flipbook`、`smoke_heat_flipbook`。已完成第一版。
+4. `Generate Unreal Assets` 會套用 asset pass manifest，將 fire pillar/smoke 等 emitter 指到對應 pass。已完成第一版。
+5. 讓 AI art provider 的 manifest 能標記輸出的 pass type，不只收集圖片。下一步。
+6. Unreal 材質支援獨立 alpha atlas、motion-vector flipbook interpolation、distortion pass。下一步。
+7. Niagara 生成器支援 layer delay、burst timing、curve-driven alpha/size/color。下一步。
+8. 做 viewport screenshot/thumbnail 自動評估，至少能偵測 atlas grid、矩形卡、過量粒子噴射。下一步。
+
+## UI 新流程
+
+1. 在 `samples/references/<effect-name>/` 放入參考圖、GIF 或 prompt/config。
+2. 按 `Analyze Package` 檢查 `quality_target`、`asset_passes`、`review_gates`。
+3. 按 `Generate AI Art Pass` 產生外部 AI 素材；如果尚未接 ComfyUI workflow，可以先跳過。
+4. 按 `Prepare AAA Passes` 產生 `generated/asset-passes/<effect-name>/asset_pass_manifest.json`。
+5. 按 `Generate Unreal Assets`，系統會先套用 asset pass manifest，再匯入 Unreal。
+6. 按 `Open In Unreal`，在 BP preview viewport 開啟 Realtime 檢查播放。
+
+`asset_pass_manifest.json` 會標記每個 pass 的狀態：
+
+- `ready`: 已有可用素材。
+- `missing`: 還缺素材，通常需要 ComfyUI、EmberGen、FluidNinja 或人工指定。
+- `quality_note`: 若是 `bootstrap_only_replace_with_ai_or_simulation_for_final_aaa_quality`，代表它可先推進測試，但最終 AAA 品質仍建議替換成正式生成/模擬 pass。
 
 ## 參考資料
 

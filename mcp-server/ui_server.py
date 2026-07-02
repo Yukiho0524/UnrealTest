@@ -8,7 +8,8 @@ from urllib.parse import urlparse
 from project_registry import find_unreal_projects
 from tools.analyze_packages import analyze_effect_package, list_effect_packages
 from tools.art_providers import generate_art_pass
-from tools.unreal_bridge import create_niagara_from_spec_command, open_unreal_asset, run_unreal_generation, write_package_spec
+from tools.asset_passes import apply_asset_pass_manifest_to_spec_dict, build_asset_pass_manifest
+from tools.unreal_bridge import create_niagara_from_spec_command, open_unreal_asset, run_unreal_generation, write_package_spec, write_spec_dict
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
@@ -67,7 +68,14 @@ def run_ui(host: str, port: int, references_root: Path, output_root: Path) -> No
                         "negative_prompt": payload.get("negativePrompt") or None,
                     },
                 )
-                self.respond_json({"art": result})
+                asset_manifest = build_asset_pass_manifest(package_path)
+                self.respond_json({"art": result, "assetPassManifest": asset_manifest})
+                return
+            if path == "/api/prepare-assets":
+                payload = self.read_json()
+                package_path = package_path_from_payload(references_root, payload)
+                result = build_asset_pass_manifest(package_path)
+                self.respond_json({"assetPassManifest": result})
                 return
             if path == "/api/generate-unreal":
                 payload = self.read_json()
@@ -75,7 +83,9 @@ def run_ui(host: str, port: int, references_root: Path, output_root: Path) -> No
                 destination_path = payload.get("destinationPath") or f"/Game/VFX/Generated/{package_path.name}"
                 project = project_from_payload(payload)
                 spec = analyze_effect_package(package_path)
-                spec_path = write_package_spec(spec, output_root)
+                asset_manifest = build_asset_pass_manifest(package_path)
+                spec_dict = apply_asset_pass_manifest_to_spec_dict(spec.to_dict(), asset_manifest)
+                spec_path = write_spec_dict(spec_dict, output_root, spec.name)
                 editor_cmd_path = editor_cmd_from_editor_path(Path(project["editorPath"]))
                 script_path = WORKSPACE_ROOT / "unreal" / "Plugins" / "VFXMCP" / "Scripts" / "create_niagara_from_spec.py"
                 result = run_unreal_generation(
@@ -87,9 +97,10 @@ def run_ui(host: str, port: int, references_root: Path, output_root: Path) -> No
                 )
                 self.respond_json(
                     {
-                        "spec": spec.to_dict(),
+                        "spec": spec_dict,
                         "specFile": str(spec_path),
                         "destinationPath": destination_path,
+                        "assetPassManifest": asset_manifest,
                         "unreal": result,
                     }
                 )
@@ -332,6 +343,7 @@ def render_index_html() -> str:
         <button id="analyze">Analyze Package</button>
         <button class="secondary" id="generate">Generate Spec</button>
         <button class="secondary" id="generateArt">Generate AI Art Pass</button>
+        <button class="secondary" id="prepareAssets">Prepare AAA Passes</button>
         <button class="secondary" id="generateUnreal">Generate Unreal Assets</button>
         <button class="secondary" id="openUnreal">Open In Unreal</button>
 
@@ -417,6 +429,14 @@ def render_index_html() -> str:
     document.querySelector("#generateArt").addEventListener("click", async () => {
       output.textContent = "Running AI art provider pass...";
       show(await request("/api/generate-art", {
+        method: "POST",
+        body: JSON.stringify(selectedPayload())
+      }));
+    });
+
+    document.querySelector("#prepareAssets").addEventListener("click", async () => {
+      output.textContent = "Preparing AAA asset pass manifest...";
+      show(await request("/api/prepare-assets", {
         method: "POST",
         body: JSON.stringify(selectedPayload())
       }));
