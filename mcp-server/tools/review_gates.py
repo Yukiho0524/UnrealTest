@@ -27,6 +27,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_production_preview(patched_spec, unreal_result),
         gate_preview_component_contract(patched_spec, unreal_result),
         gate_fire_spatial_design(patched_spec, unreal_result),
+        gate_firestorm_3d_volume_preview(patched_spec, unreal_result),
         gate_alpha_mask_applied(patched_spec, manifest),
         gate_reference_overlay_not_primary(patched_spec, unreal_result),
         gate_texture_card_budget(patched_spec, manifest, unreal_result),
@@ -326,6 +327,54 @@ def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any]
         "status": "pass" if not issues else "fail",
         "message": "Fire preview layers sit in the expected ground, impact, flame, smoke, and ember height bands." if not issues else "Fire preview layers are not arranged in the expected spatial bands.",
         "data": {"issues": issues, "expected_bands": expected_bands},
+    }
+
+
+def gate_firestorm_3d_volume_preview(spec: dict[str, Any], unreal_result: dict[str, Any] | None) -> dict[str, Any]:
+    emitters = ((spec.get("vfx_plan") or {}).get("emitters") or [])
+    is_firestorm = str(spec.get("name", "")).lower() == "firestorm" or any(
+        "firestorm" in str(emitter.get("motion", "")).lower()
+        or "firestorm" in str(((emitter.get("unreal_settings") or {}).get("material") or {}).get("style", "")).lower()
+        for emitter in emitters
+    )
+    if spec.get("effect_type") != "fire_or_flame" or not is_firestorm:
+        return {
+            "name": "firestorm_3d_volume_preview",
+            "status": "pass",
+            "message": "Not a firestorm package.",
+            "data": {},
+        }
+
+    components = preview_components(unreal_result)
+    volume_components = [
+        component for component in components
+        if component.get("type") == "StaticMeshComponent" and str(component.get("name") or "").startswith("VolumeMesh_")
+    ]
+    required_emitters = {
+        "ground_rune_ring",
+        "central_fire_pillar",
+        "side_flame_slashes",
+        "back_spiral_flame_wall",
+        "smoke_dust_crown",
+    }
+    covered_emitters = {
+        emitter_name
+        for emitter_name in required_emitters
+        if any(emitter_name in str(component.get("name") or "") for component in volume_components)
+    }
+    missing = sorted(required_emitters - covered_emitters)
+    ok = len(volume_components) >= 12 and not missing
+    return {
+        "name": "firestorm_3d_volume_preview",
+        "status": "pass" if ok else "fail",
+        "message": "Firestorm preview includes 3D volume mesh shells for the vortex, core, flame walls, and smoke crown." if ok else "Firestorm preview is still too dependent on 2D cards.",
+        "data": {
+            "volume_mesh_count": len(volume_components),
+            "required_emitters": sorted(required_emitters),
+            "covered_emitters": sorted(covered_emitters),
+            "missing_emitters": missing,
+            "volume_component_names": [component.get("name") for component in volume_components],
+        },
     }
 
 

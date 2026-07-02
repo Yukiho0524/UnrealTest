@@ -253,12 +253,18 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             ]
             mesh.update(
                 {
-                    "enabled": False,
-                    "mesh": "none",
-                    "instances": [],
+                    "enabled": True,
+                    "mesh": "cylinder",
+                    "instances": [
+                        {"mesh": "cylinder", "location": [0, 0, 34], "rotation": [0, 0, 0], "scale": [0.72, 0.72, 0.42]},
+                        {"mesh": "cylinder", "location": [0, 0, 62], "rotation": [0, 0, 18], "scale": [0.56, 0.56, 0.62]},
+                        {"mesh": "cylinder", "location": [0, 0, 90], "rotation": [0, 0, 36], "scale": [0.38, 0.38, 0.48]},
+                        {"mesh": "sphere", "location": [0, 0, 48], "rotation": [0, 0, 0], "scale": [0.82, 0.82, 0.3]},
+                        {"mesh": "sphere", "location": [0, 0, 78], "rotation": [0, 0, 0], "scale": [0.62, 0.62, 0.34]},
+                    ],
                 }
             )
-            emitter.setdefault("notes", []).append("Firestorm core is shortened and dimmed so the spiral walls, not a glowing spike, define the storm silhouette.")
+            emitter.setdefault("notes", []).append("Firestorm core uses stacked 3D cylinder/sphere shells so the storm has visible depth from oblique views.")
         else:
             timeline.update({"delay": 0.07, "duration": 0.58, "opacity": [0.0, 0.92, 0.82, 0.0], "scale": [0.42, 1.12, 1.0, 0.68]})
             material["opacity"] = max(float(material.get("opacity", 0.54)), 0.78)
@@ -282,6 +288,17 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                     {"location": [12, 12, 74], "rotation": [86, -46, -18], "scale": [1.42, 0.82, 1.0]},
                     {"location": [0, 18, 86], "rotation": [85, 86, 10], "scale": [1.1, 0.7, 1.0]},
                 ]
+                mesh.update(
+                    {
+                        "enabled": True,
+                        "mesh": "cylinder",
+                        "instances": [
+                            {"mesh": "cylinder", "location": [-10, 13, 58], "rotation": [0, 0, 38], "scale": [0.96, 0.18, 0.38]},
+                            {"mesh": "cylinder", "location": [10, 11, 72], "rotation": [0, 0, -28], "scale": [0.86, 0.16, 0.34]},
+                            {"mesh": "sphere", "location": [0, 16, 82], "rotation": [0, 0, 0], "scale": [0.68, 0.26, 0.32]},
+                        ],
+                    }
+                )
         else:
             timeline.update({"delay": 0.1, "duration": 0.72, "opacity": [0.0, 0.82, 0.62, 0.0], "scale": [0.5, 1.14, 1.2, 0.78], "rotation_speed": -28.0})
             material["opacity"] = max(float(material.get("opacity", 0.5)), 0.68)
@@ -298,12 +315,35 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                     {"location": [-13, -10, 48], "rotation": [86, -50, 18], "scale": [1.44, 0.82, 1.0]},
                     {"location": [2, -18, 78], "rotation": [85, 84, -8], "scale": [1.14, 0.72, 1.0]},
                 ]
+                mesh.update(
+                    {
+                        "enabled": True,
+                        "mesh": "cylinder",
+                        "instances": [
+                            {"mesh": "cylinder", "location": [12, -14, 54], "rotation": [0, 0, -42], "scale": [1.0, 0.2, 0.36]},
+                            {"mesh": "cylinder", "location": [-12, -10, 46], "rotation": [0, 0, 34], "scale": [0.88, 0.18, 0.3]},
+                            {"mesh": "sphere", "location": [0, -18, 72], "rotation": [0, 0, 0], "scale": [0.72, 0.3, 0.34]},
+                        ],
+                    }
+                )
                 emitter.setdefault("notes", []).append("Firestorm side flames use offset spiral shell cards instead of a single flat ribbon.")
         niagara["enabled"] = False
     elif role == "ground_energy_ring":
         timeline.update({"delay": 0.02, "duration": 0.72, "opacity": [0.0, 0.9, 0.72, 0.0], "scale": [0.55, 1.12, 1.04, 1.28], "rotation_speed": 18.0})
         material["opacity"] = max(float(material.get("opacity", 0.72)), 0.76)
         card.update({"enabled": True, "location": [0, 0, 2], "rotation": [0, 0, 0], "scale": [2.35, 2.35, 1]})
+        if is_firestorm or name == "ground_rune_ring":
+            mesh.update(
+                {
+                    "enabled": True,
+                    "mesh": "cylinder",
+                    "instances": [
+                        {"mesh": "cylinder", "location": [0, 0, 4], "rotation": [0, 0, 0], "scale": [1.38, 1.38, 0.035]},
+                        {"mesh": "cylinder", "location": [0, 0, 10], "rotation": [0, 0, 28], "scale": [1.08, 1.08, 0.055]},
+                        {"mesh": "sphere", "location": [0, 0, 18], "rotation": [0, 0, 0], "scale": [0.72, 0.72, 0.16]},
+                    ],
+                }
+            )
         niagara["enabled"] = False
     elif role == "impact_core":
         timeline.update({"delay": 0.0, "duration": 0.24, "opacity": [0.0, 1.0, 0.45, 0.0], "scale": [0.35, 1.22, 0.84, 0.0]})
@@ -331,6 +371,17 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             material["emissive_strength"] = 0.16
             material["blend_mode"] = "translucent"
             card.update({"enabled": True, "location": [-5, 8, 66], "rotation": [86, 0, 10], "scale": [1.48, 0.88, 1.0]})
+            mesh.update(
+                {
+                    "enabled": True,
+                    "mesh": "sphere",
+                    "instances": [
+                        {"mesh": "sphere", "location": [-8, 10, 64], "rotation": [0, 0, 0], "scale": [1.18, 0.72, 0.26]},
+                        {"mesh": "sphere", "location": [9, 5, 74], "rotation": [0, 0, 0], "scale": [0.96, 0.62, 0.24]},
+                        {"mesh": "cylinder", "location": [0, 7, 58], "rotation": [0, 0, 16], "scale": [1.28, 0.84, 0.12]},
+                    ],
+                }
+            )
             niagara["enabled"] = False
             emitter.setdefault("notes", []).append("Firestorm smoke crown is visible at very low opacity to break the bright spike silhouette without creating black cards.")
             return
