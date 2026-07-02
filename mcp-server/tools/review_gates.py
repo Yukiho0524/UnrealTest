@@ -32,6 +32,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_texture_card_budget(patched_spec, manifest, unreal_result),
         gate_unreal_generation(unreal_result),
         gate_source_asset_contract(manifest),
+        gate_asset_pass_validation(manifest),
         gate_bootstrap_quality(manifest),
     ]
     passed = [gate for gate in gates if gate["status"] == "pass"]
@@ -517,6 +518,49 @@ def gate_source_asset_contract(manifest: dict[str, Any]) -> dict[str, Any]:
             "missing_production": missing_production,
             "bootstrap_or_reference_sources": bootstrap_sources,
             "expectation": "Final AAA quality needs authored or simulated pass bundles, not only derived bootstrap maps.",
+        },
+    }
+
+
+def gate_asset_pass_validation(manifest: dict[str, Any]) -> dict[str, Any]:
+    contract = manifest.get("production_contract") or {}
+    failed = []
+    warnings = []
+    for entry in manifest.get("passes", []):
+        validation = entry.get("validation") or {}
+        if validation.get("status") == "fail":
+            failed.append(
+                {
+                    "pass": entry.get("name"),
+                    "issues": validation.get("issues") or [],
+                    "asset": (entry.get("selected_asset") or {}).get("path"),
+                }
+            )
+        elif validation.get("status") == "warning":
+            warnings.append(
+                {
+                    "pass": entry.get("name"),
+                    "warnings": validation.get("warnings") or [],
+                    "asset": (entry.get("selected_asset") or {}).get("path"),
+                }
+            )
+    if failed:
+        status = "fail"
+        message = "One or more selected asset passes violate the production pass contract."
+    elif contract.get("status") != "pass" or warnings:
+        status = "warning"
+        message = "Selected passes are usable for preview, but still need production-quality AI/simulation replacements or metadata."
+    else:
+        status = "pass"
+        message = "Selected asset passes satisfy the production pass contract."
+    return {
+        "name": "asset_pass_validation",
+        "status": status,
+        "message": message,
+        "data": {
+            "production_contract": contract,
+            "failed": failed,
+            "warnings": warnings,
         },
     }
 

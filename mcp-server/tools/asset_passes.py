@@ -45,6 +45,7 @@ def build_asset_pass_manifest(
     required_entries = [entry for entry in entries if entry.get("required")]
     ready_required = [entry for entry in required_entries if entry.get("status") == "ready"]
     missing_required = [entry for entry in required_entries if entry.get("status") != "ready"]
+    production_contract = production_contract_summary(entries)
 
     manifest = {
         "schema_version": 1,
@@ -59,7 +60,9 @@ def build_asset_pass_manifest(
             "ready_required_passes": len(ready_required),
             "missing_required_passes": len(missing_required),
             "unreal_ready": not missing_required,
+            "production_contract_ready": production_contract["status"] == "pass",
         },
+        "production_contract": production_contract,
         "reference_media": [str(path) for path in reference_media],
         "ai_output_manifests": sorted({output["manifest"] for output in ai_outputs if output.get("manifest")}),
         "similarity_report": read_similarity_report(output_root / package_path.name / "derived" / f"{package_path.name}_similarity_report.json"),
@@ -426,6 +429,8 @@ def asset_pass_entry(
     selected = prepare_runtime_asset(candidates[0], name, package_name, output_root) if candidates else None
     prompt = prompt_for_asset_pass(pass_spec)
     budget = texture_budget_for_pass(name)
+    metadata = asset_metadata_for_selected_asset(selected, name)
+    validation = validate_asset_pass_candidate(name, selected, metadata, pass_spec)
     return {
         "name": name,
         "required": bool(pass_spec.get("required")),
@@ -436,7 +441,8 @@ def asset_pass_entry(
         "unreal_usage": pass_spec.get("unreal_usage"),
         "selected_asset": selected,
         "candidates": candidates,
-        "asset_metadata": asset_metadata_for_selected_asset(selected, name),
+        "asset_metadata": metadata,
+        "validation": validation,
         "runtime_budget": budget,
         "quality_note": quality_note_for_selected_asset(selected),
         "generation_prompt": prompt,
@@ -538,6 +544,202 @@ def asset_metadata_for_selected_asset(selected: dict[str, str] | None, pass_name
         "width": width,
         "height": height,
         "atlas": atlas,
+        "channels": channel_statistics(path),
+    }
+
+
+def channel_statistics(path: Path) -> dict[str, Any]:
+    try:
+        with Image.open(path) as image:
+            rgba = image.convert("RGBA")
+            rgba.thumbnail((128, 128), Image.Resampling.BILINEAR)
+            pixels = list(rgba.getdata())
+    except Exception:
+        return {}
+    if not pixels:
+        return {}
+    count = len(pixels)
+    alpha_values = [pixel[3] for pixel in pixels]
+    opaque = sum(1 for value in alpha_values if value >= 250) / count
+    transparent = sum(1 for value in alpha_values if value <= 5) / count
+    alpha_coverage = sum(1 for value in alpha_values if value > 8) / count
+    luminance_values = [(0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0 for r, g, b, _ in pixels]
+    warm_values = [warm_score01(r, g, b) for r, g, b, _ in pixels]
+    channel_means = [
+        sum(pixel[index] for pixel in pixels) / (255.0 * count)
+        for index in range(4)
+    ]
+    return {
+        "alpha_coverage": round(alpha_coverage, 4),
+        "opaque_ratio": round(opaque, 4),
+        "transparent_ratio": round(transparent, 4),
+        "mean_luminance": round(sum(luminance_values) / count, 4),
+        "mean_warmth": round(sum(warm_values) / count, 4),
+        "mean_rgba": [round(value, 4) for value in channel_means],
+    }
+
+
+def validate_asset_pass_candidate(
+    pass_name: str,
+    selected: dict[str, str] | None,
+    metadata: dict[str, Any],
+    pass_spec: dict[str, Any],
+) -> dict[str, Any]:
+    issues: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    if not selected:
+        issue = {"type": "missing_asset", "message": "No candidate asset was selected for this pass."}
+        (issues if pass_spec.get("required") else warnings).append(issue)
+        return validation_result(issues, warnings)
+
+    path = Path(str(selected.get("path") or ""))
+    if pass_name == "renderer_layout_metadata":
+        validate_renderer_metadata(path, issues, warnings)
+        return validation_result(issues, warnings)
+
+    if not path.exists():
+        issues.append({"type": "path_missing", "path": str(path)})
+        return validation_result(issues, warnings)
+    if path.suffix.lower() not in IMAGE_SUFFIXES:
+        issues.append({"type": "unsupported_image_format", "path": str(path), "suffix": path.suffix})
+        return validation_result(issues, warnings)
+    if not metadata:
+        issues.append({"type": "image_metadata_unreadable", "path": str(path)})
+        return validation_result(issues, warnings)
+
+    width = int(metadata.get("width") or 0)
+    height = int(metadata.get("height") or 0)
+    if width < 16 or height < 16:
+        issues.append({"type": "image_too_small", "size": [width, height]})
+
+    channels = metadata.get("channels") or {}
+    alpha_coverage = float(channels.get("alpha_coverage") or 0.0)
+    opaque_ratio = float(channels.get("opaque_ratio") or 0.0)
+    transparent_ratio = float(channels.get("transparent_ratio") or 0.0)
+    mean_luminance = float(channels.get("mean_luminance") or 0.0)
+    mean_warmth = float(channels.get("mean_warmth") or 0.0)
+    source = str(selected.get("source") or "")
+
+    if pass_name in passes_requiring_atlas() and not metadata.get("atlas"):
+        warnings.append({"type": "missing_atlas_metadata", "message": "Flipbook pass has no atlas columns/rows/fps metadata."})
+    if pass_name in passes_requiring_alpha() and opaque_ratio > 0.94 and transparent_ratio < 0.02:
+        issues.append({"type": "opaque_card_risk", "opaque_ratio": opaque_ratio, "transparent_ratio": transparent_ratio})
+    if pass_name in {"alpha_mask", "impact_flash_mask", "ground_ring_mask"} and mean_warmth > 0.2:
+        warnings.append({"type": "mask_pass_contains_beauty_color", "mean_warmth": mean_warmth})
+    if pass_name in data_pass_names() and mean_luminance > 0.65 and mean_warmth > 0.25:
+        warnings.append({"type": "data_pass_looks_like_beauty", "mean_luminance": mean_luminance, "mean_warmth": mean_warmth})
+    if pass_name == "smoke_heat_flipbook" and alpha_coverage > 0.9 and opaque_ratio > 0.75:
+        warnings.append({"type": "smoke_pass_may_render_as_sheet", "alpha_coverage": alpha_coverage, "opaque_ratio": opaque_ratio})
+    if source in {"derived_reference_bootstrap", "reference_layer_extraction", "procedural_layer_synthesis", "reference_matched_composite"}:
+        warnings.append({"type": "bootstrap_or_reference_source", "source": source})
+
+    return validation_result(issues, warnings)
+
+
+def validate_renderer_metadata(path: Path, issues: list[dict[str, Any]], warnings: list[dict[str, Any]]) -> None:
+    if not path.exists():
+        warnings.append({"type": "metadata_missing", "path": str(path)})
+        return
+    if path.suffix.lower() != ".json":
+        issues.append({"type": "metadata_not_json", "path": str(path)})
+        return
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        issues.append({"type": "metadata_invalid_json", "path": str(path), "error": str(exc)})
+        return
+    required = {"columns", "rows", "frame_count", "fps", "pivot"}
+    default_atlas = payload.get("default_atlas") or payload
+    missing = sorted(key for key in required if key not in default_atlas)
+    if missing:
+        warnings.append({"type": "metadata_missing_fields", "fields": missing})
+    if not (payload.get("intended_renderers") or default_atlas.get("intended_renderers")):
+        warnings.append({"type": "metadata_missing_renderer_targets"})
+
+
+def validation_result(issues: list[dict[str, Any]], warnings: list[dict[str, Any]]) -> dict[str, Any]:
+    if issues:
+        status = "fail"
+    elif warnings:
+        status = "warning"
+    else:
+        status = "pass"
+    return {"status": status, "issues": issues, "warnings": warnings}
+
+
+def passes_requiring_atlas() -> set[str]:
+    return {
+        "beauty_flipbook",
+        "core_flame_flipbook",
+        "flame_slash_flipbook",
+        "smoke_heat_flipbook",
+        "ember_sprite_set",
+        "reference_motion_overlay",
+        "bolt_branch_set",
+    }
+
+
+def passes_requiring_alpha() -> set[str]:
+    return {
+        "beauty_flipbook",
+        "core_flame_flipbook",
+        "flame_slash_flipbook",
+        "smoke_heat_flipbook",
+        "impact_flash_mask",
+        "ember_sprite_set",
+        "reference_matched_composite",
+    }
+
+
+def data_pass_names() -> set[str]:
+    return {
+        "motion_vectors",
+        "distortion_flow",
+        "normal_or_lighting",
+        "depth_or_thickness",
+        "layer_mask_pack",
+        "sdf_or_vector_field",
+    }
+
+
+def production_contract_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    failing_required = [
+        entry.get("name")
+        for entry in entries
+        if entry.get("required") and (entry.get("validation") or {}).get("status") == "fail"
+    ]
+    warning_required = [
+        entry.get("name")
+        for entry in entries
+        if entry.get("required") and (entry.get("validation") or {}).get("status") == "warning"
+    ]
+    advanced_passes = {"motion_vectors", "distortion_flow", "depth_or_thickness", "normal_or_lighting", "layer_mask_pack", "sdf_or_vector_field"}
+    production_ready_advanced = sorted(
+        entry.get("name")
+        for entry in entries
+        if entry.get("name") in advanced_passes
+        and entry.get("status") == "ready"
+        and (entry.get("validation") or {}).get("status") in {"pass", "warning"}
+        and (entry.get("selected_asset") or {}).get("source") not in {"derived_reference_bootstrap", "reference_layer_extraction", "procedural_layer_synthesis"}
+    )
+    bootstrap_selected = sorted(
+        entry.get("name")
+        for entry in entries
+        if (entry.get("selected_asset") or {}).get("source") in {"derived_reference_bootstrap", "reference_layer_extraction", "procedural_layer_synthesis", "reference_matched_composite"}
+    )
+    if failing_required:
+        status = "fail"
+    elif warning_required or bootstrap_selected or len(production_ready_advanced) < 3:
+        status = "warning"
+    else:
+        status = "pass"
+    return {
+        "status": status,
+        "failing_required_passes": failing_required,
+        "warning_required_passes": warning_required,
+        "production_ready_advanced_passes": production_ready_advanced,
+        "bootstrap_or_reference_passes": bootstrap_selected,
+        "minimum_advanced_pass_count": 3,
     }
 
 
