@@ -1,0 +1,14 @@
+{
+  "_vfxmcp_notes": [
+    "This is a placeholder template, not a runnable ComfyUI graph.",
+    "Export a real ComfyUI API workflow JSON and use these placeholders where appropriate:",
+    "{{PROMPT}}",
+    "{{NEGATIVE_PROMPT}}",
+    "{{REFERENCE_IMAGE}}",
+    "{{OUTPUT_PREFIX}}"
+  ],
+  "example_prompt_text": "{{PROMPT}}",
+  "example_negative_prompt_text": "{{NEGATIVE_PROMPT}}",
+  "example_reference_image_name": "{{REFERENCE_IMAGE}}",
+  "example_output_prefix": "{{OUTPUT_PREFIX}}"
+}

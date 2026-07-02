@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 from project_registry import find_unreal_projects
 from tools.analyze_packages import analyze_effect_package, list_effect_packages
+from tools.art_providers import generate_art_pass
 from tools.unreal_bridge import create_niagara_from_spec_command, open_unreal_asset, run_unreal_generation, write_package_spec
 
 
@@ -52,6 +53,21 @@ def run_ui(host: str, port: int, references_root: Path, output_root: Path) -> No
                         "message": "Generated VFXSpec. Unreal asset creation is ready for the Unreal bridge step.",
                     }
                 )
+                return
+            if path == "/api/generate-art":
+                payload = self.read_json()
+                package_path = package_path_from_payload(references_root, payload)
+                result = generate_art_pass(
+                    package_path,
+                    payload.get("artProvider") or "comfyui",
+                    prompt=payload.get("artPrompt"),
+                    options={
+                        "base_url": payload.get("comfyBaseUrl") or "http://127.0.0.1:8188",
+                        "workflow_path": payload.get("comfyWorkflowPath") or None,
+                        "negative_prompt": payload.get("negativePrompt") or None,
+                    },
+                )
+                self.respond_json({"art": result})
                 return
             if path == "/api/generate-unreal":
                 payload = self.read_json()
@@ -141,6 +157,14 @@ def build_state(references_root: Path) -> dict:
         "referencesRoot": str(references_root),
         "packages": list_effect_packages(references_root),
         "projects": find_unreal_projects(WORKSPACE_ROOT),
+        "artProviders": [
+            {
+                "id": "comfyui",
+                "label": "ComfyUI",
+                "defaultBaseUrl": "http://127.0.0.1:8188",
+                "workflowTemplate": str(WORKSPACE_ROOT / "mcp-server" / "art_workflows" / "comfyui_vfx_img2img_template.json"),
+            }
+        ],
     }
 
 
@@ -239,6 +263,18 @@ def render_index_html() -> str:
     button.secondary {
       background: #394150;
     }
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #c6ccd3;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 14px;
+      min-height: 96px;
+      resize: vertical;
+      background: #fff;
+      font-family: inherit;
+    }
     pre {
       min-height: 420px;
       overflow: auto;
@@ -281,8 +317,21 @@ def render_index_html() -> str:
         <label for="destination">Destination Path</label>
         <input id="destination" value="/Game/VFX/Generated/fire">
 
+        <label for="artProvider">Art Provider</label>
+        <select id="artProvider"></select>
+
+        <label for="comfyBaseUrl">ComfyUI Base URL</label>
+        <input id="comfyBaseUrl" value="http://127.0.0.1:8188">
+
+        <label for="comfyWorkflowPath">ComfyUI Workflow JSON</label>
+        <input id="comfyWorkflowPath" placeholder="mcp-server/art_workflows/my_workflow.json">
+
+        <label for="artPrompt">AI Art Prompt</label>
+        <textarea id="artPrompt" placeholder="Optional. Empty uses prompt.md plus VFX flipbook instructions."></textarea>
+
         <button id="analyze">Analyze Package</button>
         <button class="secondary" id="generate">Generate Spec</button>
+        <button class="secondary" id="generateArt">Generate AI Art Pass</button>
         <button class="secondary" id="generateUnreal">Generate Unreal Assets</button>
         <button class="secondary" id="openUnreal">Open In Unreal</button>
 
@@ -297,6 +346,10 @@ def render_index_html() -> str:
     const projectSelect = document.querySelector("#project");
     const packageSelect = document.querySelector("#package");
     const destinationInput = document.querySelector("#destination");
+    const artProviderSelect = document.querySelector("#artProvider");
+    const comfyBaseUrlInput = document.querySelector("#comfyBaseUrl");
+    const comfyWorkflowPathInput = document.querySelector("#comfyWorkflowPath");
+    const artPromptInput = document.querySelector("#artPrompt");
     const output = document.querySelector("#output");
     const meta = document.querySelector("#meta");
 
@@ -317,7 +370,11 @@ def render_index_html() -> str:
       return {
         projectPath: projectSelect.value,
         packageName: packageSelect.value,
-        destinationPath: destinationInput.value
+        destinationPath: destinationInput.value,
+        artProvider: artProviderSelect.value,
+        comfyBaseUrl: comfyBaseUrlInput.value,
+        comfyWorkflowPath: comfyWorkflowPathInput.value,
+        artPrompt: artPromptInput.value
       };
     }
 
@@ -329,6 +386,13 @@ def render_index_html() -> str:
       packageSelect.innerHTML = state.packages.map(pkg =>
         `<option value="${pkg.name}">${pkg.name} (${pkg.media_count} media)</option>`
       ).join("");
+      artProviderSelect.innerHTML = state.artProviders.map(provider =>
+        `<option value="${provider.id}">${provider.label}</option>`
+      ).join("");
+      if (state.artProviders[0]) {
+        comfyBaseUrlInput.value = state.artProviders[0].defaultBaseUrl;
+        comfyWorkflowPathInput.placeholder = state.artProviders[0].workflowTemplate;
+      }
       if (state.packages[0]) {
         destinationInput.value = `/Game/VFX/Generated/${state.packages[0].name}`;
       }
@@ -345,6 +409,14 @@ def render_index_html() -> str:
 
     document.querySelector("#generate").addEventListener("click", async () => {
       show(await request("/api/generate", {
+        method: "POST",
+        body: JSON.stringify(selectedPayload())
+      }));
+    });
+
+    document.querySelector("#generateArt").addEventListener("click", async () => {
+      output.textContent = "Running AI art provider pass...";
+      show(await request("/api/generate-art", {
         method: "POST",
         body: JSON.stringify(selectedPayload())
       }));

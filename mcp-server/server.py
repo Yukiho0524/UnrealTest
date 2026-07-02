@@ -6,6 +6,7 @@ from pathlib import Path
 
 from tools.analyze_images import analyze_reference_folder
 from tools.analyze_packages import analyze_effect_package, list_effect_packages
+from tools.art_providers import generate_art_pass
 from tools.unreal_bridge import write_package_spec, write_spec_for_unreal
 
 
@@ -23,6 +24,14 @@ def main() -> int:
     analyze_package = subparsers.add_parser("analyze-package", help="Analyze one effect package into a VFX spec.")
     analyze_package.add_argument("package", type=Path)
     analyze_package.add_argument("--out", type=Path, default=Path("generated/specs"))
+
+    art_generate = subparsers.add_parser("generate-art", help="Run an external AI art provider pass for one effect package.")
+    art_generate.add_argument("package", type=Path)
+    art_generate.add_argument("--provider", default="comfyui")
+    art_generate.add_argument("--prompt", default=None)
+    art_generate.add_argument("--out", type=Path, default=Path("generated/ai-art"))
+    art_generate.add_argument("--base-url", default="http://127.0.0.1:8188")
+    art_generate.add_argument("--workflow", default=None)
 
     ui = subparsers.add_parser("ui", help="Start the local VFX MCP web UI.")
     ui.add_argument("--host", default="127.0.0.1")
@@ -46,6 +55,20 @@ def main() -> int:
         spec = analyze_effect_package(args.package)
         written = write_package_spec(spec, args.out)
         print(json.dumps({"spec": spec.to_dict(), "file": str(written)}, indent=2))
+        return 0
+
+    if args.command == "generate-art":
+        result = generate_art_pass(
+            args.package,
+            args.provider,
+            prompt=args.prompt,
+            output_root=args.out,
+            options={
+                "base_url": args.base_url,
+                "workflow_path": args.workflow,
+            },
+        )
+        print(json.dumps(result, indent=2))
         return 0
 
     if args.command == "ui":
