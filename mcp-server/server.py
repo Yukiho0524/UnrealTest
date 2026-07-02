@@ -34,6 +34,14 @@ def main() -> int:
     art_generate.add_argument("--out", type=Path, default=Path("generated/ai-art"))
     art_generate.add_argument("--base-url", default="http://127.0.0.1:8188")
     art_generate.add_argument("--workflow", default=None)
+    art_generate.add_argument("--model", default=None)
+    art_generate.add_argument("--size", default="1024x1024")
+    art_generate.add_argument("--quality", default="high")
+    art_generate.add_argument("--background", default="auto")
+    art_generate.add_argument("--output-format", default="png")
+    art_generate.add_argument("--passes", default="required")
+    art_generate.add_argument("--include-optional", action="store_true")
+    art_generate.add_argument("--max-passes", type=int, default=None)
 
     prepare_assets = subparsers.add_parser("prepare-assets", help="Build an asset pass manifest for one effect package.")
     prepare_assets.add_argument("package", type=Path)
@@ -77,6 +85,14 @@ def main() -> int:
             options={
                 "base_url": args.base_url,
                 "workflow_path": args.workflow,
+                "model": args.model,
+                "size": args.size,
+                "quality": args.quality,
+                "background": args.background,
+                "output_format": args.output_format,
+                "passes": args.passes,
+                "include_optional": args.include_optional,
+                "max_passes": args.max_passes,
             },
         )
         print(json.dumps(result, indent=2))

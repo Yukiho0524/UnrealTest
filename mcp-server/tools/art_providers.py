@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -160,6 +162,168 @@ class ComfyUIProvider(ArtProvider):
         raise TimeoutError(f"Timed out waiting for ComfyUI prompt: {prompt_id}")
 
 
+class OpenAIImageProvider(ArtProvider):
+    name = "openai"
+    api_url = "https://api.openai.com/v1/images"
+
+    def generate(self, request: ArtGenerationRequest) -> dict[str, Any]:
+        options = request.options or {}
+        output_dir = provider_output_dir(request)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest = base_manifest(request, self.name, "pending", output_dir)
+        model = str(options.get("model") or "gpt-image-2")
+        size = str(options.get("size") or "1024x1024")
+        quality = str(options.get("quality") or "high")
+        output_format = str(options.get("output_format") or "png")
+        background = str(options.get("background") or "auto")
+        api_key = str(options.get("api_key") or os.environ.get(str(options.get("api_key_env") or "OPENAI_API_KEY")) or "")
+        manifest["provider_options"] = {
+            "model": model,
+            "size": size,
+            "quality": quality,
+            "output_format": output_format,
+            "background": background,
+            "pass_selection": options.get("passes") or "required",
+            "uses_reference_edit": bool(options.get("use_reference_edit", True)),
+        }
+        if not api_key:
+            manifest["status"] = "provider_unavailable"
+            manifest["message"] = "OPENAI_API_KEY is not set. Set it, then rerun the OpenAI art provider pass."
+            write_manifest(output_dir, manifest)
+            return manifest
+
+        try:
+            spec = analyze_effect_package(request.package_path)
+            pass_specs = spec.vfx_plan.asset_passes if spec.vfx_plan else []
+        except Exception as exc:
+            manifest["status"] = "analysis_failed"
+            manifest["message"] = f"Could not analyze package before OpenAI generation: {exc}"
+            write_manifest(output_dir, manifest)
+            return manifest
+
+        selected_passes = select_pass_specs(pass_specs, options)
+        if not selected_passes:
+            manifest["status"] = "no_passes_selected"
+            manifest["message"] = "No asset passes matched the requested OpenAI pass selection."
+            write_manifest(output_dir, manifest)
+            return manifest
+
+        reference_image = choose_upload_reference(find_package_media(request.package_path))
+        outputs: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for pass_spec in selected_passes:
+            pass_name = str(pass_spec.get("name") or "vfx_pass")
+            pass_prompt = openai_pass_prompt(request.prompt, pass_spec)
+            try:
+                if reference_image and options.get("use_reference_edit", True):
+                    result = self.edit_image(
+                        api_key,
+                        reference_image,
+                        pass_prompt,
+                        model=model,
+                        size=size,
+                        quality=quality,
+                        output_format=output_format,
+                        background=background,
+                        timeout=int(options.get("timeout_seconds") or 180),
+                    )
+                else:
+                    result = self.generate_image(
+                        api_key,
+                        pass_prompt,
+                        model=model,
+                        size=size,
+                        quality=quality,
+                        output_format=output_format,
+                        background=background,
+                        timeout=int(options.get("timeout_seconds") or 180),
+                    )
+                image_data = first_image_bytes(result)
+                if not image_data:
+                    errors.append({"pass": pass_name, "error": "OpenAI response did not include b64 image data."})
+                    continue
+                output_path = output_dir / f"{request.package_path.name}_{safe_file_token(pass_name)}.{output_format}"
+                output_path.write_bytes(image_data)
+                outputs.append(
+                    {
+                        "filename": output_path.name,
+                        "path": str(output_path),
+                        "candidate_passes": [pass_name],
+                        "prompt": pass_prompt,
+                        "model": model,
+                        "usage": result.get("usage"),
+                    }
+                )
+            except urllib.error.HTTPError as exc:
+                errors.append({"pass": pass_name, "error": http_error_message(exc)})
+            except Exception as exc:
+                errors.append({"pass": pass_name, "error": str(exc)})
+
+        manifest["outputs"] = outputs
+        manifest["asset_pass_candidates"] = summarize_asset_pass_candidates(outputs)
+        manifest["errors"] = errors
+        if outputs and errors:
+            manifest["status"] = "partial_success"
+            manifest["message"] = "OpenAI image pass finished with some failed passes."
+        elif outputs:
+            manifest["status"] = "succeeded"
+            manifest["message"] = "OpenAI image pass finished."
+        else:
+            manifest["status"] = "failed"
+            manifest["message"] = "OpenAI image pass did not produce usable image outputs."
+        write_manifest(output_dir, manifest)
+        return manifest
+
+    def generate_image(
+        self,
+        api_key: str,
+        prompt: str,
+        *,
+        model: str,
+        size: str,
+        quality: str,
+        output_format: str,
+        background: str,
+        timeout: int,
+    ) -> dict[str, Any]:
+        payload = clean_payload(
+            {
+                "model": model,
+                "prompt": prompt,
+                "size": size,
+                "quality": quality,
+                "output_format": output_format,
+                "background": background,
+            }
+        )
+        return post_json_auth(f"{self.api_url}/generations", payload, api_key, timeout)
+
+    def edit_image(
+        self,
+        api_key: str,
+        image_path: Path,
+        prompt: str,
+        *,
+        model: str,
+        size: str,
+        quality: str,
+        output_format: str,
+        background: str,
+        timeout: int,
+    ) -> dict[str, Any]:
+        fields = clean_payload(
+            {
+                "model": model,
+                "prompt": prompt,
+                "size": size,
+                "quality": quality,
+                "output_format": output_format,
+                "background": background,
+            }
+        )
+        return post_multipart_auth(f"{self.api_url}/edits", fields, {"image": image_path}, api_key, timeout)
+
+
 def generate_art_pass(
     package_path: Path,
     provider: str,
@@ -182,6 +346,8 @@ def generate_art_pass(
 def provider_for_name(provider: str) -> ArtProvider:
     if provider == "comfyui":
         return ComfyUIProvider()
+    if provider == "openai":
+        return OpenAIImageProvider()
     return PendingProvider()
 
 
@@ -328,6 +494,49 @@ def post_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any]
         return json.loads(response.read().decode("utf-8"))
 
 
+def post_json_auth(url: str, payload: dict[str, Any], api_key: str, timeout: int) -> dict[str, Any]:
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def post_multipart_auth(
+    url: str,
+    fields: dict[str, Any],
+    files: dict[str, Path],
+    api_key: str,
+    timeout: int,
+) -> dict[str, Any]:
+    boundary = f"----vfxmcp{uuid.uuid4().hex}"
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        chunks.append(f"--{boundary}\r\n".encode("utf-8"))
+        chunks.append(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"))
+        chunks.append(str(value).encode("utf-8"))
+        chunks.append(b"\r\n")
+    for name, path in files.items():
+        chunks.append(f"--{boundary}\r\n".encode("utf-8"))
+        chunks.append(f'Content-Disposition: form-data; name="{name}"; filename="{path.name}"\r\n'.encode("utf-8"))
+        chunks.append(b"Content-Type: application/octet-stream\r\n\r\n")
+        chunks.append(path.read_bytes())
+        chunks.append(b"\r\n")
+    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+    request = urllib.request.Request(
+        url,
+        data=b"".join(chunks),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}", "Authorization": f"Bearer {api_key}"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def get_bytes(url: str, timeout: int) -> bytes:
     with urllib.request.urlopen(url, timeout=timeout) as response:
         return response.read()
@@ -383,3 +592,72 @@ def asset_pass_contract_prompt(package_path: Path) -> str:
         lines.append("Production-quality optional/data passes:")
         lines.extend(f"- {item.get('name')}: {item.get('purpose')} ({item.get('format')})" for item in optional)
     return "\n".join(lines)
+
+
+def select_pass_specs(pass_specs: list[dict[str, Any]], options: dict[str, Any]) -> list[dict[str, Any]]:
+    requested = str(options.get("passes") or "required").strip().lower()
+    if requested in {"all", "production"}:
+        selected = list(pass_specs)
+    elif requested in {"required", "minimum", "required_only"}:
+        selected = [item for item in pass_specs if item.get("required")]
+    else:
+        requested_names = {name.strip() for name in requested.split(",") if name.strip()}
+        selected = [item for item in pass_specs if str(item.get("name") or "").lower() in requested_names]
+    if options.get("include_optional") and requested in {"required", "minimum", "required_only"}:
+        selected = list(pass_specs)
+    max_passes = options.get("max_passes")
+    if max_passes:
+        try:
+            selected = selected[: max(1, int(max_passes))]
+        except (TypeError, ValueError):
+            pass
+    return selected
+
+
+def openai_pass_prompt(base_prompt: str, pass_spec: dict[str, Any]) -> str:
+    pass_name = str(pass_spec.get("name") or "vfx_pass")
+    purpose = str(pass_spec.get("purpose") or "realtime game VFX asset pass")
+    output_format = str(pass_spec.get("format") or "transparent PNG texture")
+    guidance = [
+        base_prompt,
+        "",
+        f"Generate only the {pass_name} pass for this realtime Unreal VFX package.",
+        f"Purpose: {purpose}",
+        f"Expected format: {output_format}",
+        "Center the effect on a stable pivot. Keep bounds, scale, camera framing, and timing compatible with other passes.",
+        "Transparent background where possible. No watermark, text, UI, character, weapon, environment, or rectangular card border.",
+    ]
+    if pass_name in {"alpha_mask", "ground_ring_mask", "impact_flash_mask"}:
+        guidance.append("This is a mask/data pass: use clean grayscale or alpha information, not a colored beauty render.")
+    elif pass_name in {"motion_vectors", "distortion_flow", "sdf_or_vector_field"}:
+        guidance.append("This is a data pass: encode directional field information cleanly; avoid painterly beauty lighting.")
+    elif pass_name in {"normal_or_lighting", "depth_or_thickness", "layer_mask_pack"}:
+        guidance.append("This is a production data pass: separate volume, lighting, depth, and layer controls rather than making a final beauty image.")
+    else:
+        guidance.append("This is a beauty/emissive VFX layer: high-detail fluid flame structure, readable silhouette, production game texture quality.")
+    return "\n".join(guidance).strip()
+
+
+def first_image_bytes(result: dict[str, Any]) -> bytes | None:
+    for item in result.get("data") or []:
+        encoded = item.get("b64_json")
+        if encoded:
+            return base64.b64decode(encoded)
+    return None
+
+
+def clean_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if value not in {None, ""}}
+
+
+def safe_file_token(value: str) -> str:
+    token = "".join(character if character.isalnum() else "_" for character in value)
+    return token.strip("_") or "asset"
+
+
+def http_error_message(exc: urllib.error.HTTPError) -> str:
+    try:
+        body = exc.read().decode("utf-8")
+    except Exception:
+        body = ""
+    return f"HTTP {exc.code}: {body or exc.reason}"

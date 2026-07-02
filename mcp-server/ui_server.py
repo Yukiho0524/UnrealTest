@@ -67,6 +67,8 @@ def run_ui(host: str, port: int, references_root: Path, output_root: Path) -> No
                         "base_url": payload.get("comfyBaseUrl") or "http://127.0.0.1:8188",
                         "workflow_path": payload.get("comfyWorkflowPath") or None,
                         "negative_prompt": payload.get("negativePrompt") or None,
+                        "model": payload.get("artModel") or None,
+                        "passes": payload.get("artPasses") or "required",
                     },
                 )
                 asset_manifest = build_asset_pass_manifest(package_path)
@@ -182,6 +184,12 @@ def build_state(references_root: Path) -> dict:
                 "label": "ComfyUI",
                 "defaultBaseUrl": "http://127.0.0.1:8188",
                 "workflowTemplate": str(WORKSPACE_ROOT / "mcp-server" / "art_workflows" / "comfyui_vfx_img2img_template.json"),
+            },
+            {
+                "id": "openai",
+                "label": "OpenAI Images",
+                "defaultModel": "gpt-image-2",
+                "defaultPasses": "required",
             }
         ],
     }
@@ -348,6 +356,12 @@ def render_index_html() -> str:
         <label for="artPrompt">AI Art Prompt</label>
         <textarea id="artPrompt" placeholder="Optional. Empty uses prompt.md plus VFX flipbook instructions."></textarea>
 
+        <label for="artModel">OpenAI Model</label>
+        <input id="artModel" placeholder="gpt-image-2">
+
+        <label for="artPasses">Pass Selection</label>
+        <input id="artPasses" value="required" placeholder="required, all, or comma-separated pass names">
+
         <button id="analyze">Analyze Package</button>
         <button class="secondary" id="generate">Generate Spec</button>
         <button class="secondary" id="generateArt">Generate AI Art Pass</button>
@@ -371,6 +385,8 @@ def render_index_html() -> str:
     const comfyBaseUrlInput = document.querySelector("#comfyBaseUrl");
     const comfyWorkflowPathInput = document.querySelector("#comfyWorkflowPath");
     const artPromptInput = document.querySelector("#artPrompt");
+    const artModelInput = document.querySelector("#artModel");
+    const artPassesInput = document.querySelector("#artPasses");
     const output = document.querySelector("#output");
     const meta = document.querySelector("#meta");
 
@@ -395,7 +411,9 @@ def render_index_html() -> str:
         artProvider: artProviderSelect.value,
         comfyBaseUrl: comfyBaseUrlInput.value,
         comfyWorkflowPath: comfyWorkflowPathInput.value,
-        artPrompt: artPromptInput.value
+        artPrompt: artPromptInput.value,
+        artModel: artModelInput.value,
+        artPasses: artPassesInput.value
       };
     }
 
@@ -413,6 +431,11 @@ def render_index_html() -> str:
       if (state.artProviders[0]) {
         comfyBaseUrlInput.value = state.artProviders[0].defaultBaseUrl;
         comfyWorkflowPathInput.placeholder = state.artProviders[0].workflowTemplate;
+      }
+      const openaiProvider = state.artProviders.find(provider => provider.id === "openai");
+      if (openaiProvider) {
+        artModelInput.placeholder = openaiProvider.defaultModel;
+        artPassesInput.value = openaiProvider.defaultPasses;
       }
       if (state.packages[0]) {
         destinationInput.value = `/Game/VFX/Generated/${state.packages[0].name}`;
