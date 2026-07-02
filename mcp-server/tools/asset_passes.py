@@ -90,11 +90,88 @@ def apply_asset_pass_manifest_to_spec_dict(spec: dict[str, Any], manifest: dict[
         atlas = asset_pass.get("asset_metadata", {}).get("atlas")
         if atlas:
             material["flipbook"] = atlas
+    apply_production_preview_layers(patched, manifest)
     patched["vfx_plan"] = plan
     patched.setdefault("notes", []).append(
         f"Asset pass manifest applied: {manifest.get('manifest_path') or manifest.get('package')}"
     )
     return patched
+
+
+def apply_production_preview_layers(spec: dict[str, Any], manifest: dict[str, Any]) -> None:
+    if not (manifest.get("summary") or {}).get("unreal_ready"):
+        return
+    effect_type = spec.get("effect_type")
+    plan = spec.get("vfx_plan") or {}
+    emitters = plan.get("emitters") or []
+    if effect_type == "fire_or_flame":
+        plan["preview_mode"] = "production_layers"
+        plan["primary_emitter"] = "central_fire_pillar"
+        for emitter in emitters:
+            apply_fire_production_preview(emitter)
+    elif effect_type == "electric_arc":
+        plan["preview_mode"] = "production_layers"
+        for emitter in emitters:
+            apply_electric_production_preview(emitter)
+
+
+def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
+    role = emitter.get("role")
+    settings = emitter.setdefault("unreal_settings", {})
+    material = settings.setdefault("material", {})
+    preview = settings.setdefault("preview", {})
+    card = preview.setdefault("card", {})
+    niagara = preview.setdefault("niagara", {})
+
+    if role == "reference_motion":
+        material["opacity"] = min(float(material.get("opacity", 0.72)), 0.16)
+        material["emissive_strength"] = min(float(material.get("emissive_strength", 5.5)), 1.8)
+        card["enabled"] = False
+        niagara["enabled"] = False
+        emitter.setdefault("notes", []).append("Production preview hides the reference flipbook so the editable layers drive the look.")
+        return
+
+    if role == "fire_pillar":
+        material["opacity"] = max(float(material.get("opacity", 0.54)), 0.78)
+        material["emissive_strength"] = max(float(material.get("emissive_strength", 14.0)), 18.0)
+        card.update({"enabled": True, "location": [0, 0, 150], "rotation": [90, 0, 0], "scale": [1.25, 2.65, 1.15]})
+        niagara["enabled"] = False
+    elif role == "flame_slashes":
+        material["opacity"] = max(float(material.get("opacity", 0.5)), 0.62)
+        material["emissive_strength"] = max(float(material.get("emissive_strength", 8.5)), 11.0)
+        card.update({"enabled": True, "location": [0, -2, 78], "rotation": [90, 0, -10], "scale": [2.55, 1.5, 1]})
+        niagara["enabled"] = False
+    elif role == "ground_energy_ring":
+        material["opacity"] = max(float(material.get("opacity", 0.72)), 0.76)
+        card.update({"enabled": True, "location": [0, 0, 4], "rotation": [0, 0, 0], "scale": [3.65, 3.65, 1]})
+        niagara["enabled"] = False
+    elif role == "impact_core":
+        material["opacity"] = max(float(material.get("opacity", 0.8)), 0.86)
+        material["emissive_strength"] = max(float(material.get("emissive_strength", 22.0)), 24.0)
+        card.update({"enabled": True, "location": [0, -1, 44], "rotation": [90, 0, 0], "scale": [1.55, 1.1, 1]})
+        niagara["enabled"] = False
+    elif role == "atmospheric_wisp":
+        material["opacity"] = max(float(material.get("opacity", 0.2)), 0.26)
+        material["blend_mode"] = "translucent"
+        card.update({"enabled": True, "location": [-4, 5, 122], "rotation": [90, 0, 7], "scale": [2.2, 2.0, 1]})
+        niagara["enabled"] = False
+    elif role == "detail_particles":
+        card["enabled"] = False
+        niagara.update({"enabled": True, "location": [0, 0, 92], "rotation": [0, 0, 0], "scale": [0.65, 0.65, 0.65]})
+
+
+def apply_electric_production_preview(emitter: dict[str, Any]) -> None:
+    role = emitter.get("role")
+    settings = emitter.setdefault("unreal_settings", {})
+    preview = settings.setdefault("preview", {})
+    card = preview.setdefault("card", {})
+    niagara = preview.setdefault("niagara", {})
+    if role in {"primary_bolt", "secondary_bolts", "impact_core", "supporting_glow"}:
+        card["enabled"] = True
+        niagara["enabled"] = False
+    elif role == "detail_particles":
+        card["enabled"] = False
+        niagara["enabled"] = True
 
 
 def asset_pass_for_emitter(effect_type: str | None, emitter: dict[str, Any]) -> str | None:
