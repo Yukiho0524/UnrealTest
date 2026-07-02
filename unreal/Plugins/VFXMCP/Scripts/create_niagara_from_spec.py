@@ -1376,6 +1376,17 @@ def connect_flipbook_uv_if_needed(unreal_module, material, texture_sample, spec:
 
 def connect_material_expression_first(unreal_module, source, source_output: str, target, target_inputs: list[str]) -> bool:
     library = unreal_module.MaterialEditingLibrary
+    valid_inputs = material_expression_input_names(unreal_module, target)
+    if valid_inputs:
+        target_inputs = [name for name in target_inputs if normalized_material_input_name(name) in valid_inputs]
+        if not target_inputs:
+            try:
+                target_name = target.__class__.__name__
+                unreal_module.log_warning(f"VFX MCP material connection skipped for {target_name}; valid inputs are {sorted(valid_inputs)}")
+            except Exception:
+                pass
+            return False
+
     last_error = None
     for target_input in target_inputs:
         try:
@@ -1389,6 +1400,18 @@ def connect_material_expression_first(unreal_module, source, source_output: str,
     except Exception:
         pass
     return False
+
+
+def material_expression_input_names(unreal_module, expression) -> set[str]:
+    try:
+        names = unreal_module.MaterialEditingLibrary.get_material_expression_input_names(expression)
+    except Exception:
+        return set()
+    return {normalized_material_input_name(str(name)) for name in names}
+
+
+def normalized_material_input_name(name: str) -> str:
+    return "" if name in {"", "None"} else name
 
 
 def create_material_constant(unreal_module, material, value: float, x: int, y: int):
