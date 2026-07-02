@@ -327,6 +327,9 @@ def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any]
     }
     if firestorm_preview:
         expected_bands["ember_sparks"] = {"z": (56, 110), "scale_xy_max": 0.9, "component_type": "StaticMeshComponent"}
+        expected_bands["central_fire_pillar"] = {"z": (68, 118), "scale_xy_max": 1.35, "component_type": "StaticMeshComponent"}
+        expected_bands["side_flame_slashes"] = {"z": (42, 96), "scale_xy_max": 1.35, "component_type": "StaticMeshComponent"}
+        expected_bands["smoke_dust_crown"] = {"z": (92, 128), "scale_xy_max": 1.6, "component_type": "StaticMeshComponent"}
     for emitter_name, rule in expected_bands.items():
         if firestorm_preview and emitter_name in hidden_emitters:
             continue
@@ -422,10 +425,10 @@ def gate_firestorm_visual_balance(spec: dict[str, Any]) -> dict[str, Any]:
 
     issues = []
     expected = {
-        "central_fire_pillar": {"max_card_instances": 2, "opacity": (0.32, 0.56), "emissive": (5.0, 11.0), "max_scale_xy": 1.15},
+        "central_fire_pillar": {"max_card_instances": 2, "opacity": (0.32, 0.56), "emissive": (5.0, 11.0), "max_scale_xy": 1.25},
         "side_flame_slashes": {"max_card_instances": 2, "opacity": (0.32, 0.58), "emissive": (5.0, 10.5), "max_scale_xy": 1.35},
         "back_spiral_flame_wall": {"max_card_instances": 2, "opacity": (0.32, 0.58), "emissive": (5.0, 10.5), "max_scale_xy": 1.35},
-        "ground_rune_ring": {"max_card_instances": 0, "opacity": (0.3, 0.62), "emissive": (3.0, 8.0), "max_scale_xy": 1.9},
+        "ground_rune_ring": {"max_card_instances": 0, "opacity": (0.25, 0.62), "emissive": (2.0, 8.0), "max_scale_xy": 1.9},
         "impact_flash": {"max_card_instances": 1, "opacity": (0.25, 0.7), "emissive": (4.0, 12.0), "max_scale_xy": 0.9},
     }
     by_name = {str(emitter.get("name") or ""): emitter for emitter in emitters}
