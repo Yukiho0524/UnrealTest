@@ -26,6 +26,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_reference_matched_anchor(patched_spec, manifest, unreal_result),
         gate_production_preview(patched_spec, unreal_result),
         gate_preview_component_contract(patched_spec, unreal_result),
+        gate_fire_spatial_design(patched_spec, unreal_result),
         gate_alpha_mask_applied(patched_spec, manifest),
         gate_reference_overlay_not_primary(patched_spec, unreal_result),
         gate_texture_card_budget(patched_spec, manifest, unreal_result),
@@ -242,6 +243,57 @@ def gate_preview_component_contract(spec: dict[str, Any], unreal_result: dict[st
         "status": "pass" if ok else "fail",
         "message": "Preview components are present and match the expected transforms/material ranges." if ok else "Preview components do not match the expected placement or parameter contract.",
         "data": {"checked": checked, "issues": issues},
+    }
+
+
+def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any] | None) -> dict[str, Any]:
+    if spec.get("effect_type") != "fire_or_flame":
+        return {
+            "name": "fire_spatial_design",
+            "status": "pass",
+            "message": "Not a fire package.",
+            "data": {},
+        }
+    components = preview_components(unreal_result)
+    issues = []
+    expected_bands = {
+        "ground_rune_ring": {"z": (0, 8), "scale_xy_max": 2.6, "component_type": "StaticMeshComponent"},
+        "impact_flash": {"z": (10, 34), "scale_xy_max": 1.2, "component_type": "StaticMeshComponent"},
+        "side_flame_slashes": {"z": (34, 70), "scale_xy_max": 1.9, "component_type": "StaticMeshComponent"},
+        "smoke_dust_crown": {"z": (36, 76), "scale_xy_max": 1.6, "component_type": "StaticMeshComponent"},
+        "central_fire_pillar": {"z": (82, 126), "scale_xy_max": 1.8, "component_type": "StaticMeshComponent"},
+        "ember_sparks": {"z": (56, 110), "scale_xy_max": 0.8, "component_type": "NiagaraComponent"},
+    }
+    for emitter_name, rule in expected_bands.items():
+        component = matching_component(components, emitter_name, str(rule["component_type"]))
+        if not component:
+            issues.append({"emitter": emitter_name, "type": "missing_component_for_fire_spatial_design"})
+            continue
+        transform = component.get("transform") or {}
+        location = transform.get("location") or []
+        scale = transform.get("scale") or []
+        z_value = safe_float(location[2]) if len(location) >= 3 else None
+        minimum, maximum = rule["z"]
+        if z_value is None or z_value < minimum or z_value > maximum:
+            issues.append({"emitter": emitter_name, "type": "z_band_mismatch", "expected": [minimum, maximum], "actual": z_value})
+        if len(scale) >= 2:
+            max_scale = max(abs(float(scale[0])), abs(float(scale[1])))
+            if max_scale > float(rule["scale_xy_max"]):
+                issues.append({"emitter": emitter_name, "type": "scale_too_large_for_fire_spatial_design", "expected_max": rule["scale_xy_max"], "actual": round(max_scale, 3)})
+    reference_component = next((component for component in components if "reference_matched_composite" in str(component.get("name") or "")), None)
+    if reference_component:
+        issues.append(
+            {
+                "emitter": "reference_matched_composite",
+                "type": "reference_anchor_visible_in_production_preview",
+                "reason": "The similarity anchor should be hidden or debug-only so it cannot shift the authored effect read.",
+            }
+        )
+    return {
+        "name": "fire_spatial_design",
+        "status": "pass" if not issues else "fail",
+        "message": "Fire preview layers sit in the expected ground, impact, flame, smoke, and ember height bands." if not issues else "Fire preview layers are not arranged in the expected spatial bands.",
+        "data": {"issues": issues, "expected_bands": expected_bands},
     }
 
 

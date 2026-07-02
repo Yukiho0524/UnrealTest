@@ -215,47 +215,48 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         return
 
     if role == "reference_matched_composite":
-        timeline.update({"delay": 0.0, "duration": 0.9, "opacity": [0.0, 0.34, 0.3, 0.0], "scale": [1.0, 1.0, 1.0, 1.0], "rotation_speed": 0.0})
-        material["opacity"] = min(float(material.get("opacity", 0.34)), 0.34)
-        material["emissive_strength"] = min(float(material.get("emissive_strength", 2.2)), 2.2)
+        timeline.update({"delay": 0.0, "duration": 0.9, "opacity": [0.0, 0.24, 0.2, 0.0], "scale": [1.0, 1.0, 1.0, 1.0], "rotation_speed": 0.0})
+        material["opacity"] = min(float(material.get("opacity", 0.24)), 0.24)
+        material["emissive_strength"] = min(float(material.get("emissive_strength", 1.4)), 1.4)
         material["blend_mode"] = "additive"
-        card.update({"enabled": True, "location": [0, -10, 104], "rotation": [90, 0, 0], "scale": [1.45, 1.45, 1]})
+        card.update({"enabled": False, "location": [0, -42, 96], "rotation": [90, 0, 0], "scale": [1.2, 1.2, 1]})
         niagara["enabled"] = False
+        emitter.setdefault("notes", []).append("Production preview hides the reference-matched anchor so it cannot be mistaken for the authored effect.")
     elif role == "fire_pillar":
         timeline.update({"delay": 0.07, "duration": 0.58, "opacity": [0.0, 0.92, 0.82, 0.0], "scale": [0.42, 1.12, 1.0, 0.68]})
         material["opacity"] = max(float(material.get("opacity", 0.54)), 0.78)
         material["emissive_strength"] = max(float(material.get("emissive_strength", 14.0)), 18.0)
-        card.update({"enabled": True, "location": [0, 0, 138], "rotation": [90, 0, 0], "scale": [1.0, 2.15, 1.0]})
+        card.update({"enabled": True, "location": [0, 0, 104], "rotation": [90, 0, 0], "scale": [0.88, 1.72, 1.0]})
         niagara["enabled"] = False
     elif role == "flame_slashes":
         timeline.update({"delay": 0.1, "duration": 0.52, "opacity": [0.0, 0.78, 0.58, 0.0], "scale": [0.55, 1.08, 1.16, 0.82]})
         material["opacity"] = max(float(material.get("opacity", 0.5)), 0.62)
         material["emissive_strength"] = max(float(material.get("emissive_strength", 8.5)), 11.0)
-        card.update({"enabled": True, "location": [0, -2, 68], "rotation": [90, 0, -10], "scale": [1.85, 1.1, 1]})
+        card.update({"enabled": True, "location": [0, -3, 48], "rotation": [88, 0, -14], "scale": [1.72, 0.82, 1]})
         niagara["enabled"] = False
     elif role == "ground_energy_ring":
         timeline.update({"delay": 0.02, "duration": 0.72, "opacity": [0.0, 0.9, 0.72, 0.0], "scale": [0.55, 1.12, 1.04, 1.28], "rotation_speed": 18.0})
         material["opacity"] = max(float(material.get("opacity", 0.72)), 0.76)
-        card.update({"enabled": True, "location": [0, 0, 4], "rotation": [0, 0, 0], "scale": [2.55, 2.55, 1]})
+        card.update({"enabled": True, "location": [0, 0, 2], "rotation": [0, 0, 0], "scale": [2.35, 2.35, 1]})
         niagara["enabled"] = False
     elif role == "impact_core":
         timeline.update({"delay": 0.0, "duration": 0.24, "opacity": [0.0, 1.0, 0.45, 0.0], "scale": [0.35, 1.22, 0.84, 0.0]})
         material["opacity"] = max(float(material.get("opacity", 0.8)), 0.86)
         material["emissive_strength"] = max(float(material.get("emissive_strength", 22.0)), 24.0)
-        card.update({"enabled": True, "location": [0, -1, 38], "rotation": [90, 0, 0], "scale": [1.05, 0.82, 1]})
+        card.update({"enabled": True, "location": [0, -1, 24], "rotation": [88, 0, 0], "scale": [0.92, 0.58, 1]})
         niagara["enabled"] = False
     elif role == "atmospheric_wisp":
         timeline.update({"delay": 0.18, "duration": 1.05, "opacity": [0.0, 0.24, 0.18, 0.0], "scale": [0.62, 1.0, 1.22, 1.46], "rotation_speed": 5.0})
         material["opacity"] = min(float(material.get("opacity", 0.2)), 0.1)
         material["emissive_strength"] = min(float(material.get("emissive_strength", 0.35)), 0.22)
         material["blend_mode"] = "translucent"
-        card.update({"enabled": True, "location": [-4, 5, 96], "rotation": [90, 0, 7], "scale": [1.45, 1.35, 1]})
+        card.update({"enabled": True, "location": [-5, 8, 58], "rotation": [86, 0, 8], "scale": [1.5, 1.02, 1]})
         niagara["enabled"] = False
         emitter.setdefault("notes", []).append("Smoke preview uses a single low-opacity frame so it supports the fire without exposing atlas cards.")
     elif role == "detail_particles":
         timeline.update({"delay": 0.12, "duration": 0.32, "opacity": [0.0, 0.9, 0.55, 0.0], "scale": [0.8, 1.0, 0.65, 0.25], "rotation_speed": 160.0})
         card["enabled"] = False
-        niagara.update({"enabled": True, "location": [0, 0, 92], "rotation": [0, 0, 0], "scale": [0.65, 0.65, 0.65]})
+        niagara.update({"enabled": True, "location": [0, 0, 76], "rotation": [0, 0, 0], "scale": [0.55, 0.55, 0.55]})
 
 
 def apply_electric_production_preview(emitter: dict[str, Any]) -> None:
