@@ -9,6 +9,7 @@ def production_notes_for_plan(effect_type: str, visual_profile: dict[str, Any], 
         "Keep the primary silhouette readable first, then layer secondary particles and accents.",
         "Use texture alpha and emissive material response to carry shape; Niagara spawn rate should not be the main source of visual complexity.",
         "Keep source textures and preview cards within a clear size budget; oversized billboard sheets quickly reveal texture artifacts.",
+        "AI/simulation generation must output a pass bundle, not only a beauty image: beauty, alpha, motion, depth/thickness, lighting, masks, and flow data each have separate Unreal uses.",
     ]
 
     roles = {emitter.get("role") for emitter in emitters}
@@ -78,7 +79,27 @@ def quality_target_for_plan(effect_type: str, visual_profile: dict[str, Any], em
                 "alpha-shaped sprites or flipbooks",
                 "small-to-medium texture cards that are supported by particles, ribbons, or mesh layers",
                 "material-driven emissive, opacity, and distortion controls",
+                "AI/simulation asset passes with explicit filenames and atlas metadata",
                 "preview asset that plays in Unreal with Realtime enabled",
+            ],
+        },
+        "source_asset_contract": {
+            "minimum": [
+                "beauty_flipbook",
+                "alpha_mask",
+                "layer_mask_pack",
+                "renderer_layout_metadata",
+            ],
+            "production_quality": [
+                "motion_vectors",
+                "distortion_flow",
+                "depth_or_thickness",
+                "normal_or_six_point_lighting",
+                "sdf_or_vector_field",
+            ],
+            "notes": [
+                "Beauty-only generation is considered blockout quality.",
+                "Each output must identify columns, rows, frame_count, fps, color_space, and intended Unreal renderer.",
             ],
         },
         "effect_type": effect_type,
@@ -132,6 +153,38 @@ def asset_passes_for_plan(effect_type: str, visual_profile: dict[str, Any], emit
             "format": "normal_map_or_6_point_lighting",
             "purpose": "Add volume response for smoke, fire lobes, and magic clouds.",
             "unreal_usage": "Lit/unlit hybrid material parameters",
+            "required": False,
+        },
+        {
+            "name": "depth_or_thickness",
+            "source": "simulation_bake_or_ai_depth_estimate",
+            "format": "single_channel_depth_or_thickness_atlas",
+            "purpose": "Describe volumetric depth/thickness so smoke, flame, and magic plumes can be shaded instead of flat-carded.",
+            "unreal_usage": "Material depth fade, opacity modulation, soft particle contact, and pseudo-volume shading",
+            "required": False,
+        },
+        {
+            "name": "layer_mask_pack",
+            "source": "ai_segmentation_or_manual_authoring",
+            "format": "packed_rgba_masks",
+            "purpose": "Separate core, edge, smoke, sparks, and ground influence masks so Unreal materials can tune layers independently.",
+            "unreal_usage": "Dynamic material parameters, opacity erosion, emissive isolation, and layer balance review",
+            "required": False,
+        },
+        {
+            "name": "sdf_or_vector_field",
+            "source": "simulation_or_procedural_field_generation",
+            "format": "signed_distance_or_rg_vector_field",
+            "purpose": "Drive edge erosion, curl, ribbon deformation, or particle steering without relying on random spray.",
+            "unreal_usage": "Niagara vector field, material erosion, ribbon width/facing, or dynamic material flow",
+            "required": False,
+        },
+        {
+            "name": "renderer_layout_metadata",
+            "source": "generation_pipeline_metadata",
+            "format": "json",
+            "purpose": "Declare atlas columns/rows/fps, frame order, per-pass color space, pivot, bounds, and intended renderer.",
+            "unreal_usage": "Import validation and Niagara/SubUV/material setup",
             "required": False,
         },
         {
@@ -255,6 +308,11 @@ def review_gates_for_plan(effect_type: str, visual_profile: dict[str, Any], emit
             "name": "texture_card_budget",
             "pass_condition": "Runtime VFX textures and preview card scales stay within the role budget.",
             "failure_action": "Downsample the texture, split it into smaller layers, or reduce the preview card scale.",
+        },
+        {
+            "name": "source_asset_contract",
+            "pass_condition": "AI/simulation output includes more than beauty/alpha: masks, motion, depth/thickness, lighting, and metadata are present or intentionally waived.",
+            "failure_action": "Generate a pass bundle with named files before trying to polish Unreal placement.",
         },
         {
             "name": "layer_balance",

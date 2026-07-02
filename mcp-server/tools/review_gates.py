@@ -31,6 +31,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_reference_overlay_not_primary(patched_spec, unreal_result),
         gate_texture_card_budget(patched_spec, manifest, unreal_result),
         gate_unreal_generation(unreal_result),
+        gate_source_asset_contract(manifest),
         gate_bootstrap_quality(manifest),
     ]
     passed = [gate for gate in gates if gate["status"] == "pass"]
@@ -440,6 +441,52 @@ def gate_bootstrap_quality(manifest: dict[str, Any]) -> dict[str, Any]:
             else ("Only optional passes are bootstrap derivations." if optional_bootstrap else "No bootstrap pass is selected.")
         ),
         "data": {"required_bootstrap_passes": bootstrap, "optional_bootstrap_passes": optional_bootstrap},
+    }
+
+
+def gate_source_asset_contract(manifest: dict[str, Any]) -> dict[str, Any]:
+    entries = {entry.get("name"): entry for entry in manifest.get("passes", [])}
+    minimum = {"beauty_flipbook", "alpha_mask", "layer_mask_pack", "renderer_layout_metadata"}
+    production = {
+        "motion_vectors",
+        "distortion_flow",
+        "depth_or_thickness",
+        "normal_or_lighting",
+        "sdf_or_vector_field",
+    }
+    ready_minimum = sorted(name for name in minimum if (entries.get(name) or {}).get("status") == "ready")
+    missing_minimum = sorted(minimum - set(ready_minimum))
+    ready_production = sorted(name for name in production if (entries.get(name) or {}).get("status") == "ready")
+    missing_production = sorted(production - set(ready_production))
+    bootstrap_sources = {
+        name: (entries.get(name, {}).get("selected_asset") or {}).get("source")
+        for name in sorted(minimum | production)
+        if (entries.get(name, {}).get("selected_asset") or {}).get("source")
+        in {"derived_reference_bootstrap", "reference_layer_extraction", "procedural_layer_synthesis", "reference_matched_composite"}
+    }
+    if missing_minimum:
+        status = "fail"
+        message = "The source asset contract is missing minimum passes; the effect will collapse into beauty-card/blockout quality."
+    elif len(ready_production) < 3 or bootstrap_sources:
+        status = "warning"
+        message = "The source asset contract is structurally present, but production data passes still need AI/simulation-quality replacements."
+    else:
+        status = "pass"
+        message = "The source asset contract includes minimum and advanced production data passes."
+    return {
+        "name": "source_asset_contract",
+        "status": status,
+        "message": message,
+        "data": {
+            "minimum": sorted(minimum),
+            "ready_minimum": ready_minimum,
+            "missing_minimum": missing_minimum,
+            "production_quality": sorted(production),
+            "ready_production": ready_production,
+            "missing_production": missing_production,
+            "bootstrap_or_reference_sources": bootstrap_sources,
+            "expectation": "Final AAA quality needs authored or simulated pass bundles, not only derived bootstrap maps.",
+        },
     }
 
 

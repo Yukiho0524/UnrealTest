@@ -1,112 +1,73 @@
-# AAA VFX 生成管線研究筆記
+# AAA 特效生成流程
 
-目標不是把參考圖直接貼進 Unreal，而是把少量參考圖拆解成可控的遊戲特效資料，再由 Niagara 組裝成可調、可播放、可優化的效果。
+目前工具的目標不是把參考圖直接貼到 Unreal 裡，而是把參考圖拆成可製作、可檢查、可迭代的 VFX pass bundle，再由 Unreal/Niagara 分層組裝。
 
-## 核心結論
+## 核心判斷
 
-1. 參考圖只能當視覺目標，不能直接當最終特效。
-2. AAA 特效通常是多層組合：主形體、邊緣破碎、衝擊閃光、地面錨點、煙霧/熱扭曲、火星/碎屑、光照與後處理。
-3. 需要產出多張 pass，而不是一張 beauty 圖：color/emissive、alpha、motion vectors、flow/distortion、normal/lighting、mask。
-4. Unreal 端必須用 SubUV/flipbook、材質參數、Niagara 多 emitter、排序與 lifetime/timing 控制來重建動態。
-5. AI 應該負責生成高品質視覺素材與 motion target；Niagara 負責遊戲內可控表現。
+單張 beauty 圖或一張序列幀 atlas 只能當 blockout。要接近高品質遊戲特效，至少需要：
 
-## 推薦資產管線
+- 明確的主形狀：火柱、雷電主幹、爆點、地面圈等。
+- 多層 renderer：Sprite、SubUV flipbook、Ribbon、Mesh/Card、Light、Distortion。
+- 多種資料 pass：beauty、alpha、layer mask、motion vector、distortion flow、depth/thickness、normal/lighting、SDF/vector field。
+- 明確的 atlas metadata：columns、rows、frame_count、fps、color_space、pivot、bounds、intended renderer。
+- Review gate：不只確認有檔案，還要確認比例、位置、材質、透明度、layer balance、是否仍是 bootstrap。
+
+## 設計師流程
 
 ```text
-Designer references
-  -> visual analysis
-  -> AI/simulation asset generation
-  -> asset pass manifest
-  -> VFXSpec quality target
-  -> Niagara layered assembly
-  -> Unreal viewport review gates
-  -> iterate until pass
+samples/references/<effect-name>/
+  -> 放參考圖、GIF、prompt
+  -> Analyze Package
+  -> Generate AI Art Pass / 匯入手動 pass
+  -> Prepare AAA Passes
+  -> Generate Unreal Assets
+  -> Open In Unreal
+  -> Review Gates
+  -> 針對缺的 pass 或失敗 gate 迭代
 ```
 
-## 需要的 asset passes
+## 必要 Asset Pass
 
-| Pass | 來源 | Unreal 用途 |
+| Pass | 用途 | Unreal 使用方式 |
 | --- | --- | --- |
-| beauty_flipbook | ComfyUI / video model / simulation | 主視覺 SubUV flipbook |
-| alpha_mask | segmentation / luminance extract | 移除矩形卡片，控制 opacity |
-| motion_vectors | EmberGen / optical flow | frame interpolation、方向性 smear |
-| distortion_flow | simulation / noise synthesis | heat haze、smoke curl、electric shimmer |
-| normal_or_lighting | simulation bake / AI estimate | 增加煙霧/火焰體積感 |
-| core_flame_flipbook | EmberGen / FluidNinja / AI video | 火焰主體 |
-| smoke_heat_flipbook | simulation / AI video | 煙、熱氣與尾韻 |
-| ground_ring_mask | procedural / AI stroke | 地面衝擊錨點 |
+| beauty_flipbook | 主視覺顏色與 emissive 動畫 | Sprite/SubUV flipbook |
+| alpha_mask | 去掉矩形卡片，保留破碎/柔邊輪廓 | Opacity、overdraw 控制 |
+| layer_mask_pack | RGBA 分離 core、edge、smoke、spark 等區域 | 材質動態參數、分層亮度與透明度 |
+| renderer_layout_metadata | atlas 與 renderer 設定 | 匯入驗證、SubUV、材質與 Niagara 設定 |
 
-## Unreal/Niagara 實作原則
+## Production Quality Pass
 
-- 用 Niagara System/Emitter 分層，不要把所有東西放在單一粒子噴射。
-- Sprite Renderer 要使用 alpha-shaped texture 或 flipbook；不可露出 atlas grid。
-- Flipbook 材質要接到 TextureSample 的真實 `UVs` pin，並用 columns/rows/fps 控制播放。
-- 火焰類效果至少拆成：impact flash、ground ring、core pillar、side tongues、smoke/heat、embers。
-- 閃電類效果至少拆成：main bolt、branch arcs、impact core、ground pulse、ion sparks。
-- 粒子密度不是品質。品質主要來自形狀、材質、timing、layer balance、光暈與扭曲。
-- Preview 必須在 Blueprint 或 Niagara viewport 開 Realtime 後能播放，不能只是靜態圖。
+| Pass | 用途 | Unreal 使用方式 |
+| --- | --- | --- |
+| motion_vectors | frame interpolation、方向性 smear | 材質 flipbook interpolation、Niagara 動態參數 |
+| distortion_flow | 熱扭曲、煙卷、電流 shimmer | Translucent distortion/refraction |
+| depth_or_thickness | 讓火/煙/魔法雲不只是平面卡片 | depth fade、pseudo-volume opacity |
+| normal_or_lighting | 提供體積受光或六向 lighting 資料 | Lit/unlit hybrid 材質 |
+| sdf_or_vector_field | 邊緣腐蝕、curl、粒子導流 | Vector field、ribbon deformation、材質 erosion |
 
-## 外部生成式/模擬工具定位
+## Fire 分層範例
 
-- ComfyUI：適合接 Stable Diffusion/ControlNet/AnimateDiff/Video workflow，生成 style target、sprite sheet、mask 或 image-to-image 變體。
-- EmberGen：適合輸出 realtime VFX flipbook，包含 motion vectors、normal、depth、lighting 等 pass。
-- FluidNinja：適合 Unreal 內生成/處理 fluid flipbook、flow map、volume 或 stylized effects。
-- Houdini Niagara：適合把程序點資料、mesh/ribbon/particle caches 帶進 Niagara，補足 AI 無法保證的結構控制。
+- impact_flash：最先爆亮，時間短，大小不能太大。
+- ground_ring_mask：貼近地面，負責規模與錨點。
+- core_flame_flipbook：主火柱，必須承擔縮圖可讀性。
+- flame_slash_flipbook：側向火舌，破壞單一柱狀感。
+- smoke_heat_flipbook：低亮度煙/熱氣，留在中低區域。
+- ember_sprite_set：少量細節，不可變成主要形狀。
 
-## Review gates
+## 品質紅線
 
-1. Reference read：縮圖看起來就要像同類效果，主 silhouette 不能跑掉。
-2. Motion match：anticipation、peak、trail、fade 順序要接近參考。
-3. Material quality：不能看到格子 atlas、矩形卡、髒邊；emissive/alpha/distortion 要分開。
-4. Layer balance：主體先成立，sparks/smoke/glow 只能支援，不能變成雜訊。
-5. Engine readiness：Unreal viewport 能播放、不 crash、有可調材質參數與 emitter layer。
-
-## 下一步實作順序
-
-1. 讓 `VFXSpec.vfx_plan` 輸出 `quality_target`、`asset_passes`、`review_gates`。已完成。
-2. 建立 `asset_pass_manifest.json`，把 beauty/alpha/motion/distortion 等檔案交給 Unreal importer。已完成第一版。
-3. 若 reference flipbook 已存在，先自動派生 bootstrap `alpha_mask`、`core_flame_flipbook`、`smoke_heat_flipbook`。已完成第一版。
-4. `Generate Unreal Assets` 會套用 asset pass manifest，將 fire pillar/smoke 等 emitter 指到對應 pass。已完成第一版。
-5. 讓 AI art provider 的 manifest 能標記輸出的 pass type，不只收集圖片。下一步。
-6. Unreal 材質支援獨立 alpha atlas。已完成第一版，`AlphaTexture` 會乘進 opacity。
-7. Review Gates 會檢查 required passes、production preview、alpha mask、reference overlay 依賴、Unreal 生成結果。已完成第一版。
-8. Unreal 材質支援 motion-vector flipbook interpolation、distortion pass。下一步。
-9. Niagara 生成器支援 layer delay、burst timing、curve-driven alpha/size/color。下一步。
-10. 做 viewport screenshot/thumbnail 自動評估，至少能偵測 atlas grid、矩形卡、過量粒子噴射。下一步。
-
-## UI 新流程
-
-1. 在 `samples/references/<effect-name>/` 放入參考圖、GIF 或 prompt/config。
-2. 按 `Analyze Package` 檢查 `quality_target`、`asset_passes`、`review_gates`。
-3. 按 `Generate AI Art Pass` 產生外部 AI 素材；如果尚未接 ComfyUI workflow，可以先跳過。
-4. 按 `Prepare AAA Passes` 產生 `generated/asset-passes/<effect-name>/asset_pass_manifest.json`。
-5. 按 `Generate Unreal Assets`，系統會先套用 asset pass manifest，再匯入 Unreal。
-6. 按 `Open In Unreal`，在 BP preview viewport 開啟 Realtime 檢查播放。
-7. 按 `Review Gates`，檢查目前是否仍依賴 reference overlay、required passes 是否 ready、alpha mask 是否接入材質。
-
-`asset_pass_manifest.json` 會標記每個 pass 的狀態：
-
-- `ready`: 已有可用素材。
-- `missing`: 還缺素材，通常需要 ComfyUI、EmberGen、FluidNinja 或人工指定。
-- `quality_note`: 若是 `bootstrap_only_replace_with_ai_or_simulation_for_final_aaa_quality`，代表它可先推進測試，但最終 AAA 品質仍建議替換成正式生成/模擬 pass。
-
-## Review Gates
-
-`Review Gates` 目前會檢查：
-
-- `required_asset_passes`: required pass 是否都有候選素材。
-- `production_layer_preview`: BP preview 是否使用 production layers，而不是 reference flipbook 大卡。
-- `alpha_mask_material_link`: alpha mask 是否接入材質設定。
-- `reference_overlay_not_primary`: reference flipbook 是否不再是 primary preview。
-- `unreal_generation_result`: 最新 Unreal generation 是否成功建立 bundle。
-- `final_quality_assets`: 是否仍使用 bootstrap pass。若有 warning，代表流程可測，但最終品質仍需替換成 AI/模擬 pass。
+- 不接受單張靜態卡片當最終效果。
+- 不接受只是增加粒子數量。
+- 不接受可見 atlas grid 或矩形透明卡邊。
+- 不接受超大貼圖卡片硬塞成整個特效。
+- 不接受 preview 看起來通過，但 review gate 顯示仍是 bootstrap 的狀態被視為最終品質。
 
 ## 參考資料
 
-- Epic Games, Niagara overview: https://dev.epicgames.com/documentation/en-us/unreal-engine/overview-of-niagara-effects-for-unreal-engine
-- Epic Games, Niagara renderers: https://dev.epicgames.com/documentation/en-us/unreal-engine/render-module-reference-for-niagara-effects-in-unreal-engine
+- Epic Games, Niagara Overview: https://dev.epicgames.com/documentation/en-us/unreal-engine/overview-of-niagara-effects-for-unreal-engine
+- Epic Games, Niagara Renderers: https://dev.epicgames.com/documentation/en-us/unreal-engine/render-module-reference-for-niagara-effects-in-unreal-engine
+- Epic Games, Texture Import: https://dev.epicgames.com/documentation/en-us/unreal-engine/importing-images-and-textures-in-unreal-engine
 - Epic Games, Niagara Fluids: https://dev.epicgames.com/documentation/en-us/unreal-engine/niagara-fluids-in-unreal-engine
-- Epic Games, Niagara Fluids reference: https://dev.epicgames.com/documentation/en-us/unreal-engine/niagara-fluids-reference-in-unreal-engine
-- JangaFX EmberGen: https://jangafx.com/software/embergen/
-- SideFX Houdini Niagara: https://www.sidefx.com/docs/houdini/unreal/niagara.html
-- ComfyUI server/API docs: https://docs.comfy.org/development/comfyui-server/comms_routes
+- SideFX, Houdini Niagara: https://www.sidefx.com/docs/houdini/unreal/niagara.html
+- JangaFX, EmberGen: https://jangafx.com/software/embergen/
+- ComfyUI Server/API: https://docs.comfy.org/development/comfyui-server/comms_routes

@@ -16,6 +16,7 @@ DEFAULT_ASSET_PASS_ROOT = WORKSPACE_ROOT / "generated" / "asset-passes"
 DEFAULT_AI_ART_ROOT = WORKSPACE_ROOT / "generated" / "ai-art"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tga", ".exr", ".hdr"}
 ANIMATED_SUFFIXES = {".gif", ".mp4", ".mov", ".webm"}
+METADATA_SUFFIXES = {".json"}
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
@@ -406,6 +407,10 @@ def texture_budget_for_pass(pass_name: str) -> dict[str, Any]:
         "alpha_mask": {"max_import_edge": 1024, "max_preview_scale": 2.2, "max_card_area": 4.4, "usage": "mask_data"},
         "distortion_flow": {"max_import_edge": 512, "max_preview_scale": 1.6, "max_card_area": 2.6, "usage": "flow_data"},
         "normal_or_lighting": {"max_import_edge": 512, "max_preview_scale": 1.6, "max_card_area": 2.6, "usage": "lighting_data"},
+        "depth_or_thickness": {"max_import_edge": 512, "max_preview_scale": 1.4, "max_card_area": 2.0, "usage": "depth_thickness_data"},
+        "layer_mask_pack": {"max_import_edge": 1024, "max_preview_scale": 1.6, "max_card_area": 2.6, "usage": "packed_layer_masks"},
+        "sdf_or_vector_field": {"max_import_edge": 512, "max_preview_scale": 1.2, "max_card_area": 1.8, "usage": "field_data"},
+        "renderer_layout_metadata": {"max_import_edge": 0, "max_preview_scale": 0.0, "max_card_area": 0.0, "usage": "metadata"},
     }
     return budgets.get(pass_name, {"max_import_edge": 768, "max_preview_scale": 1.8, "max_card_area": 3.0, "usage": "generic_vfx_layer"})
 
@@ -481,6 +486,10 @@ def atlas_metadata_for_dimensions(pass_name: str | None, selected: dict[str, str
         "ember_sprite_set",
         "reference_motion_overlay",
         "bolt_branch_set",
+        "normal_or_lighting",
+        "depth_or_thickness",
+        "layer_mask_pack",
+        "sdf_or_vector_field",
     }
     if name not in atlas_passes and not any(token in filename for token in ("flipbook", "atlas", "sprite_set")):
         return None
@@ -613,6 +622,41 @@ def derive_bootstrap_candidates(
         flow_path = output_dir / f"{package_name}_distortion_flow.png"
         create_distortion_flow_pass(flow_path)
         candidates.setdefault("distortion_flow", []).append(derived_candidate(flow_path, "procedural_heat_distortion_flow"))
+
+    if "normal_or_lighting" in target_names:
+        normal_path = output_dir / f"{package_name}_normal_or_lighting.png"
+        create_normal_or_lighting_pass(target_reference, normal_path)
+        candidates.setdefault("normal_or_lighting", []).append(
+            derived_candidate(normal_path, "ai_ready_normal_lighting_bootstrap")
+        )
+
+    if "depth_or_thickness" in target_names:
+        depth_path = output_dir / f"{package_name}_depth_or_thickness.png"
+        create_depth_or_thickness_pass(target_reference, depth_path)
+        candidates.setdefault("depth_or_thickness", []).append(
+            derived_candidate(depth_path, "ai_ready_depth_thickness_bootstrap")
+        )
+
+    if "layer_mask_pack" in target_names:
+        mask_pack_path = output_dir / f"{package_name}_layer_mask_pack.png"
+        create_layer_mask_pack_pass(target_reference, mask_pack_path)
+        candidates.setdefault("layer_mask_pack", []).append(
+            derived_candidate(mask_pack_path, "ai_ready_layer_mask_pack_bootstrap")
+        )
+
+    if "sdf_or_vector_field" in target_names:
+        field_path = output_dir / f"{package_name}_sdf_or_vector_field.png"
+        create_sdf_or_vector_field_pass(target_reference, field_path)
+        candidates.setdefault("sdf_or_vector_field", []).append(
+            derived_candidate(field_path, "ai_ready_sdf_vector_field_bootstrap")
+        )
+
+    if "renderer_layout_metadata" in target_names:
+        metadata_path = output_dir / f"{package_name}_renderer_layout_metadata.json"
+        create_renderer_layout_metadata(metadata_path, package_name)
+        candidates.setdefault("renderer_layout_metadata", []).append(
+            derived_candidate(metadata_path, "renderer_layout_metadata_bootstrap")
+        )
 
     similarity_report = create_similarity_report(package_name, target_reference, output_dir)
     if "reference_matched_composite" in target_names:
@@ -1234,20 +1278,152 @@ def create_distortion_flow_pass(output_path: Path, size: int = 256) -> None:
     image.save(output_path)
 
 
+def create_normal_or_lighting_pass(source_path: Path, output_path: Path, size: int = 512) -> None:
+    alpha = reference_foreground_alpha(source_path, size)
+    blurred = alpha.filter(ImageFilter.GaussianBlur(radius=2.0))
+    pixels = []
+    for y in range(size):
+        for x in range(size):
+            left = blurred.getpixel((max(0, x - 1), y))
+            right = blurred.getpixel((min(size - 1, x + 1), y))
+            up = blurred.getpixel((x, max(0, y - 1)))
+            down = blurred.getpixel((x, min(size - 1, y + 1)))
+            dx = (left - right) / 255.0
+            dy = (up - down) / 255.0
+            strength = 0.85
+            nz = 1.0
+            length = math.sqrt(dx * dx * strength + dy * dy * strength + nz * nz) or 1.0
+            nx = dx * strength / length
+            ny = dy * strength / length
+            normal_r = int((nx * 0.5 + 0.5) * 255)
+            normal_g = int((ny * 0.5 + 0.5) * 255)
+            lighting = int(max(32, min(255, blurred.getpixel((x, y)))))
+            pixels.append((normal_r, normal_g, lighting, 255))
+    output = Image.new("RGBA", (size, size))
+    output.putdata(pixels)
+    output.save(output_path)
+
+
+def create_depth_or_thickness_pass(source_path: Path, output_path: Path, size: int = 512) -> None:
+    alpha = reference_foreground_alpha(source_path, size)
+    center_glow = Image.new("L", (size, size), 0)
+    pixels = []
+    cx = cy = (size - 1) / 2.0
+    for y in range(size):
+        y01 = y / max(size - 1, 1)
+        for x in range(size):
+            x01 = x / max(size - 1, 1)
+            radial = 1.0 - min(1.0, math.hypot((x - cx) / cx, (y - cy) / cy))
+            vertical = 1.0 - abs(y01 - 0.58) * 1.35
+            value = int(255 * clamp01(radial * 0.55 + vertical * 0.28))
+            pixels.append(value)
+    center_glow.putdata(pixels)
+    thickness = Image.composite(center_glow, Image.new("L", (size, size), 0), alpha)
+    thickness = thickness.filter(ImageFilter.GaussianBlur(radius=3.0))
+    output = Image.merge("RGBA", (thickness, thickness, thickness, alpha))
+    output.save(output_path)
+
+
+def create_layer_mask_pack_pass(source_path: Path, output_path: Path, size: int = 512) -> None:
+    with Image.open(source_path) as source_image:
+        image = source_image.convert("RGBA")
+        image.thumbnail((size, size), Image.Resampling.LANCZOS)
+        canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        canvas.alpha_composite(image, ((size - image.width) // 2, (size - image.height) // 2))
+
+    channels: list[tuple[int, int, int, int]] = []
+    for r, g, b, a in canvas.getdata():
+        if a <= 4:
+            channels.append((0, 0, 0, 0))
+            continue
+        lum = luminance01(r, g, b)
+        warm = warm_score01(r, g, b)
+        core = int(255 * clamp01(lum * warm * 1.35))
+        edge = int(255 * clamp01(warm * (1.0 - abs(lum - 0.55) * 1.15)))
+        smoke = int(255 * clamp01((1.0 - lum) * (0.45 + warm * 0.2)))
+        sparks = int(255 * clamp01(smoothstep01(0.82, 1.0, lum) * (0.5 + warm * 0.5)))
+        channels.append((core, edge, smoke, sparks))
+    output = Image.new("RGBA", (size, size))
+    output.putdata(channels)
+    output.save(output_path)
+
+
+def create_sdf_or_vector_field_pass(source_path: Path, output_path: Path, size: int = 256) -> None:
+    alpha = reference_foreground_alpha(source_path, size).filter(ImageFilter.GaussianBlur(radius=1.2))
+    pixels = []
+    cx = cy = (size - 1) / 2.0
+    for y in range(size):
+        for x in range(size):
+            left = alpha.getpixel((max(0, x - 1), y)) / 255.0
+            right = alpha.getpixel((min(size - 1, x + 1), y)) / 255.0
+            up = alpha.getpixel((x, max(0, y - 1))) / 255.0
+            down = alpha.getpixel((x, min(size - 1, y + 1))) / 255.0
+            grad_x = right - left
+            grad_y = down - up
+            swirl_x = -(y - cy) / max(cy, 1.0)
+            swirl_y = (x - cx) / max(cx, 1.0)
+            u = int(128 + 78 * clamp01_signed(grad_x * 1.7 + swirl_x * 0.24))
+            v = int(128 + 78 * clamp01_signed(grad_y * 1.7 + swirl_y * 0.24))
+            sdf = int(alpha.getpixel((x, y)))
+            pixels.append((max(0, min(255, u)), max(0, min(255, v)), sdf, 255))
+    output = Image.new("RGBA", (size, size))
+    output.putdata(pixels)
+    output.save(output_path)
+
+
+def create_renderer_layout_metadata(output_path: Path, package_name: str) -> None:
+    payload = {
+        "schema_version": 1,
+        "package": package_name,
+        "default_atlas": {
+            "columns": 4,
+            "rows": 4,
+            "frame_count": 16,
+            "fps": 12,
+            "frame_order": "row_major",
+            "color_space": "linear_for_data_srgb_for_beauty",
+            "pivot": [0.5, 0.5],
+        },
+        "intended_renderers": ["sprite_subuv", "ribbon", "mesh_card", "ground_card"],
+        "notes": [
+            "Bootstrap metadata only. Replace with provider-exported per-pass metadata for final production.",
+        ],
+    }
+    output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def reference_foreground_alpha(source_path: Path, size: int) -> Image.Image:
+    with Image.open(source_path) as source_image:
+        image = source_image.convert("RGBA")
+        image.thumbnail((size, size), Image.Resampling.LANCZOS)
+        canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        canvas.alpha_composite(image, ((size - image.width) // 2, (size - image.height) // 2))
+    values = []
+    for r, g, b, a in canvas.getdata():
+        if a > 8:
+            foreground = max(a, int(255 * effect_foreground_score(r, g, b)))
+        else:
+            foreground = int(255 * effect_foreground_score(r, g, b))
+        values.append(max(0, min(255, foreground)))
+    alpha = Image.new("L", (size, size))
+    alpha.putdata(values)
+    alpha = alpha.filter(ImageFilter.GaussianBlur(radius=0.8))
+    alpha = alpha.point(lambda value: 0 if value < 12 else min(255, int(value * 1.22)))
+    return alpha
+
+
+def clamp01_signed(value: float) -> float:
+    return max(-1.0, min(1.0, value))
+
+
 def should_apply_shared_alpha(pass_name: str | None, selected_path: str | None, alpha_path: str | None) -> bool:
-    if pass_name not in {"core_flame_flipbook", "smoke_heat_flipbook"}:
+    if pass_name not in {"core_flame_flipbook", "flame_slash_flipbook", "smoke_heat_flipbook", "impact_flash_mask"}:
         return False
     if not selected_path or not alpha_path:
         return False
     selected = Path(selected_path)
     alpha = Path(alpha_path)
-    if not selected.exists() or not alpha.exists():
-        return False
-    try:
-        with Image.open(selected) as selected_image, Image.open(alpha) as alpha_image:
-            return selected_image.size == alpha_image.size
-    except Exception:
-        return False
+    return selected.exists() and alpha.exists()
 
 
 def should_apply_distortion(emitter: dict[str, Any], distortion_path: str | None) -> bool:
@@ -1347,7 +1523,7 @@ def collect_manual_pass_outputs(package_path: Path) -> list[dict[str, str]]:
     if not passes_root.exists():
         return []
     outputs: list[dict[str, str]] = []
-    suffixes = IMAGE_SUFFIXES | ANIMATED_SUFFIXES
+    suffixes = IMAGE_SUFFIXES | ANIMATED_SUFFIXES | METADATA_SUFFIXES
     for path in sorted(passes_root.rglob("*")):
         if not path.is_file() or path.suffix.lower() not in suffixes:
             continue
@@ -1396,6 +1572,10 @@ def manual_aliases_for_pass(pass_name: str) -> list[str]:
         "motion_vectors": ["motion", "vector", "velocity", "mv"],
         "distortion_flow": ["distortion", "distort", "flow", "heat_haze", "haze"],
         "normal_or_lighting": ["normal", "lighting", "depth", "lit"],
+        "depth_or_thickness": ["depth", "thickness", "volume", "height"],
+        "layer_mask_pack": ["layer_mask", "mask_pack", "packed_mask", "core_edge", "masks"],
+        "sdf_or_vector_field": ["sdf", "distance", "vector_field", "field", "curl"],
+        "renderer_layout_metadata": ["metadata", "layout", "atlas_meta", "renderer"],
         "core_flame_flipbook": ["core", "pillar", "fire_pillar", "flame_core"],
         "smoke_heat_flipbook": ["smoke", "heat", "wisp", "haze"],
         "ground_ring_mask": ["ground", "ring", "rune", "circle"],
@@ -1409,14 +1589,22 @@ def manual_aliases_for_pass(pass_name: str) -> list[str]:
 
 def keywords_for_pass(pass_name: str) -> list[str]:
     name = pass_name.lower()
+    if "layer" in name and "mask" in name:
+        return ["layer", "mask_pack", "packed_mask", "core_edge", "rgba_mask"]
+    if "metadata" in name or "layout" in name:
+        return ["metadata", "layout", "atlas_meta", "renderer"]
     if "alpha" in name or "mask" in name:
         return ["alpha", "mask", "matte", "opacity"]
     if "motion" in name:
         return ["motion", "vector", "velocity", "mv"]
     if "distortion" in name or "flow" in name:
         return ["distort", "flow", "heat", "normal"]
+    if "depth" in name or "thickness" in name:
+        return ["depth", "thickness", "height", "volume"]
     if "normal" in name or "lighting" in name:
-        return ["normal", "depth", "lighting", "light"]
+        return ["normal", "lighting", "light", "sixpoint"]
+    if "sdf" in name or "vector_field" in name or "field" in name:
+        return ["sdf", "distance", "vector_field", "field", "curl"]
     if "smoke" in name:
         return ["smoke", "heat", "wisp"]
     if "core" in name or "flame" in name:
@@ -1440,7 +1628,9 @@ def prompt_for_asset_pass(pass_spec: dict[str, Any]) -> str:
         f"Create the {name} pass for a realtime AAA game VFX effect. "
         f"Purpose: {purpose}. "
         f"Output as {output_format}. "
-        "Use clean alpha, centered composition, no background environment, no UI text, no watermark, no atlas grid lines. "
+        "Name the output with this exact pass name so the importer can classify it. "
+        "If this is a data pass, keep it clean and non-beauty: no baked background, no text, no watermark, no atlas grid lines. "
+        "Use clean alpha, centered composition, and consistent pivot/bounds across all passes. "
         "Preserve the reference silhouette, timing, color palette, and readable game-effect shape."
     )
 

@@ -277,14 +277,22 @@ def filename_matches_pass(filename: str, pass_name: str) -> bool:
 
 def keywords_for_pass(pass_name: str) -> list[str]:
     name = pass_name.lower()
+    if "layer" in name and "mask" in name:
+        return ["layer", "mask_pack", "packed_mask", "core_edge", "rgba_mask"]
+    if "metadata" in name or "layout" in name:
+        return ["metadata", "layout", "atlas_meta", "renderer"]
     if "alpha" in name or "mask" in name:
         return ["alpha", "mask", "matte", "opacity"]
     if "motion" in name:
         return ["motion", "vector", "velocity", "mv"]
     if "distortion" in name or "flow" in name:
         return ["distort", "flow", "heat", "normal"]
+    if "depth" in name or "thickness" in name:
+        return ["depth", "thickness", "height", "volume"]
     if "normal" in name or "lighting" in name:
-        return ["normal", "depth", "lighting", "light"]
+        return ["normal", "lighting", "light", "sixpoint"]
+    if "sdf" in name or "vector_field" in name or "field" in name:
+        return ["sdf", "distance", "vector_field", "field", "curl"]
     if "smoke" in name:
         return ["smoke", "heat", "wisp"]
     if "core" in name or "flame" in name:
@@ -338,9 +346,40 @@ def default_workflow_template() -> Path:
 def default_prompt(package_path: Path) -> str:
     prompt_path = package_path / "prompt.md"
     designer_prompt = prompt_path.read_text(encoding="utf-8").strip() if prompt_path.exists() else ""
+    contract = asset_pass_contract_prompt(package_path)
     return (
         f"{designer_prompt}\n\n"
-        "Create a clean game VFX flipbook on transparent or black background. "
+        "Create a realtime game VFX asset pass bundle, not only one beauty image. "
         "Preserve the reference silhouette, timing, color palette, and energy motion. "
-        "No watermark, no character, no UI, no text."
+        "Every output must keep the same pivot, frame count, bounds, and camera framing. "
+        "No watermark, no character, no UI, no text, no baked environment background.\n\n"
+        f"{contract}"
     ).strip()
+
+
+def asset_pass_contract_prompt(package_path: Path) -> str:
+    try:
+        spec = analyze_effect_package(package_path)
+        pass_specs = spec.vfx_plan.asset_passes if spec.vfx_plan else []
+    except Exception:
+        pass_specs = []
+    required = [item for item in pass_specs if item.get("required")]
+    optional = [item for item in pass_specs if not item.get("required")]
+    lines = [
+        "Required output contract:",
+        "- Use explicit filenames that include the pass name.",
+        "- Include renderer_layout_metadata.json with columns, rows, frame_count, fps, color_space, pivot, bounds, and intended Unreal renderer.",
+        "- For flipbooks, output PNG sequence or atlas with matching alpha/data passes.",
+        "- Beauty-only output is blockout quality and is not acceptable as final AAA VFX.",
+        "",
+        "Required passes:",
+    ]
+    if required:
+        lines.extend(f"- {item.get('name')}: {item.get('purpose')} ({item.get('format')})" for item in required)
+    else:
+        lines.append("- beauty_flipbook, alpha_mask, renderer_layout_metadata")
+    if optional:
+        lines.append("")
+        lines.append("Production-quality optional/data passes:")
+        lines.extend(f"- {item.get('name')}: {item.get('purpose')} ({item.get('format')})" for item in optional)
+    return "\n".join(lines)
