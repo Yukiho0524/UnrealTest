@@ -244,10 +244,11 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         niagara["enabled"] = False
     elif role == "atmospheric_wisp":
         timeline.update({"delay": 0.18, "duration": 1.05, "opacity": [0.0, 0.24, 0.18, 0.0], "scale": [0.62, 1.0, 1.22, 1.46], "rotation_speed": 5.0})
-        material["opacity"] = max(float(material.get("opacity", 0.2)), 0.26)
+        material["opacity"] = min(float(material.get("opacity", 0.2)), 0.12)
         material["blend_mode"] = "translucent"
-        card.update({"enabled": True, "location": [-4, 5, 122], "rotation": [90, 0, 7], "scale": [2.2, 2.0, 1]})
+        card.update({"enabled": False, "location": [-4, 5, 122], "rotation": [90, 0, 7], "scale": [2.2, 2.0, 1]})
         niagara["enabled"] = False
+        emitter.setdefault("notes", []).append("Smoke card is hidden in preview until the smoke alpha pass is clean enough to avoid rectangular artifacts.")
     elif role == "detail_particles":
         timeline.update({"delay": 0.12, "duration": 0.32, "opacity": [0.0, 0.9, 0.55, 0.0], "scale": [0.8, 1.0, 0.65, 0.25], "rotation_speed": 160.0})
         card["enabled"] = False
@@ -739,15 +740,18 @@ def create_similarity_report(package_name: str, target_reference: Path, output_d
         preview = build_reference_matched_preview(target)
         preview.save(preview_path)
         score = similarity_score(preview, target)
+        alpha = alpha_coverage_metrics(preview)
         report = {
             "target_reference": str(target_reference),
             "preview": str(preview_path),
             "score": score,
-            "status": "pass" if score.get("overall", 0.0) >= 0.8 else "needs_iteration",
+            "alpha": alpha,
+            "status": "pass" if score.get("overall", 0.0) >= 0.8 and not alpha.get("opaque_card_risk") else "needs_iteration",
             "target": 0.8,
             "notes": [
                 "Similarity is computed from a local composited preview before Unreal import.",
                 "It measures color, luminance, and silhouette overlap; Unreal viewport review is still required.",
+                "The preview image must keep transparent alpha; opaque rectangular cards are rejected.",
             ],
         }
     except Exception as exc:
@@ -763,17 +767,15 @@ def create_similarity_report(package_name: str, target_reference: Path, output_d
 
 
 def build_reference_matched_preview(target: Image.Image, size: int = 512) -> Image.Image:
-    base = fit_image_to_square(target, size)
+    base = fit_image_to_square(target, size, fill_alpha=0)
     layers = [
-        ("smoke_heat", 0.72),
-        ("ground_ring", 0.95),
-        ("flame_slashes", 0.9),
-        ("impact_flash", 0.92),
+        ("ground_ring", 1.0),
+        ("flame_slashes", 0.95),
+        ("impact_flash", 1.0),
         ("core_flame", 1.0),
-        ("embers", 0.72),
+        ("embers", 0.78),
     ]
-    preview = Image.new("RGBA", (size, size), (0, 0, 0, 255))
-    preview = Image.blend(preview, dark_reference_backdrop(base), 0.72).convert("RGBA")
+    preview = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     for layer_kind, opacity in layers:
         layer = extract_fire_reference_layer(base, layer_kind)
         layer = multiply_alpha(layer, opacity)
@@ -781,8 +783,8 @@ def build_reference_matched_preview(target: Image.Image, size: int = 512) -> Ima
     return preview
 
 
-def fit_image_to_square(image: Image.Image, size: int) -> Image.Image:
-    result = Image.new("RGBA", (size, size), (0, 0, 0, 255))
+def fit_image_to_square(image: Image.Image, size: int, fill_alpha: int = 255) -> Image.Image:
+    result = Image.new("RGBA", (size, size), (0, 0, 0, fill_alpha))
     image = image.convert("RGBA")
     ratio = min(size / image.size[0], size / image.size[1])
     resized = image.resize((max(1, int(image.size[0] * ratio)), max(1, int(image.size[1] * ratio))), Image.Resampling.LANCZOS)
@@ -833,6 +835,26 @@ def similarity_score(preview: Image.Image, target: Image.Image, size: int = 256)
         "luminance": round(clamp01(luminance), 3),
         "color": round(clamp01(color), 3),
         "silhouette": round(clamp01(silhouette), 3),
+    }
+
+
+def alpha_coverage_metrics(image: Image.Image) -> dict[str, Any]:
+    alpha = image.convert("RGBA").getchannel("A")
+    values = list(alpha.getdata())
+    total = max(1, len(values))
+    coverage = sum(1 for value in values if value > 8) / total
+    strong = sum(1 for value in values if value > 160) / total
+    bbox = alpha.getbbox()
+    bbox_coverage = 0.0
+    if bbox:
+        left, top, right, bottom = bbox
+        bbox_coverage = ((right - left) * (bottom - top)) / total
+    opaque_card_risk = coverage > 0.68 or (bbox_coverage > 0.82 and strong > 0.42)
+    return {
+        "coverage": round(coverage, 3),
+        "strong_coverage": round(strong, 3),
+        "bbox_coverage": round(bbox_coverage, 3),
+        "opaque_card_risk": opaque_card_risk,
     }
 
 

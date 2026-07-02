@@ -66,14 +66,17 @@ def gate_required_passes(manifest: dict[str, Any]) -> dict[str, Any]:
 def gate_similarity_target(manifest: dict[str, Any]) -> dict[str, Any]:
     report = manifest.get("similarity_report") or {}
     score = (report.get("score") or {}).get("overall")
-    ok = isinstance(score, (int, float)) and float(score) >= 0.8
+    alpha = report.get("alpha") or {}
+    opaque_card_risk = bool(alpha.get("opaque_card_risk"))
+    ok = isinstance(score, (int, float)) and float(score) >= 0.8 and not opaque_card_risk
     return {
         "name": "reference_similarity_80",
         "status": "pass" if ok else "fail",
-        "message": "Local composited preview reached the 0.80 similarity target." if ok else "Local composited preview is below the 0.80 similarity target.",
+        "message": "Local composited preview reached the 0.80 similarity target without opaque-card risk." if ok else "Local composited preview is below target or risks rendering as an opaque card.",
         "data": {
             "target": report.get("target", 0.8),
             "score": report.get("score"),
+            "alpha": alpha,
             "preview": report.get("preview"),
             "target_reference": report.get("target_reference"),
             "report_status": report.get("status"),
