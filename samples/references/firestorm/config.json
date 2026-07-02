@@ -2,11 +2,11 @@
   "name": "firestorm",
   "effect_type": "fire_or_flame",
   "preset": "firestorm",
-  "motion": "cinematic_spiral_firestorm",
+  "motion": "reference_fire_ice_magic_tornado",
   "duration_seconds": 1.35,
   "looping": true,
   "lock_color_palette": true,
-  "color_palette": ["#FFF7B8", "#FFB12A", "#FF4A10", "#250604"],
+  "color_palette": ["#E9FCFF", "#55E6FF", "#FFF1AA", "#FF7820", "#210906"],
   "reference_card": {
     "enabled": false
   },

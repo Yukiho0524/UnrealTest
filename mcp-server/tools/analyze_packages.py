@@ -276,7 +276,7 @@ def build_vfx_plan(
         )
 
     if effect_type == "fire_or_flame" and (config or {}).get("preset") == "firestorm":
-        return build_firestorm_vfx_plan(motion, fire_palette(palette), particles, visual_profile, reference_card_source, config)
+        return build_firestorm_vfx_plan(motion, fire_ice_tornado_palette(palette), particles, visual_profile, reference_card_source, config)
 
     if effect_type == "fire_or_flame":
         fire_palette_values = fire_palette(palette)
@@ -550,54 +550,54 @@ def build_firestorm_vfx_plan(
         VFXEmitterPlan(
             name="ground_rune_ring",
             role="ground_energy_ring",
-            sprite_shape="fire_rune_ring",
-            material_style="fire_ground_rune_ring_firestorm_vortex",
-            motion="counter_clockwise_ground_vortex",
+            sprite_shape="ice_energy_ground_ring",
+            material_style="cyan_ice_ground_pool_tornado_vortex",
+            motion="counter_clockwise_ice_ground_vortex",
             spawn_rate=1.0,
             lifetime_seconds=1.35,
             start_size=280.0,
             end_size=430.0,
-            color_palette=[palette[1], palette[0], "#4A0B04"],
-            notes=["Large molten spiral ring that anchors the firestorm at ground level."],
+            color_palette=[palette[0], palette[1], "#E8FEFF"],
+            notes=["Cyan-white ground energy pool that anchors the lower ice half of the tornado."],
         ),
         VFXEmitterPlan(
             name="central_fire_pillar",
             role="fire_pillar",
-            sprite_shape="fire_pillar",
-            material_style="fire_pillar_core_firestorm",
-            motion="rising_tornado_core",
+            sprite_shape="fire_ice_tornado_funnel",
+            material_style="fire_ice_tornado_core_split",
+            motion="rising_fire_ice_tornado_core",
             spawn_rate=1.0,
             lifetime_seconds=1.05,
             start_size=120.0,
             end_size=360.0,
             color_palette=palette,
-            notes=["Tall hot tornado core; this is the main silhouette."],
+            notes=["Main tornado silhouette: cyan lower vortex, white transition, orange upper fire crown."],
         ),
         VFXEmitterPlan(
             name="side_flame_slashes",
             role="flame_slashes",
-            sprite_shape="flame_slash",
-            material_style="fire_side_slashes_front_spiral",
-            motion="spiral_lash_clockwise",
+            sprite_shape="spiral_energy_band",
+            material_style="front_fire_ice_spiral_band",
+            motion="continuous_spiral_lash_clockwise",
             spawn_rate=3.0,
             lifetime_seconds=0.92,
             start_size=110.0,
             end_size=310.0,
-            color_palette=palette[1:],
-            notes=["Broad foreground flame ribbon curling around the core."],
+            color_palette=[palette[1], palette[2], palette[3]],
+            notes=["Foreground continuous spiral ribbon: cyan lower turns blend into orange upper fire turns."],
         ),
         VFXEmitterPlan(
             name="back_spiral_flame_wall",
             role="flame_slashes",
-            sprite_shape="flame_slash",
-            material_style="outer_flame_back_spiral",
-            motion="spiral_lash_counter_clockwise",
+            sprite_shape="rear_spiral_energy_band",
+            material_style="rear_fire_ice_spiral_band",
+            motion="continuous_spiral_lash_counter_clockwise",
             spawn_rate=3.0,
             lifetime_seconds=0.98,
             start_size=95.0,
             end_size=300.0,
-            color_palette=[palette[2], palette[1], "#5A0C04"],
-            notes=["Offset rear flame ribbon to make the storm feel volumetric."],
+            color_palette=[palette[1], palette[2], palette[3]],
+            notes=["Offset rear spiral ribbon that makes the tornado read as a volume instead of stacked cards."],
         ),
         VFXEmitterPlan(
             name="impact_flash",
@@ -616,14 +616,14 @@ def build_firestorm_vfx_plan(
             name="smoke_dust_crown",
             role="atmospheric_wisp",
             sprite_shape="smoke_wisp",
-            material_style="translucent_smoke_dust_firestorm",
-            motion="rolling_smoke_crown",
+            material_style="translucent_upper_heat_crown",
+            motion="rolling_upper_fire_crown",
             spawn_rate=10.0,
             lifetime_seconds=1.35,
             start_size=125.0,
             end_size=330.0,
-            color_palette=["#211814", "#5E4030", palette[2]],
-            notes=["Low dark rolling crown that frames the bright vortex."],
+            color_palette=["#211814", "#5E4030", palette[3]],
+            notes=["Soft upper crown that frames the orange fire ring without creating a cup shape."],
         ),
         VFXEmitterPlan(
             name="ember_sparks",
@@ -641,7 +641,7 @@ def build_firestorm_vfx_plan(
     ]
     emitters = apply_unreal_settings(emitters, config)
     return VFXPlan(
-        visual_intent="Cinematic firestorm: molten ground vortex, white-hot tornado core, two offset spiral flame walls, rolling smoke crown, impact flash, and ember shear.",
+        visual_intent="Reference-driven fire/ice magic tornado: cyan-white lower vortex and ground pool, orange upper fire crown, continuous spiral ribbons, restrained impact flash, and soft upper heat crown.",
         primary_emitter="central_fire_pillar",
         emitters=emitters,
         reference_card_source=reference_card_source,
@@ -795,6 +795,17 @@ def fire_palette(palette: list[str]) -> list[str]:
     if len(warm) >= 3:
         return [warm[0], warm[1], warm[2], "#2A0703"]
     return ["#FFF4B0", "#FFB22E", "#FF4A12", "#2A0703"]
+
+
+def fire_ice_tornado_palette(palette: list[str]) -> list[str]:
+    cyan = [color for color in palette if color.upper() in {"#E9FCFF", "#BFFBFF", "#55E6FF", "#42D8FF", "#2BB9FF"}]
+    warm = [color for color in palette if color.upper() not in {"#000000", "#181818", "#303030", "#E9FCFF", "#BFFBFF", "#55E6FF", "#42D8FF", "#2BB9FF"}]
+    ice_white = cyan[0] if cyan else "#E9FCFF"
+    ice_cyan = cyan[1] if len(cyan) > 1 else "#55E6FF"
+    fire_hot = warm[0] if warm else "#FFF1AA"
+    fire_orange = warm[1] if len(warm) > 1 else "#FF7820"
+    shadow = warm[2] if len(warm) > 2 else "#210906"
+    return [ice_white, ice_cyan, fire_hot, fire_orange, shadow]
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
