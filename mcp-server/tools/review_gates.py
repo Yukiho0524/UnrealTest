@@ -25,6 +25,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_distortion_pass_link(patched_spec, manifest),
         gate_reference_matched_anchor(patched_spec, manifest, unreal_result),
         gate_production_preview(patched_spec, unreal_result),
+        gate_preview_component_contract(patched_spec, unreal_result),
         gate_alpha_mask_applied(patched_spec, manifest),
         gate_reference_overlay_not_primary(patched_spec, unreal_result),
         gate_texture_card_budget(patched_spec, manifest, unreal_result),
@@ -206,6 +207,44 @@ def gate_production_preview(spec: dict[str, Any], unreal_result: dict[str, Any] 
     }
 
 
+def gate_preview_component_contract(spec: dict[str, Any], unreal_result: dict[str, Any] | None) -> dict[str, Any]:
+    components = preview_components(unreal_result)
+    issues = []
+    checked = []
+    for emitter in ((spec.get("vfx_plan") or {}).get("emitters") or []):
+        name = str(emitter.get("name") or "")
+        if not name:
+            continue
+        settings = emitter.get("unreal_settings") or {}
+        preview = settings.get("preview") or {}
+        card = preview.get("card") or {}
+        niagara = preview.get("niagara") or {}
+        if card.get("enabled") is not False and card:
+            component = matching_component(components, name, "StaticMeshComponent")
+            if not component:
+                issues.append({"emitter": name, "type": "missing_card_component"})
+            else:
+                issues.extend(compare_transform(name, "card", card, component.get("transform") or {}))
+                issues.extend(compare_timeline(name, emitter, component.get("timeline") or {}))
+                issues.extend(check_role_material_expectations(emitter))
+                checked.append({"emitter": name, "component": component.get("name"), "kind": "card"})
+        if niagara.get("enabled") is True:
+            component = matching_component(components, name, "NiagaraComponent")
+            if not component:
+                issues.append({"emitter": name, "type": "missing_niagara_component"})
+            else:
+                issues.extend(compare_transform(name, "niagara", niagara, component.get("transform") or {}))
+                issues.extend(compare_timeline(name, emitter, component.get("timeline") or {}))
+                checked.append({"emitter": name, "component": component.get("name"), "kind": "niagara"})
+    ok = not issues
+    return {
+        "name": "preview_component_contract",
+        "status": "pass" if ok else "fail",
+        "message": "Preview components are present and match the expected transforms/material ranges." if ok else "Preview components do not match the expected placement or parameter contract.",
+        "data": {"checked": checked, "issues": issues},
+    }
+
+
 def gate_alpha_mask_applied(spec: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
     alpha_ready = any(entry.get("name") == "alpha_mask" and entry.get("status") == "ready" for entry in manifest.get("passes", []))
     alpha_emitters = []
@@ -358,6 +397,110 @@ def preview_components(unreal_result: dict[str, Any] | None) -> list[dict[str, A
     bundle = unreal_result.get("bundle") or {}
     preview = bundle.get("preview") or {}
     return preview.get("components") or []
+
+
+def matching_component(components: list[dict[str, Any]], emitter_name: str, component_type: str) -> dict[str, Any] | None:
+    return next(
+        (
+            component
+            for component in components
+            if component.get("type") == component_type and emitter_name in str(component.get("name") or "")
+        ),
+        None,
+    )
+
+
+def compare_transform(emitter_name: str, kind: str, expected: dict[str, Any], actual: dict[str, Any]) -> list[dict[str, Any]]:
+    issues = []
+    for key, tolerance in {"location": 0.01, "rotation": 0.01, "scale": 0.01}.items():
+        expected_value = expected.get(key)
+        actual_value = actual.get(key)
+        if expected_value is None:
+            continue
+        if not vector_close(expected_value, actual_value, tolerance):
+            issues.append(
+                {
+                    "emitter": emitter_name,
+                    "type": f"{kind}_{key}_mismatch",
+                    "expected": list(expected_value) if isinstance(expected_value, (list, tuple)) else expected_value,
+                    "actual": list(actual_value) if isinstance(actual_value, (list, tuple)) else actual_value,
+                }
+            )
+    return issues
+
+
+def compare_timeline(emitter_name: str, emitter: dict[str, Any], actual_timeline: dict[str, Any]) -> list[dict[str, Any]]:
+    expected = ((emitter.get("unreal_settings") or {}).get("timeline") or {})
+    issues = []
+    if not expected:
+        return issues
+    for key in ("delay", "duration", "rotation_speed"):
+        if key in expected and not scalar_close(expected.get(key), actual_timeline.get(key), 0.001):
+            issues.append({"emitter": emitter_name, "type": f"timeline_{key}_mismatch", "expected": expected.get(key), "actual": actual_timeline.get(key)})
+    for key in ("opacity", "scale"):
+        if key in expected and not vector_close(expected.get(key), actual_timeline.get(key), 0.001):
+            issues.append({"emitter": emitter_name, "type": f"timeline_{key}_mismatch", "expected": expected.get(key), "actual": actual_timeline.get(key)})
+    return issues
+
+
+def check_role_material_expectations(emitter: dict[str, Any]) -> list[dict[str, Any]]:
+    role = emitter.get("role")
+    name = emitter.get("name")
+    material = ((emitter.get("unreal_settings") or {}).get("material") or {})
+    issues = []
+    opacity = safe_float(material.get("opacity"))
+    emissive = safe_float(material.get("emissive_strength"))
+    blend = material.get("blend_mode")
+    if role == "reference_matched_composite":
+        issues.extend(expect_range(name, "opacity", opacity, 0.0, 0.4))
+        issues.extend(expect_range(name, "emissive_strength", emissive, 0.5, 3.0))
+    elif role == "fire_pillar":
+        issues.extend(expect_range(name, "opacity", opacity, 0.7, 0.95))
+        issues.extend(expect_range(name, "emissive_strength", emissive, 14.0, 28.0))
+    elif role == "flame_slashes":
+        issues.extend(expect_range(name, "opacity", opacity, 0.45, 0.75))
+        issues.extend(expect_range(name, "emissive_strength", emissive, 7.0, 16.0))
+    elif role == "ground_energy_ring":
+        issues.extend(expect_range(name, "opacity", opacity, 0.45, 0.85))
+    elif role == "impact_core":
+        issues.extend(expect_range(name, "opacity", opacity, 0.75, 1.0))
+        issues.extend(expect_range(name, "emissive_strength", emissive, 16.0, 32.0))
+    elif role == "atmospheric_wisp":
+        issues.extend(expect_range(name, "opacity", opacity, 0.0, 0.12))
+        issues.extend(expect_range(name, "emissive_strength", emissive, 0.0, 0.35))
+        if blend != "translucent":
+            issues.append({"emitter": name, "type": "material_blend_mismatch", "expected": "translucent", "actual": blend})
+    if role not in {"atmospheric_wisp"} and material and blend not in {None, "additive"}:
+        issues.append({"emitter": name, "type": "material_blend_mismatch", "expected": "additive", "actual": blend})
+    return issues
+
+
+def expect_range(emitter_name: str, field: str, value: float | None, minimum: float, maximum: float) -> list[dict[str, Any]]:
+    if value is None or value < minimum or value > maximum:
+        return [{"emitter": emitter_name, "type": f"material_{field}_out_of_range", "expected": [minimum, maximum], "actual": value}]
+    return []
+
+
+def scalar_close(expected: Any, actual: Any, tolerance: float) -> bool:
+    try:
+        return abs(float(expected) - float(actual)) <= tolerance
+    except (TypeError, ValueError):
+        return False
+
+
+def vector_close(expected: Any, actual: Any, tolerance: float) -> bool:
+    if not isinstance(expected, (list, tuple)) or not isinstance(actual, (list, tuple)):
+        return False
+    if len(expected) != len(actual):
+        return False
+    return all(scalar_close(left, right, tolerance) for left, right in zip(expected, actual))
+
+
+def safe_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def asset_pass_for_emitter(effect_type: str | None, emitter: dict[str, Any]) -> str | None:
