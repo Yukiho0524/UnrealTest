@@ -386,6 +386,10 @@ def gate_firestorm_3d_volume_preview(spec: dict[str, Any], unreal_result: dict[s
         component for component in components
         if component.get("type") == "StaticMeshComponent" and str(component.get("name") or "").startswith("VolumeMesh_")
     ]
+    ring_components = [
+        component for component in volume_components
+        if str(component.get("volume_mesh") or "").lower() in {"torus", "ring", "fire_ring", "ice_ring", "vortex_ring"}
+    ]
     required_emitters = {
         "ground_rune_ring",
         "central_fire_pillar",
@@ -399,17 +403,19 @@ def gate_firestorm_3d_volume_preview(spec: dict[str, Any], unreal_result: dict[s
         if any(emitter_name in str(component.get("name") or "") for component in volume_components)
     }
     missing = sorted(required_emitters - covered_emitters)
-    ok = len(volume_components) >= 12 and not missing
+    ok = len(volume_components) >= 12 and len(ring_components) >= 4 and not missing
     return {
         "name": "firestorm_3d_volume_preview",
         "status": "pass" if ok else "fail",
-        "message": "Firestorm preview includes 3D volume mesh shells for the vortex, core, flame walls, and smoke crown." if ok else "Firestorm preview is still too dependent on 2D cards.",
+        "message": "Fire/ice tornado preview includes 3D volume shells plus top/base ring meshes for the vortex." if ok else "Firestorm preview is still too dependent on 2D cards or missing tornado ring structure.",
         "data": {
             "volume_mesh_count": len(volume_components),
+            "ring_mesh_count": len(ring_components),
             "required_emitters": sorted(required_emitters),
             "covered_emitters": sorted(covered_emitters),
             "missing_emitters": missing,
             "volume_component_names": [component.get("name") for component in volume_components],
+            "ring_component_names": [component.get("name") for component in ring_components],
         },
     }
 

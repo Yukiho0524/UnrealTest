@@ -285,6 +285,7 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
         cone_mesh = unreal_module.EditorAssetLibrary.load_asset("/Engine/BasicShapes/Cone")
         sphere_mesh = unreal_module.EditorAssetLibrary.load_asset("/Engine/BasicShapes/Sphere")
         cylinder_mesh = unreal_module.EditorAssetLibrary.load_asset("/Engine/BasicShapes/Cylinder")
+        torus_mesh = unreal_module.EditorAssetLibrary.load_asset("/Engine/BasicShapes/Torus")
         if not plane_mesh:
             result["errors"].append("Could not load /Engine/BasicShapes/Plane for Blueprint preview cards.")
 
@@ -331,7 +332,7 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
                         component["volume_instance"] = transform_index + 1
                     result["components"].append(component)
             for mesh_index, mesh_transform in enumerate(preview_mesh_transforms_for_emitter(emitter, index), start=1):
-                mesh_asset = preview_mesh_for_kind(mesh_transform.get("mesh"), cone_mesh, sphere_mesh, cylinder_mesh)
+                mesh_asset = preview_mesh_for_kind(mesh_transform.get("mesh"), cone_mesh, sphere_mesh, cylinder_mesh, torus_mesh)
                 if mesh_asset and material_path:
                     component = add_static_mesh_component_to_blueprint(
                         unreal_module,
@@ -546,8 +547,10 @@ def preview_mesh_transforms_for_emitter(emitter: dict, index: int) -> list[dict]
     return transforms
 
 
-def preview_mesh_for_kind(kind: str | None, cone_mesh, sphere_mesh, cylinder_mesh=None):
+def preview_mesh_for_kind(kind: str | None, cone_mesh, sphere_mesh, cylinder_mesh=None, torus_mesh=None):
     normalized = str(kind or "").lower()
+    if normalized in {"torus", "ring", "fire_ring", "ice_ring", "vortex_ring"}:
+        return torus_mesh or cylinder_mesh or cone_mesh or sphere_mesh
     if normalized in {"sphere", "orb", "glow_sphere"}:
         return sphere_mesh
     if normalized in {"cylinder", "tube", "column", "vortex_shell", "ring_volume"}:

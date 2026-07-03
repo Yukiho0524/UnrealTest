@@ -271,8 +271,11 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                         {"mesh": "cylinder", "location": [0, 0, 26], "rotation": [0, 0, 0], "scale": [0.26, 0.26, 0.28]},
                         {"mesh": "cylinder", "location": [0, 0, 52], "rotation": [0, 0, 28], "scale": [0.38, 0.38, 0.46]},
                         {"mesh": "cylinder", "location": [0, 0, 80], "rotation": [0, 0, 58], "scale": [0.58, 0.58, 0.52]},
-                        {"mesh": "cylinder", "location": [0, 0, 108], "rotation": [0, 0, 92], "scale": [0.82, 0.82, 0.34]},
+                        {"mesh": "cylinder", "location": [0, 0, 108], "rotation": [0, 0, 92], "scale": [0.76, 0.76, 0.28]},
                         {"mesh": "sphere", "location": [0, 0, 112], "rotation": [0, 0, 0], "scale": [0.92, 0.92, 0.2]},
+                        {"mesh": "torus", "location": [0, 0, 96], "rotation": [0, 0, 12], "scale": [0.78, 0.78, 0.08]},
+                        {"mesh": "torus", "location": [0, 0, 108], "rotation": [0, 0, 36], "scale": [0.98, 0.98, 0.09]},
+                        {"mesh": "torus", "location": [0, 0, 120], "rotation": [0, 0, 68], "scale": [1.18, 1.18, 0.1]},
                     ],
                 }
             )
@@ -349,14 +352,16 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             mesh.update(
                 {
                     "enabled": True,
-                    "mesh": "cylinder",
-                    "instances": [
-                        {"mesh": "cylinder", "location": [0, 0, 2], "rotation": [0, 0, 0], "scale": [0.86, 0.86, 0.02]},
-                        {"mesh": "cylinder", "location": [0, 0, 6], "rotation": [0, 0, 28], "scale": [0.64, 0.64, 0.03]},
-                        {"mesh": "sphere", "location": [0, 0, 12], "rotation": [0, 0, 0], "scale": [0.28, 0.28, 0.08]},
-                    ],
-                }
-            )
+                        "mesh": "cylinder",
+                        "instances": [
+                            {"mesh": "cylinder", "location": [0, 0, 2], "rotation": [0, 0, 0], "scale": [0.86, 0.86, 0.02]},
+                            {"mesh": "cylinder", "location": [0, 0, 6], "rotation": [0, 0, 28], "scale": [0.64, 0.64, 0.03]},
+                            {"mesh": "sphere", "location": [0, 0, 12], "rotation": [0, 0, 0], "scale": [0.28, 0.28, 0.08]},
+                            {"mesh": "torus", "location": [0, 0, 3], "rotation": [0, 0, 10], "scale": [0.96, 0.96, 0.05]},
+                            {"mesh": "torus", "location": [0, 0, 8], "rotation": [0, 0, 42], "scale": [0.72, 0.72, 0.05]},
+                        ],
+                    }
+                )
         niagara["enabled"] = False
     elif role == "impact_core":
         timeline.update({"delay": 0.0, "duration": 0.24, "opacity": [0.0, 0.58, 0.2, 0.0], "scale": [0.32, 0.82, 0.58, 0.0]})
