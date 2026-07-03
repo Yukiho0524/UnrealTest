@@ -2334,13 +2334,18 @@ def clamp01_signed(value: float) -> float:
 
 
 def should_apply_shared_alpha(pass_name: str | None, selected_path: str | None, alpha_path: str | None) -> bool:
-    if pass_name not in {"core_flame_flipbook", "flame_slash_flipbook", "smoke_heat_flipbook", "impact_flash_mask"}:
+    if pass_name not in {"beauty_flipbook", "reference_motion_overlay"}:
         return False
     if not selected_path or not alpha_path:
         return False
     selected = Path(selected_path)
     alpha = Path(alpha_path)
-    return selected.exists() and alpha.exists()
+    if not selected.exists() or not alpha.exists():
+        return False
+    # Role-specific runtime frames already carry their own shaped alpha. Reusing
+    # the package-wide reference mask on those layers has mismatched UVs and
+    # produces visible holes or floating patch textures in the Blueprint preview.
+    return True
 
 
 def should_apply_distortion(emitter: dict[str, Any], distortion_path: str | None) -> bool:

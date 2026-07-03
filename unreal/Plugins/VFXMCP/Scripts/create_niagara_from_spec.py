@@ -1563,10 +1563,10 @@ def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_text
     opacity.set_editor_property("default_value", inferred_opacity(spec))
     opacity_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -60, 300)
     alpha_mask_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -210, 410) if alpha_sample else None
-    depth_opacity_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, 120, 350) if depth_sample else None
-    layer_opacity_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, 300, 350) if layer_mask_sample else None
     normal_emissive_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, 120, 90) if normal_sample else None
     layer_emissive_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, 300, 90) if layer_mask_sample else None
+    normal_emissive_modulator = data_channel_modulator(unreal_module, material, normal_sample, "B", 0.72, 0.28, -120, 500) if normal_sample else None
+    layer_emissive_modulator = data_channel_modulator(unreal_module, material, layer_mask_sample, "R", 0.78, 0.22, 80, 540) if layer_mask_sample else None
 
     library.connect_material_expressions(particle_color, "RGB", particle_tint_multiply, "A")
     library.connect_material_expressions(core_color, "", particle_tint_multiply, "B")
@@ -1592,22 +1592,14 @@ def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_text
     library.connect_material_expressions(texture_color_multiply, "", emissive_multiply, "A")
     library.connect_material_expressions(strength, "", emissive_multiply, "B")
     emissive_output = emissive_multiply
-    if normal_sample and normal_emissive_multiply:
+    if normal_emissive_modulator and normal_emissive_multiply:
         library.connect_material_expressions(emissive_output, "", normal_emissive_multiply, "A")
-        library.connect_material_expressions(normal_sample, "B", normal_emissive_multiply, "B")
+        library.connect_material_expressions(normal_emissive_modulator, "", normal_emissive_multiply, "B")
         emissive_output = normal_emissive_multiply
-    if layer_mask_sample and layer_emissive_multiply:
+    if layer_emissive_modulator and layer_emissive_multiply:
         library.connect_material_expressions(emissive_output, "", layer_emissive_multiply, "A")
-        library.connect_material_expressions(layer_mask_sample, "R", layer_emissive_multiply, "B")
+        library.connect_material_expressions(layer_emissive_modulator, "", layer_emissive_multiply, "B")
         emissive_output = layer_emissive_multiply
-    if depth_sample and depth_opacity_multiply:
-        library.connect_material_expressions(opacity_output, "", depth_opacity_multiply, "A")
-        library.connect_material_expressions(depth_sample, "R", depth_opacity_multiply, "B")
-        opacity_output = depth_opacity_multiply
-    if layer_mask_sample and layer_opacity_multiply:
-        library.connect_material_expressions(opacity_output, "", layer_opacity_multiply, "A")
-        library.connect_material_expressions(layer_mask_sample, "A", layer_opacity_multiply, "B")
-        opacity_output = layer_opacity_multiply
     try:
         library.connect_material_property(texture_color_multiply, "", unreal_module.MaterialProperty.MP_BASE_COLOR)
     except Exception:
@@ -1615,6 +1607,21 @@ def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_text
     library.connect_material_property(emissive_output, "", unreal_module.MaterialProperty.MP_EMISSIVE_COLOR)
     library.connect_material_property(opacity_output, "", unreal_module.MaterialProperty.MP_OPACITY)
     library.layout_material_expressions(material)
+
+
+def data_channel_modulator(unreal_module, material, sample, channel: str, base: float, amount: float, x: int, y: int):
+    if not sample or not hasattr(unreal_module, "MaterialExpressionAdd"):
+        return None
+    library = unreal_module.MaterialEditingLibrary
+    scale = create_material_constant(unreal_module, material, amount, x, y + 90)
+    offset = create_material_constant(unreal_module, material, base, x + 180, y + 90)
+    multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, x, y)
+    add = library.create_material_expression(material, unreal_module.MaterialExpressionAdd, x + 180, y)
+    library.connect_material_expressions(sample, channel, multiply, "A")
+    library.connect_material_expressions(scale, "", multiply, "B")
+    library.connect_material_expressions(multiply, "", add, "A")
+    library.connect_material_expressions(offset, "", add, "B")
+    return add
 
 
 def connect_flipbook_uv_if_needed(unreal_module, material, texture_sample, spec: dict) -> None:

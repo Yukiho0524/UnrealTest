@@ -723,16 +723,23 @@ def cyan_ratio(image: Any) -> float:
 def gate_alpha_mask_applied(spec: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
     alpha_ready = any(entry.get("name") == "alpha_mask" and entry.get("status") == "ready" for entry in manifest.get("passes", []))
     alpha_emitters = []
+    sprite_alpha_emitters = []
+    manifest_by_name = {entry.get("name"): entry for entry in manifest.get("passes", [])}
     for emitter in ((spec.get("vfx_plan") or {}).get("emitters") or []):
         material = ((emitter.get("unreal_settings") or {}).get("material") or {})
         if material.get("alpha_source"):
             alpha_emitters.append(emitter.get("name"))
-    ok = alpha_ready and bool(alpha_emitters)
+            continue
+        pass_name = asset_pass_for_emitter(spec.get("effect_type"), emitter)
+        channels = ((manifest_by_name.get(pass_name) or {}).get("asset_metadata") or {}).get("channels") or {}
+        if float(channels.get("alpha_coverage") or 0.0) > 0.015:
+            sprite_alpha_emitters.append(emitter.get("name"))
+    ok = alpha_ready and bool(alpha_emitters or sprite_alpha_emitters)
     return {
         "name": "alpha_mask_material_link",
         "status": "pass" if ok else "warning",
-        "message": "Alpha mask is linked into material settings." if ok else "Alpha mask exists but is not linked into material settings.",
-        "data": {"alpha_ready": alpha_ready, "alpha_emitters": alpha_emitters},
+        "message": "Alpha is available through material settings or sprite textures." if ok else "Alpha mask exists but no emitter has a material alpha source or alpha-carrying sprite texture.",
+        "data": {"alpha_ready": alpha_ready, "alpha_emitters": alpha_emitters, "sprite_alpha_emitters": sprite_alpha_emitters},
     }
 
 
