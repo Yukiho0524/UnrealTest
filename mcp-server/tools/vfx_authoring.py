@@ -14,12 +14,19 @@ def production_notes_for_plan(effect_type: str, visual_profile: dict[str, Any], 
 
     roles = {emitter.get("role") for emitter in emitters}
     if "primary_body" in roles or effect_type == "fire_or_flame":
+        understanding = visual_profile.get("reference_understanding") or {}
+        ground_role = ((understanding.get("vfx_structure") or {}).get("ground_role") or "")
+        ground_note = (
+            "Ground layer should stay as a small contact flash; avoid turning it into a decorative floor symbol."
+            if ground_role in {"small_contact_flash", "support_only"}
+            else "Ground ring/rune should anchor the effect before the pillar reaches full brightness."
+        )
         notes.extend(
             [
                 "High-similarity mode: use sampled reference flipbooks as motion targets, then rebuild editable layers around that timing.",
                 "Fire impact: separate the vertical pillar, side tongues, ground ring, impact flash, smoke crown, and embers.",
                 "Primary fire pillar must carry the read; do not let embers or template particles become the main shape.",
-                "Ground ring/rune should anchor the effect before the pillar reaches full brightness.",
+                ground_note,
                 "Side flame slashes should be broad, shaped, and asymmetric rather than many identical sprites.",
                 "Smoke/dust crown belongs low around the blast base and should stay darker than the fire.",
                 "Timing: flash and ring lead, pillar peaks next, slashes and embers trail, smoke lingers last.",
@@ -198,6 +205,14 @@ def asset_passes_for_plan(effect_type: str, visual_profile: dict[str, Any], emit
     ]
 
     if effect_type == "fire_or_flame":
+        understanding = visual_profile.get("reference_understanding") or {}
+        ground_role = ((understanding.get("vfx_structure") or {}).get("ground_role") or "")
+        small_ground_contact = ground_role in {"small_contact_flash", "support_only"}
+        ground_purpose = (
+            "Small hot ground contact flash that supports the flame without becoming a decorative floor symbol."
+            if small_ground_contact
+            else "Molten ring/rune anchor that sells impact scale."
+        )
         passes.extend(
             [
                 {
@@ -220,8 +235,8 @@ def asset_passes_for_plan(effect_type: str, visual_profile: dict[str, Any], emit
                     "name": "ground_ring_mask",
                     "source": "procedural_or_ai_stroke",
                     "format": "radial_mask_texture",
-                    "purpose": "Molten ring/rune anchor that sells impact scale.",
-                    "unreal_usage": "Ground card or mesh ring emitter",
+                    "purpose": ground_purpose,
+                    "unreal_usage": "Ground contact card or mesh ring emitter",
                     "required": True,
                 },
                 {
@@ -373,7 +388,7 @@ def composition_layers_for_plan(effect_type: str, emitters: list[dict[str, Any]]
         layers.append(
             {
                 "name": emitter.get("name"),
-                "purpose": purpose_for_role(emitter.get("role"), effect_type),
+                "purpose": purpose_for_emitter(emitter, effect_type),
                 "implementation": f"Niagara system layer using {emitter.get('sprite_shape', 'sprite')} sprite/material.",
                 "renderer": renderer_for_emitter(emitter),
                 "material": material_goal_for_emitter(emitter),
@@ -386,7 +401,9 @@ def composition_layers_for_plan(effect_type: str, emitters: list[dict[str, Any]]
     return layers
 
 
-def purpose_for_role(role: str | None, effect_type: str) -> str:
+def purpose_for_emitter(emitter: dict[str, Any], effect_type: str) -> str:
+    role = emitter.get("role")
+    style = str(emitter.get("material_style") or "")
     if role == "reference_motion":
         return "Sampled reference motion layer used to preserve timing and silhouette similarity."
     if role == "fire_pillar":
@@ -394,6 +411,8 @@ def purpose_for_role(role: str | None, effect_type: str) -> str:
     if role == "flame_slashes":
         return "Large side flame tongues and broken slash silhouettes."
     if role == "ground_energy_ring":
+        if "contact" in style:
+            return "Small ground contact flash that anchors heat at the source without becoming a floor graphic."
         return "Molten ground ring or rune that anchors the blast."
     if role == "primary_body":
         return "Main visual read and silhouette."
@@ -413,6 +432,8 @@ def purpose_for_role(role: str | None, effect_type: str) -> str:
         return "Soft bloom/value support behind hard sprites."
     if role == "atmospheric_wisp":
         return "Smoke, heat, or haze layer that softens the main body."
+    if role == "ground_energy_ring" and "contact" in str(emitter.get("material_style", "")):
+        return "Small ground contact flash that anchors the flame without becoming a floor graphic."
     if role == "accent_particles":
         return "Brief hot flashes and high-value accents."
     if effect_type == "fire_or_flame":
@@ -442,6 +463,8 @@ def material_goal_for_emitter(emitter: dict[str, Any]) -> str:
     if role == "flame_slashes":
         return f"{style}: broad orange-red flame tongues with sharp torn alpha."
     if role == "ground_energy_ring":
+        if "contact" in style:
+            return f"{style}: compact hot contact flash and scorched heat glow, not a decorative ring."
         return f"{style}: molten ring/rune strokes with broken hot arcs."
     if role == "primary_body":
         return f"{style}: alpha-shaped unlit emissive material for the main silhouette."
@@ -526,7 +549,10 @@ def tuning_for_emitter(emitter: dict[str, Any]) -> dict[str, Any]:
     elif role == "flame_slashes":
         tuning.update({"spawn_density": "2-4 large cards", "opacity": "0.45-0.75", "shape": "wide broken side arcs"})
     elif role == "ground_energy_ring":
-        tuning.update({"spawn_density": "single ring", "opacity": "0.45-0.8", "shape": "broken molten circle/rune"})
+        if "contact" in str(emitter.get("material_style", "")):
+            tuning.update({"spawn_density": "single compact pulse", "opacity": "0.28-0.58", "shape": "small ground heat contact"})
+        else:
+            tuning.update({"spawn_density": "single ring", "opacity": "0.45-0.8", "shape": "broken molten circle/rune"})
     elif role == "supporting_glow":
         tuning.update({"spawn_density": "low", "opacity": "0.18-0.45", "sort": "behind primary particles"})
     elif role == "secondary_body":

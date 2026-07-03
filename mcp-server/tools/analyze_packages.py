@@ -8,6 +8,7 @@ from typing import Any
 from schemas import VFXEmitterPlan, VFXParticles, VFXPlan, VFXSource, VFXSpec, VFXTiming
 from tools.analyze_images import IMAGE_EXTENSIONS, _classify_from_filename
 from tools.image_features import analyze_media_files
+from tools.reference_understanding import build_reference_understanding
 from tools.reference_sprites import create_reference_card_source, create_reference_flipbook_source, create_reference_sprite_source
 from tools.vfx_authoring import (
     asset_passes_for_plan,
@@ -50,8 +51,11 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
     prompt = read_package_prompt(package_dir)
     media_files = find_package_media(package_dir)
     visual_profile = analyze_media_files(media_files)
+    reference_understanding = build_reference_understanding(package_dir, media_files, visual_profile, prompt)
+    visual_profile["reference_understanding"] = reference_understanding
 
     effect_type, motion, palette, notes = infer_package_defaults(package_dir, media_files, prompt)
+    effect_type, motion = apply_reference_understanding_defaults(effect_type, motion, reference_understanding)
     if visual_profile.get("palette"):
         palette = visual_profile["palette"]
     if visual_profile.get("motion_hint") == "vertical_column_rise":
@@ -75,6 +79,7 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
 
     notes.extend(package_notes(package_dir, prompt, media_files, config))
     notes.extend(visual_profile_notes(visual_profile))
+    notes.extend(reference_understanding_notes(reference_understanding))
 
     particles = VFXParticles(
         spawn_rate=float(config.get("spawn_rate", inferred_spawn_rate(visual_profile)) if config.get("lock_particles") else inferred_spawn_rate(visual_profile)),
@@ -176,6 +181,35 @@ def visual_profile_notes(visual_profile: dict[str, Any]) -> list[str]:
         f"Image analysis style hint: {visual_profile.get('style_hint', 'unknown')}",
         f"Image analysis palette: {', '.join(visual_profile.get('palette', []))}",
     ]
+
+
+def reference_understanding_notes(reference_understanding: dict[str, Any]) -> list[str]:
+    structure = reference_understanding.get("vfx_structure") or {}
+    return [
+        f"Reference understanding category: {reference_understanding.get('effect_category', 'unknown')}",
+        f"Reference dominant read: {reference_understanding.get('dominant_read', 'unknown')}",
+        f"Reference primary form: {structure.get('primary_form', 'unknown')}",
+        f"Reference renderer bias: {', '.join(structure.get('renderer_bias', []))}",
+    ]
+
+
+def apply_reference_understanding_defaults(effect_type: str, motion: str, reference_understanding: dict[str, Any]) -> tuple[str, str]:
+    category = reference_understanding.get("effect_category")
+    structure = reference_understanding.get("vfx_structure") or {}
+    if category in {"fire_plume", "fire_magic_vortex"}:
+        effect_type = "fire_or_flame"
+    elif category == "electric_arc":
+        effect_type = "electric_arc"
+    elif category == "glowing_fragment_field":
+        effect_type = "glowing_particles"
+    motion_model = str(structure.get("motion_model") or "")
+    if "vortex" in motion_model or "orbital" in motion_model:
+        motion = "pulse_loop"
+    elif "ignition" in motion_model or "lift" in motion_model or "flame" in motion_model:
+        motion = "rise_and_fade"
+    elif "strike" in motion_model or "branch" in motion_model:
+        motion = "branch_and_flicker"
+    return effect_type, motion
 
 
 def build_vfx_plan(
@@ -280,6 +314,20 @@ def build_vfx_plan(
 
     if effect_type == "fire_or_flame":
         fire_palette_values = fire_palette(palette)
+        understanding = visual_profile.get("reference_understanding") or {}
+        ground_role = ((understanding.get("vfx_structure") or {}).get("ground_role") or "impact_ring")
+        uses_small_ground_contact = ground_role in {"small_contact_flash", "support_only"}
+        ground_name = "ground_contact_flash" if uses_small_ground_contact else "ground_rune_ring"
+        ground_shape = "fire_contact_flash" if uses_small_ground_contact else "fire_rune_ring"
+        ground_style = "fire_ground_contact_flash" if uses_small_ground_contact else "fire_ground_rune_ring"
+        ground_motion = "contact_heat_flash_then_decay" if uses_small_ground_contact else "radial_ignite_then_decay"
+        ground_start_size = 82.0 if uses_small_ground_contact else 160.0
+        ground_end_size = 142.0 if uses_small_ground_contact else 280.0
+        ground_notes = (
+            "Small hot ground contact flash only; avoid a decorative floor symbol unless the reference clearly shows one."
+            if uses_small_ground_contact
+            else "Readable molten magic circle/ring at the ground contact point."
+        )
         emitters = []
         if reference_flipbook:
             emitters.append(
@@ -356,17 +404,17 @@ def build_vfx_plan(
                 notes=["Large side flame tongues and broken slash shapes around the base."],
             ),
             VFXEmitterPlan(
-                name="ground_rune_ring",
+                name=ground_name,
                 role="ground_energy_ring",
-                sprite_shape="fire_rune_ring",
-                material_style="fire_ground_rune_ring",
-                motion="radial_ignite_then_decay",
+                sprite_shape=ground_shape,
+                material_style=ground_style,
+                motion=ground_motion,
                 spawn_rate=1.0,
                 lifetime_seconds=0.72,
-                start_size=160.0,
-                end_size=280.0,
+                start_size=ground_start_size,
+                end_size=ground_end_size,
                 color_palette=[fire_palette_values[1], fire_palette_values[0], "#4A0B04"],
-                notes=["Readable molten magic circle/ring at the ground contact point."],
+                notes=[ground_notes],
             ),
             VFXEmitterPlan(
                 name="impact_flash",
@@ -411,7 +459,7 @@ def build_vfx_plan(
         ])
         emitters = apply_unreal_settings(emitters, config)
         return VFXPlan(
-            visual_intent="High-similarity fire impact: sampled reference motion layer plus native fire pillar, side slashes, molten ring, smoke crown, and sparse embers.",
+            visual_intent="High-similarity fire impact: sampled reference motion layer plus native fire pillar, side slashes, small ground contact, smoke crown, and sparse embers.",
             primary_emitter="reference_motion_flipbook" if reference_flipbook else "central_fire_pillar",
             emitters=emitters,
             reference_card_source=reference_card_source,
@@ -715,6 +763,8 @@ def default_material_settings_for_emitter(emitter: VFXEmitterPlan) -> dict[str, 
         return {"opacity": 0.82, "emissive_strength": 18.0, "blend_mode": "additive"}
     if "fire_side_slashes" in style:
         return {"opacity": 0.66, "emissive_strength": 11.0, "blend_mode": "additive"}
+    if "fire_ground_contact" in style:
+        return {"opacity": 0.52, "emissive_strength": 8.0, "blend_mode": "additive"}
     if "fire_ground_rune" in style:
         return {"opacity": 0.68, "emissive_strength": 9.0, "blend_mode": "additive"}
     if "fire_impact_flash" in style:

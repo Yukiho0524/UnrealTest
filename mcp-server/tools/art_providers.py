@@ -555,15 +555,49 @@ def default_workflow_template() -> Path:
 def default_prompt(package_path: Path) -> str:
     prompt_path = package_path / "prompt.md"
     designer_prompt = prompt_path.read_text(encoding="utf-8").strip() if prompt_path.exists() else ""
+    understanding = reference_understanding_prompt(package_path)
     contract = asset_pass_contract_prompt(package_path)
     return (
         f"{designer_prompt}\n\n"
+        f"{understanding}\n\n"
         "Create a realtime game VFX asset pass bundle, not only one beauty image. "
         "Preserve the reference silhouette, timing, color palette, and energy motion. "
         "Every output must keep the same pivot, frame count, bounds, and camera framing. "
         "No watermark, no character, no UI, no text, no baked environment background.\n\n"
         f"{contract}"
     ).strip()
+
+
+def reference_understanding_prompt(package_path: Path) -> str:
+    try:
+        spec = analyze_effect_package(package_path)
+        understanding = (spec.visual_profile or {}).get("reference_understanding") or {}
+    except Exception:
+        understanding = {}
+    if not understanding:
+        return "Reference understanding: unavailable. First infer the dominant VFX structure before generating passes."
+    structure = understanding.get("vfx_structure") or {}
+    priorities = understanding.get("asset_pass_priorities") or []
+    negative = understanding.get("negative_requirements") or []
+    lines = [
+        "Reference understanding:",
+        f"- Effect category: {understanding.get('effect_category')}",
+        f"- Dominant read: {understanding.get('dominant_read')}",
+        f"- Primary form: {structure.get('primary_form')}",
+        f"- Silhouette: {structure.get('silhouette')}",
+        f"- Motion model: {structure.get('motion_model')}",
+        f"- Required layers: {', '.join(structure.get('required_layers') or [])}",
+        f"- Renderer stack: {', '.join(structure.get('renderer_bias') or [])}",
+        f"- Ground role: {structure.get('ground_role')}",
+        "",
+        "Asset pass priorities from reference understanding:",
+    ]
+    lines.extend(f"- {item.get('pass')}: {item.get('priority')} priority; {item.get('reason')}" for item in priorities[:8])
+    if negative:
+        lines.append("")
+        lines.append("Do not generate:")
+        lines.extend(f"- {item}" for item in negative)
+    return "\n".join(lines)
 
 
 def asset_pass_contract_prompt(package_path: Path) -> str:

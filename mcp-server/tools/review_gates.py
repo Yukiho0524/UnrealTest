@@ -18,6 +18,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
     patched_spec = apply_asset_pass_manifest_to_spec_dict(spec.to_dict(), manifest)
     unreal_result = read_latest_unreal_result(spec.name)
     gates = [
+        gate_reference_understanding(patched_spec, manifest),
         gate_required_passes(manifest),
         gate_similarity_target(manifest),
         gate_fire_pass_coverage(spec.effect_type, manifest),
@@ -59,6 +60,32 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
             "summary": manifest.get("summary"),
         },
         "unrealResultFile": str(latest_unreal_result_path(spec.name)) if latest_unreal_result_path(spec.name).exists() else None,
+    }
+
+
+def gate_reference_understanding(spec: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
+    understanding = (
+        ((spec.get("visual_profile") or {}).get("reference_understanding") or {})
+        or manifest.get("reference_understanding")
+        or {}
+    )
+    structure = understanding.get("vfx_structure") or {}
+    required_layers = structure.get("required_layers") or []
+    renderer_bias = structure.get("renderer_bias") or []
+    negative = understanding.get("negative_requirements") or []
+    ok = bool(understanding.get("effect_category") and structure.get("primary_form") and required_layers)
+    return {
+        "name": "reference_understanding",
+        "status": "pass" if ok else "warning",
+        "message": "Reference media has a structured VFX understanding before generation." if ok else "Reference media was not structurally understood before generation.",
+        "data": {
+            "effect_category": understanding.get("effect_category"),
+            "dominant_read": understanding.get("dominant_read"),
+            "primary_form": structure.get("primary_form"),
+            "required_layers": required_layers,
+            "renderer_bias": renderer_bias,
+            "negative_requirement_count": len(negative),
+        },
     }
 
 
@@ -319,8 +346,13 @@ def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any]
         or "firestorm" in str(((emitter.get("unreal_settings") or {}).get("material") or {}).get("style", "")).lower()
         for emitter in emitters
     )
+    ground_emitter_name = next(
+        (str(emitter.get("name") or "") for emitter in emitters if emitter.get("role") == "ground_energy_ring"),
+        "ground_rune_ring",
+    )
+    ground_scale_max = 1.05 if "contact" in ground_emitter_name and not firestorm_preview else 2.6
     expected_bands = {
-        "ground_rune_ring": {"z": (0, 8), "scale_xy_max": 2.6, "component_type": "StaticMeshComponent"},
+        ground_emitter_name: {"z": (0, 8), "scale_xy_max": ground_scale_max, "component_type": "StaticMeshComponent"},
         "impact_flash": {"z": (10, 34), "scale_xy_max": 1.2, "component_type": "StaticMeshComponent"},
         "side_flame_slashes": {"z": (34, 70), "scale_xy_max": 1.9, "component_type": "StaticMeshComponent"},
         "smoke_dust_crown": {"z": (36, 76), "scale_xy_max": 1.6, "component_type": "StaticMeshComponent"},

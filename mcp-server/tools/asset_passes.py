@@ -54,6 +54,7 @@ def build_asset_pass_manifest(
         "package_path": str(package_path),
         "effect_type": spec.effect_type,
         "motion": spec.motion,
+        "reference_understanding": (spec.visual_profile or {}).get("reference_understanding", {}),
         "quality_tier": (plan.quality_target or {}).get("tier") if plan else None,
         "summary": {
             "total_passes": len(entries),
@@ -382,10 +383,17 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                     }
                 )
         else:
-            timeline.update({"delay": 0.02, "duration": 0.72, "opacity": [0.0, 0.9, 0.72, 0.0], "scale": [0.55, 1.12, 1.04, 1.28], "rotation_speed": 18.0})
-            material["opacity"] = max(float(material.get("opacity", 0.72)), 0.76)
-            material["emissive_strength"] = material.get("emissive_strength", 8.0)
-            card.update({"enabled": True, "location": [0, 0, 2], "rotation": [0, 0, 0], "scale": [2.15, 2.15, 1]})
+            is_small_contact = "contact" in name
+            if is_small_contact:
+                timeline.update({"delay": 0.01, "duration": 0.38, "opacity": [0.0, 0.58, 0.28, 0.0], "scale": [0.48, 0.86, 0.72, 0.5], "rotation_speed": 4.0})
+                material["opacity"] = max(float(material.get("opacity", 0.5)), 0.56)
+                material["emissive_strength"] = material.get("emissive_strength", 7.5)
+                card.update({"enabled": True, "location": [0, 0, 2], "rotation": [0, 0, 0], "scale": [0.92, 0.92, 1]})
+            else:
+                timeline.update({"delay": 0.02, "duration": 0.72, "opacity": [0.0, 0.9, 0.72, 0.0], "scale": [0.55, 1.12, 1.04, 1.28], "rotation_speed": 18.0})
+                material["opacity"] = max(float(material.get("opacity", 0.72)), 0.76)
+                material["emissive_strength"] = material.get("emissive_strength", 8.0)
+                card.update({"enabled": True, "location": [0, 0, 2], "rotation": [0, 0, 0], "scale": [2.15, 2.15, 1]})
             mesh["enabled"] = False
         niagara["enabled"] = False
     elif role == "impact_core":
