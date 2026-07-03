@@ -8,6 +8,7 @@ This project should treat reference VFX as implementation guidance, not just vis
 - Unreal Engine 5 Twister / Tornado Niagara: `https://www.youtube.com/watch?v=GIfGq9pB_xE`
 - Unreal Engine 5 Niagara Wind Swirl: `https://www.youtube.com/watch?v=trO_VREoEEk`
 - CGHOW, UE5 Dynamic Trails Niagara: `https://www.youtube.com/watch?v=Ey5sJDF_q1Q`
+- CGHOW, UE5 Ribbon Trail in Niagara: `https://www.youtube.com/watch?v=Y5EUpKx8k_g`
 - Unreal Engine VFX Tutorials collection: `https://www.bilibili.com/video/BV1hb411E7oH/`
 - Unreal Engine 4/5 Advanced VFX Tutorial playlist: `https://www.youtube.com/playlist?list=PLnfzvYOawOqAdnEOOW00BHX0_c4NgFcCK`
 - Unity Shader Graph Tornado Shader: `https://www.youtube.com/watch?v=Qyh9RPxeKcA`
@@ -22,6 +23,7 @@ This project should treat reference VFX as implementation guidance, not just vis
 - Mesh or shader-guided funnel shapes are used to keep the volume coherent from oblique camera angles.
 - Noise/erosion controls edge breakup, while the main silhouette remains clean and readable.
 - Trail effects are built from motion-following ribbons with tunable length, speed, color, and fade, not from static streak textures.
+- Ribbon trails use a dark/transparent tail, bright inner core, and color-gradient edge; this is the right visual model for tornado spiral bands.
 - Beam and aura effects separate core, Fresnel edge, Voronoi/noise breakup, stretched particles, and impact rings.
 - Advanced Unreal VFX examples frequently use material functions and post-process/force-field layers to make the effect react to space instead of staying as a flat sprite stack.
 
@@ -32,6 +34,7 @@ This project should treat reference VFX as implementation guidance, not just vis
 - Add top and bottom rings as deliberate shapes, not accidental card intersections.
 - Use review gates to prevent regression back to pure orange fire, grey checker materials, or cup-like silhouettes.
 - Add a real ribbon/trail layer for the tornado path before adding more sprite cards.
+- Tornado spiral bands should use ribbon-style UV flow, tapered width, and opacity falloff rather than short disconnected arc sprites.
 - Add material-driven erosion and edge lighting before increasing emissive strength.
 - Keep secondary particles as detail only; the main read should come from the vortex path, rings, and material motion.
 
