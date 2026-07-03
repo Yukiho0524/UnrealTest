@@ -7,6 +7,9 @@ This project should treat reference VFX as implementation guidance, not just vis
 - Gabriel Aguiar, Unity VFX Graph Fire Tornado: `https://www.youtube.com/watch?v=gLWe_Wzc8Xc`
 - Unreal Engine 5 Twister / Tornado Niagara: `https://www.youtube.com/watch?v=GIfGq9pB_xE`
 - Unreal Engine 5 Niagara Wind Swirl: `https://www.youtube.com/watch?v=trO_VREoEEk`
+- CGHOW, UE5 Dynamic Trails Niagara: `https://www.youtube.com/watch?v=Ey5sJDF_q1Q`
+- Unreal Engine VFX Tutorials collection: `https://www.bilibili.com/video/BV1hb411E7oH/`
+- Unreal Engine 4/5 Advanced VFX Tutorial playlist: `https://www.youtube.com/playlist?list=PLnfzvYOawOqAdnEOOW00BHX0_c4NgFcCK`
 - Unity Shader Graph Tornado Shader: `https://www.youtube.com/watch?v=Qyh9RPxeKcA`
 - Original user reference, Fire and Ice Tornado Tutorial: `https://www.youtube.com/watch?v=xvV90kdBCPQ`
 
@@ -18,6 +21,9 @@ This project should treat reference VFX as implementation guidance, not just vis
 - The base is a glowing energy pool or ring; it supports the tornado but should not become a pedestal.
 - Mesh or shader-guided funnel shapes are used to keep the volume coherent from oblique camera angles.
 - Noise/erosion controls edge breakup, while the main silhouette remains clean and readable.
+- Trail effects are built from motion-following ribbons with tunable length, speed, color, and fade, not from static streak textures.
+- Beam and aura effects separate core, Fresnel edge, Voronoi/noise breakup, stretched particles, and impact rings.
+- Advanced Unreal VFX examples frequently use material functions and post-process/force-field layers to make the effect react to space instead of staying as a flat sprite stack.
 
 ## Current Generator Requirements
 
@@ -25,9 +31,14 @@ This project should treat reference VFX as implementation guidance, not just vis
 - Maintain a cyan lower band, white transition, and orange upper fire band.
 - Add top and bottom rings as deliberate shapes, not accidental card intersections.
 - Use review gates to prevent regression back to pure orange fire, grey checker materials, or cup-like silhouettes.
+- Add a real ribbon/trail layer for the tornado path before adding more sprite cards.
+- Add material-driven erosion and edge lighting before increasing emissive strength.
+- Keep secondary particles as detail only; the main read should come from the vortex path, rings, and material motion.
 
 ## Known Gaps
 
 - The current procedural atlas is still a bootstrap substitute for simulation or AI-generated flipbooks.
 - The Unreal material does not yet use true motion vectors, depth/thickness, or volumetric raymarching.
 - The current 3D helpers are preview geometry, not a production fire/ice tornado shader.
+- The current preview does not yet author Niagara ribbons or spline-guided trails, which are essential for matching the wind swirl and dynamic trail references.
+- The current material builder does not yet create Fresnel, Voronoi, or vertical dissolve layers like the vertical beam and advanced VFX references.
