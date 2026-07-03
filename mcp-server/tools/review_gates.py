@@ -422,7 +422,7 @@ def gate_firestorm_3d_volume_preview(spec: dict[str, Any], unreal_result: dict[s
 
 def gate_firestorm_visual_balance(spec: dict[str, Any]) -> dict[str, Any]:
     emitters = ((spec.get("vfx_plan") or {}).get("emitters") or [])
-    if spec.get("effect_type") != "fire_or_flame" or not any(is_firestorm_emitter(emitter) for emitter in emitters):
+    if spec.get("effect_type") != "fire_or_flame" or not is_firestorm_spec(spec):
         return {
             "name": "firestorm_visual_balance",
             "status": "pass",
@@ -469,6 +469,15 @@ def gate_firestorm_visual_balance(spec: dict[str, Any]) -> dict[str, Any]:
 
 
 def gate_fire_ice_tornado_palette(manifest: dict[str, Any]) -> dict[str, Any]:
+    package_name = str(manifest.get("package") or "").lower()
+    motion = str(manifest.get("motion") or "").lower()
+    if "firestorm" not in package_name and "fire_ice" not in motion and "magic_tornado" not in motion:
+        return {
+            "name": "fire_ice_tornado_palette",
+            "status": "pass",
+            "message": "Not a fire/ice tornado package.",
+            "data": {},
+        }
     selected = {
         entry.get("name"): entry.get("selected_asset") or {}
         for entry in manifest.get("passes", [])
@@ -908,15 +917,21 @@ def is_firestorm_emitter(emitter: dict[str, Any]) -> bool:
             material.get("style"),
         )
     ).lower()
-    return "firestorm" in text or str(emitter.get("name") or "") in {
-        "central_fire_pillar",
-        "side_flame_slashes",
-        "back_spiral_flame_wall",
-        "ground_rune_ring",
-        "impact_flash",
-        "smoke_dust_crown",
-        "ember_sparks",
-    }
+    return any(marker in text for marker in ("firestorm", "fire_ice", "magic_tornado", "tornado_vortex")) or str(emitter.get("name") or "") == "back_spiral_flame_wall"
+
+
+def is_firestorm_spec(spec: dict[str, Any]) -> bool:
+    plan = spec.get("vfx_plan") or {}
+    text = " ".join(
+        str(value or "")
+        for value in (
+            spec.get("name"),
+            spec.get("motion"),
+            plan.get("visual_intent"),
+            plan.get("primary_emitter"),
+        )
+    ).lower()
+    return any(marker in text for marker in ("firestorm", "fire_ice", "magic_tornado", "tornado_vortex"))
 
 
 def expect_range(emitter_name: str, field: str, value: float | None, minimum: float, maximum: float) -> list[dict[str, Any]]:

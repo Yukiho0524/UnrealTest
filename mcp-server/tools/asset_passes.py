@@ -220,20 +220,20 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
     card = preview.setdefault("card", {})
     mesh = preview.setdefault("mesh", {})
     niagara = preview.setdefault("niagara", {})
-    firestorm_layer_names = {
-        "central_fire_pillar",
-        "side_flame_slashes",
-        "back_spiral_flame_wall",
-        "ground_rune_ring",
-        "impact_flash",
-        "smoke_dust_crown",
-        "ember_sparks",
-    }
+    firestorm_markers = ("firestorm", "fire_ice", "magic_tornado", "tornado_vortex")
+    marker_text = " ".join(
+        str(value or "")
+        for value in (
+            name,
+            emitter.get("motion"),
+            emitter.get("material_style"),
+            emitter.get("sprite_shape"),
+            material.get("style"),
+        )
+    ).lower()
     is_firestorm = (
-        "firestorm" in name.lower()
-        or name in firestorm_layer_names
-        or "firestorm" in str(emitter.get("motion", "")).lower()
-        or "firestorm" in str(material.get("style", "")).lower()
+        any(marker in marker_text for marker in firestorm_markers)
+        or name == "back_spiral_flame_wall"
     )
 
     if role == "reference_motion":
@@ -253,7 +253,7 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         niagara["enabled"] = False
         emitter.setdefault("notes", []).append("Production preview hides the reference-matched anchor so it cannot be mistaken for the authored effect.")
     elif role == "fire_pillar":
-        if is_firestorm or name == "central_fire_pillar":
+        if is_firestorm:
             timeline.update({"delay": 0.06, "duration": 0.92, "opacity": [0.0, 0.5, 0.4, 0.0], "scale": [0.62, 1.0, 1.04, 0.82], "rotation_speed": 32.0})
             material["opacity"] = 0.5
             material["emissive_strength"] = 9.4
@@ -318,7 +318,7 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             material["opacity"] = max(float(material.get("opacity", 0.5)), 0.68)
             material["emissive_strength"] = max(float(material.get("emissive_strength", 8.5)), 13.0)
             card.update({"enabled": True, "location": [0, -6, 58], "rotation": [88, 0, -18], "scale": [1.82, 0.92, 1]})
-            if is_firestorm or name == "side_flame_slashes":
+            if is_firestorm:
                 timeline.update({"delay": 0.08, "duration": 0.92, "opacity": [0.0, 0.42, 0.34, 0.0], "scale": [0.58, 1.0, 1.04, 0.8], "rotation_speed": -42.0})
                 material["opacity"] = 0.46
                 material["emissive_strength"] = 7.8
@@ -342,13 +342,12 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                 emitter.setdefault("notes", []).append("Firestorm side flames use offset spiral shell cards instead of a single flat ribbon.")
         niagara["enabled"] = False
     elif role == "ground_energy_ring":
-        timeline.update({"delay": 0.02, "duration": 0.9, "opacity": [0.0, 0.28, 0.22, 0.0], "scale": [0.62, 0.86, 0.82, 0.9], "rotation_speed": 5.0})
-        material["opacity"] = 0.32 if is_firestorm else max(float(material.get("opacity", 0.72)), 0.76)
-        material["emissive_strength"] = 3.4 if is_firestorm else material.get("emissive_strength", 8.0)
         if is_firestorm:
+            timeline.update({"delay": 0.02, "duration": 0.9, "opacity": [0.0, 0.28, 0.22, 0.0], "scale": [0.62, 0.86, 0.82, 0.9], "rotation_speed": 5.0})
+            material["opacity"] = 0.32
+            material["emissive_strength"] = 3.4
             material["blend_mode"] = "additive"
-        card.update({"enabled": True, "location": [0, 0, 1.0], "rotation": [0, 0, 0], "scale": [1.28, 1.28, 1]})
-        if is_firestorm or name == "ground_rune_ring":
+            card.update({"enabled": True, "location": [0, 0, 1.0], "rotation": [0, 0, 0], "scale": [1.28, 1.28, 1]})
             mesh.update(
                 {
                     "enabled": True,
@@ -362,13 +361,19 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                         ],
                     }
                 )
+        else:
+            timeline.update({"delay": 0.02, "duration": 0.72, "opacity": [0.0, 0.9, 0.72, 0.0], "scale": [0.55, 1.12, 1.04, 1.28], "rotation_speed": 18.0})
+            material["opacity"] = max(float(material.get("opacity", 0.72)), 0.76)
+            material["emissive_strength"] = material.get("emissive_strength", 8.0)
+            card.update({"enabled": True, "location": [0, 0, 2], "rotation": [0, 0, 0], "scale": [2.15, 2.15, 1]})
+            mesh["enabled"] = False
         niagara["enabled"] = False
     elif role == "impact_core":
         timeline.update({"delay": 0.0, "duration": 0.24, "opacity": [0.0, 0.58, 0.2, 0.0], "scale": [0.32, 0.82, 0.58, 0.0]})
         material["opacity"] = 0.58 if is_firestorm else max(float(material.get("opacity", 0.8)), 0.86)
         material["emissive_strength"] = 9.5 if is_firestorm else max(float(material.get("emissive_strength", 22.0)), 24.0)
         card.update({"enabled": True, "location": [0, -1, 22], "rotation": [88, 0, 0], "scale": [0.54, 0.38, 1]})
-        if is_firestorm or name == "impact_flash":
+        if is_firestorm:
             card["instances"] = [
                 {"location": [0, 0, 22], "rotation": [88, 90, 0], "scale": [0.42, 0.28, 1.0]},
             ]
@@ -383,7 +388,7 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             )
         niagara["enabled"] = False
     elif role == "atmospheric_wisp":
-        if is_firestorm or name == "smoke_dust_crown":
+        if is_firestorm:
             timeline.update({"delay": 0.18, "duration": 0.98, "opacity": [0.0, 0.12, 0.09, 0.0], "scale": [0.64, 1.02, 1.18, 1.34], "rotation_speed": 14.0})
             material["opacity"] = 0.1
             material["emissive_strength"] = 0.16
@@ -411,7 +416,7 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         niagara["enabled"] = False
         emitter.setdefault("notes", []).append("Smoke preview uses a single low-opacity frame so it supports the fire without exposing atlas cards.")
     elif role == "detail_particles":
-        if is_firestorm or name == "ember_sparks":
+        if is_firestorm:
             timeline.update({"delay": 0.12, "duration": 0.45, "opacity": [0.0, 0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0, 1.0], "rotation_speed": 0.0})
             material["opacity"] = 0.0
             material["emissive_strength"] = 0.0
@@ -1142,7 +1147,7 @@ def derive_bootstrap_candidates(
 
     if "ground_ring_mask" in target_names:
         ring_path = output_dir / f"{package_name}_ground_ring_mask.png"
-        create_fire_atlas_pass(ring_path, "firestorm_ground_ring")
+        create_fire_atlas_pass(ring_path, "firestorm_ground_ring" if procedural_only else "ground_ring")
         candidates.setdefault("ground_ring_mask", []).append(derived_candidate(ring_path, "procedural_ground_ring_anchor", source="procedural_layer_synthesis", confidence="medium"))
 
     if "impact_flash_mask" in target_names:
