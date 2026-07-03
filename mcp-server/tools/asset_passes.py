@@ -516,7 +516,7 @@ def sprite_path_for_emitter(pass_name: str, selected: dict[str, str], emitter: d
     preview_path = selected.get("preview_frame_path")
     if playable_firestorm_atlas(selected, emitter):
         return selected.get("path")
-    if preview_path and role in {"fire_pillar", "flame_slashes", "ground_energy_ring", "impact_core", "atmospheric_wisp"}:
+    if preview_path and role in {"fire_pillar", "flame_slashes", "ground_energy_ring", "impact_core", "atmospheric_wisp", "detail_particles"}:
         return preview_path
     return selected.get("path")
 
@@ -947,7 +947,7 @@ def atlas_metadata_for_dimensions(pass_name: str | None, selected: dict[str, str
 
 
 def create_preview_frame_for_asset(selected: dict[str, str], pass_name: str, package_name: str, output_root: Path) -> Path | None:
-    if pass_name not in {"core_flame_flipbook", "flame_slash_flipbook", "ground_ring_mask", "impact_flash_mask", "smoke_heat_flipbook"}:
+    if pass_name not in {"core_flame_flipbook", "flame_slash_flipbook", "ground_ring_mask", "impact_flash_mask", "smoke_heat_flipbook", "ember_sprite_set"}:
         return None
     atlas = explicit_atlas_metadata(selected)
     if not atlas:
@@ -978,10 +978,60 @@ def create_preview_frame_for_asset(selected: dict[str, str], pass_name: str, pac
             runtime_dir = output_root / package_name / "runtime"
             runtime_dir.mkdir(parents=True, exist_ok=True)
             preview_path = runtime_dir / f"{package_name}_{safe_file_token(pass_name)}_preview_frame.png"
+            if pass_name == "ember_sprite_set":
+                best_frame = isolate_single_ember_sprite(best_frame)
             best_frame.save(preview_path)
             return preview_path
     except Exception:
         return None
+
+
+def isolate_single_ember_sprite(frame: Image.Image, output_size: int = 128) -> Image.Image:
+    rgba = frame.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    width, height = rgba.size
+    visited: set[tuple[int, int]] = set()
+    best: tuple[float, tuple[int, int, int, int]] | None = None
+    pixels = rgba.load()
+    alpha_pixels = alpha.load()
+    for y in range(height):
+        for x in range(width):
+            if (x, y) in visited or alpha_pixels[x, y] <= 12:
+                continue
+            stack = [(x, y)]
+            visited.add((x, y))
+            left = right = x
+            top = bottom = y
+            energy = 0.0
+            count = 0
+            while stack:
+                px, py = stack.pop()
+                r, g, b, a = pixels[px, py]
+                lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
+                energy += (a / 255.0) * (0.4 + lum * 0.6)
+                count += 1
+                left = min(left, px)
+                right = max(right, px)
+                top = min(top, py)
+                bottom = max(bottom, py)
+                for nx, ny in ((px - 1, py), (px + 1, py), (px, py - 1), (px, py + 1)):
+                    if nx < 0 or ny < 0 or nx >= width or ny >= height or (nx, ny) in visited:
+                        continue
+                    if alpha_pixels[nx, ny] <= 12:
+                        continue
+                    visited.add((nx, ny))
+                    stack.append((nx, ny))
+            if count >= 2 and (best is None or energy > best[0]):
+                best = (energy, (left, top, right + 1, bottom + 1))
+    if not best:
+        return rgba.resize((output_size, output_size), Image.Resampling.LANCZOS)
+    left, top, right, bottom = best[1]
+    pad = max(4, int(max(right - left, bottom - top) * 0.75))
+    crop = rgba.crop((max(0, left - pad), max(0, top - pad), min(width, right + pad), min(height, bottom + pad)))
+    crop.thumbnail((output_size - 16, output_size - 16), Image.Resampling.LANCZOS)
+    output = Image.new("RGBA", (output_size, output_size), (0, 0, 0, 0))
+    output.alpha_composite(crop, ((output_size - crop.width) // 2, (output_size - crop.height) // 2))
+    return output
 
 
 def frame_energy_score(frame: Image.Image) -> float:
