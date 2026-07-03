@@ -123,6 +123,10 @@ def build_niagara_bundle_from_spec(unreal_module, spec: dict, destination_path: 
         "bundle": {
             "enabled": True,
             "primary_emitter": primary_emitter,
+            "planned_emitter_count": len(emitters),
+            "renderer_stack": (((spec.get("visual_profile") or {}).get("reference_understanding") or {}).get("unreal_strategy") or {}).get("renderer_stack")
+            or (((spec.get("visual_profile") or {}).get("reference_understanding") or {}).get("vfx_structure") or {}).get("renderer_bias")
+            or [],
             "system_count": len(systems),
             "reference_card": reference_card,
             "systems": systems,

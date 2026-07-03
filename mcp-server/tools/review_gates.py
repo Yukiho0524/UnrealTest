@@ -25,6 +25,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_layer_timing(patched_spec, unreal_result),
         gate_distortion_pass_link(patched_spec, manifest),
         gate_reference_matched_anchor(patched_spec, manifest, unreal_result),
+        gate_multi_emitter_unreal_bundle(patched_spec, unreal_result),
         gate_production_preview(patched_spec, unreal_result),
         gate_preview_component_contract(patched_spec, unreal_result),
         gate_unreal_material_creation(unreal_result),
@@ -85,6 +86,40 @@ def gate_reference_understanding(spec: dict[str, Any], manifest: dict[str, Any])
             "required_layers": required_layers,
             "renderer_bias": renderer_bias,
             "negative_requirement_count": len(negative),
+        },
+    }
+
+
+def gate_multi_emitter_unreal_bundle(spec: dict[str, Any], unreal_result: dict[str, Any] | None) -> dict[str, Any]:
+    emitters = ((spec.get("vfx_plan") or {}).get("emitters") or [])
+    bundle = (unreal_result or {}).get("bundle") or {}
+    systems = bundle.get("systems") or []
+    if len(emitters) <= 1:
+        return {
+            "name": "multi_emitter_unreal_bundle",
+            "status": "pass",
+            "message": "Single-emitter package does not require a multi-emitter bundle.",
+            "data": {"planned_emitters": len(emitters), "system_count": len(systems)},
+        }
+    authored_names = {
+        ((system.get("emitter_plan") or {}).get("name") or "")
+        for system in systems
+        if system.get("status") in {"created", "created_from_template"}
+    }
+    planned_names = {str(emitter.get("name") or "") for emitter in emitters}
+    missing = sorted(name for name in planned_names if name and name not in authored_names)
+    ok = len(systems) >= len(emitters) and not missing
+    return {
+        "name": "multi_emitter_unreal_bundle",
+        "status": "pass" if ok else "fail",
+        "message": "Unreal generated one Niagara layer system per planned emitter." if ok else "Unreal bundle is still primary-emitter only or missing planned emitter systems.",
+        "data": {
+            "planned_emitters": len(emitters),
+            "system_count": len(systems),
+            "planned_names": sorted(planned_names),
+            "authored_names": sorted(name for name in authored_names if name),
+            "missing": missing,
+            "renderer_stack": bundle.get("renderer_stack") or [],
         },
     }
 

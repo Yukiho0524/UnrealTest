@@ -11,6 +11,7 @@ from tools.art_providers import generate_art_pass
 from tools.asset_passes import apply_asset_pass_manifest_to_spec_dict, build_asset_pass_manifest
 from tools.review_gates import review_effect_package
 from tools.unreal_bridge import create_niagara_from_spec_command, open_unreal_asset, run_unreal_generation, write_package_spec, write_spec_dict
+from tools.url_ingest import ingest_reference_url
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +39,15 @@ def run_ui(host: str, port: int, references_root: Path, output_root: Path) -> No
                 package_path = package_path_from_payload(references_root, payload)
                 spec = analyze_effect_package(package_path)
                 self.respond_json({"spec": spec.to_dict()})
+                return
+            if path == "/api/ingest-url":
+                payload = self.read_json()
+                result = ingest_reference_url(
+                    str(payload.get("url") or ""),
+                    package_name=payload.get("packageName") or None,
+                    references_root=references_root,
+                )
+                self.respond_json({"ingest": result, "state": build_state(references_root)})
                 return
             if path == "/api/generate":
                 payload = self.read_json()
@@ -341,6 +351,12 @@ def render_index_html() -> str:
         <label for="package">Effect Package</label>
         <select id="package"></select>
 
+        <label for="referenceUrl">Reference URL</label>
+        <input id="referenceUrl" placeholder="https://... image, page, or YouTube">
+
+        <label for="urlPackageName">URL Package Name</label>
+        <input id="urlPackageName" placeholder="Optional">
+
         <label for="destination">Destination Path</label>
         <input id="destination" value="/Game/VFX/Generated/fire">
 
@@ -363,6 +379,7 @@ def render_index_html() -> str:
         <input id="artPasses" value="required" placeholder="required, all, or comma-separated pass names">
 
         <button id="analyze">Analyze Package</button>
+        <button class="secondary" id="ingestUrl">Ingest URL</button>
         <button class="secondary" id="generate">Generate Spec</button>
         <button class="secondary" id="generateArt">Generate AI Art Pass</button>
         <button class="secondary" id="prepareAssets">Prepare AAA Passes</button>
@@ -380,6 +397,8 @@ def render_index_html() -> str:
   <script>
     const projectSelect = document.querySelector("#project");
     const packageSelect = document.querySelector("#package");
+    const referenceUrlInput = document.querySelector("#referenceUrl");
+    const urlPackageNameInput = document.querySelector("#urlPackageName");
     const destinationInput = document.querySelector("#destination");
     const artProviderSelect = document.querySelector("#artProvider");
     const comfyBaseUrlInput = document.querySelector("#comfyBaseUrl");
@@ -407,6 +426,8 @@ def render_index_html() -> str:
       return {
         projectPath: projectSelect.value,
         packageName: packageSelect.value,
+        url: referenceUrlInput.value,
+        urlPackageName: urlPackageNameInput.value,
         destinationPath: destinationInput.value,
         artProvider: artProviderSelect.value,
         comfyBaseUrl: comfyBaseUrlInput.value,
@@ -449,6 +470,18 @@ def render_index_html() -> str:
         method: "POST",
         body: JSON.stringify(selectedPayload())
       }));
+    });
+
+    document.querySelector("#ingestUrl").addEventListener("click", async () => {
+      output.textContent = "Ingesting reference URL...";
+      show(await request("/api/ingest-url", {
+        method: "POST",
+        body: JSON.stringify({
+          url: referenceUrlInput.value,
+          packageName: urlPackageNameInput.value
+        })
+      }));
+      await loadState();
     });
 
     document.querySelector("#generate").addEventListener("click", async () => {

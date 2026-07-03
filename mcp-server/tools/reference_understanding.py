@@ -1,10 +1,81 @@
 from __future__ import annotations
 
+import base64
+import json
+import os
 from pathlib import Path
 from typing import Any
+import urllib.request
 
 
 def build_reference_understanding(package_path: Path, media_files: list[Path], visual_profile: dict[str, Any], prompt: str = "") -> dict[str, Any]:
+    provider = os.environ.get("VFXMCP_VISION_PROVIDER", "local").strip().lower()
+    if provider == "openai" and os.environ.get("OPENAI_API_KEY"):
+        vision = build_openai_reference_understanding(package_path, media_files, visual_profile, prompt)
+        if vision.get("status") == "ready":
+            return vision
+    return build_local_reference_understanding(package_path, media_files, visual_profile, prompt)
+
+
+def build_openai_reference_understanding(package_path: Path, media_files: list[Path], visual_profile: dict[str, Any], prompt: str = "") -> dict[str, Any]:
+    local = build_local_reference_understanding(package_path, media_files, visual_profile, prompt)
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    model = os.environ.get("VFXMCP_OPENAI_VISION_MODEL", "gpt-5")
+    images = [image_content_part(path) for path in media_files[:4] if path.exists()]
+    if not images:
+        return {**local, "source": "openai_vision_unavailable", "status": "fallback_no_images"}
+    instruction = (
+        "You are a senior real-time game VFX art director. Analyze the reference media and return strict JSON. "
+        "Focus on effect structure, silhouette, motion, material layers, Unreal renderer stack, required texture/data passes, "
+        "and negative requirements. Do not describe unrelated scene content."
+    )
+    schema_prompt = {
+        "local_hypothesis": local,
+        "designer_prompt": prompt,
+        "required_json_keys": [
+            "effect_category",
+            "confidence",
+            "dominant_read",
+            "vfx_structure",
+            "generation_strategy",
+            "unreal_strategy",
+            "asset_pass_priorities",
+            "negative_requirements",
+            "review_focus",
+        ],
+    }
+    payload = {
+        "model": model,
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": instruction + "\n\n" + json.dumps(schema_prompt, ensure_ascii=True)},
+                    *images,
+                ],
+            }
+        ],
+        "text": {"format": {"type": "json_object"}},
+    }
+    try:
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/responses",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=90) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+        parsed = parse_openai_json_response(response_payload)
+        return normalize_vision_understanding(parsed, local, model)
+    except Exception as exc:
+        fallback = dict(local)
+        fallback["source"] = "local_reference_understanding_v1_openai_failed"
+        fallback["vision_error"] = str(exc)
+        return fallback
+
+
+def build_local_reference_understanding(package_path: Path, media_files: list[Path], visual_profile: dict[str, Any], prompt: str = "") -> dict[str, Any]:
     package_name = package_path.name.lower()
     prompt_lower = prompt.lower()
     text = " ".join([package_name, prompt_lower, *[path.stem.lower() for path in media_files]])
@@ -46,6 +117,79 @@ def build_reference_understanding(package_path: Path, media_files: list[Path], v
         "review_focus": review_focus_for(category, structure),
         "vision_model_prompt": vision_model_prompt_for(package_path.name, category, structure),
     }
+
+
+def image_content_part(path: Path) -> dict[str, str]:
+    suffix = path.suffix.lower()
+    mime = "image/png" if suffix == ".png" else ("image/gif" if suffix == ".gif" else "image/jpeg")
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return {"type": "input_image", "image_url": f"data:{mime};base64,{encoded}"}
+
+
+def parse_openai_json_response(response_payload: dict[str, Any]) -> dict[str, Any]:
+    texts: list[str] = []
+    for item in response_payload.get("output") or []:
+        for content in item.get("content") or []:
+            if content.get("type") in {"output_text", "text"} and content.get("text"):
+                texts.append(str(content.get("text")))
+    if not texts and response_payload.get("output_text"):
+        texts.append(str(response_payload.get("output_text")))
+    if not texts:
+        return {}
+    text = "\n".join(texts).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            return json.loads(text[start : end + 1])
+    return {}
+
+
+def normalize_vision_understanding(parsed: dict[str, Any], local: dict[str, Any], model: str) -> dict[str, Any]:
+    if not parsed:
+        fallback = dict(local)
+        fallback["source"] = "local_reference_understanding_v1_openai_empty"
+        return fallback
+    structure = parsed.get("vfx_structure") or {}
+    if not structure:
+        structure = {
+            "primary_form": parsed.get("primary_form") or (local.get("vfx_structure") or {}).get("primary_form"),
+            "silhouette": parsed.get("silhouette") or (local.get("vfx_structure") or {}).get("silhouette"),
+            "motion_model": parsed.get("motion_model") or (local.get("vfx_structure") or {}).get("motion_model"),
+            "required_layers": parsed.get("layers") or (local.get("vfx_structure") or {}).get("required_layers"),
+            "renderer_bias": parsed.get("unreal_renderer_stack") or (local.get("vfx_structure") or {}).get("renderer_bias"),
+            "ground_role": parsed.get("ground_role") or (local.get("vfx_structure") or {}).get("ground_role"),
+            "needs_motion_target": (local.get("vfx_structure") or {}).get("needs_motion_target", False),
+        }
+    normalized = dict(local)
+    normalized.update(
+        {
+            "source": "openai_vision",
+            "vision_model": model,
+            "status": "ready",
+            "effect_category": parsed.get("effect_category") or local.get("effect_category"),
+            "confidence": parsed.get("confidence") or "medium",
+            "dominant_read": parsed.get("dominant_read") or dominant_read_for(parsed.get("effect_category") or local.get("effect_category"), structure),
+            "vfx_structure": merge_dict((local.get("vfx_structure") or {}), structure),
+            "generation_strategy": merge_dict((local.get("generation_strategy") or {}), parsed.get("generation_strategy") or {}),
+            "unreal_strategy": merge_dict((local.get("unreal_strategy") or {}), parsed.get("unreal_strategy") or {}),
+            "asset_pass_priorities": parsed.get("asset_pass_priorities") or local.get("asset_pass_priorities") or [],
+            "negative_requirements": parsed.get("negative_requirements") or local.get("negative_requirements") or [],
+            "review_focus": parsed.get("review_focus") or parsed.get("similarity_review_focus") or local.get("review_focus") or [],
+            "raw_vision_understanding": parsed,
+        }
+    )
+    return normalized
+
+
+def merge_dict(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    result = dict(base)
+    for key, value in (override or {}).items():
+        if value not in (None, "", []):
+            result[key] = value
+    return result
 
 
 def infer_effect_category(text: str, shape: str, style: str) -> str:

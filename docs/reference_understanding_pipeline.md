@@ -20,10 +20,20 @@ The new `reference_understanding` block is the handoff contract between visual a
 ## CLI
 
 ```powershell
+py mcp-server/server.py ingest-url https://example.com/reference.png --name fire_from_url
 py mcp-server/server.py understand samples/references/fire
+py mcp-server/server.py understand samples/references/fire --vision-provider openai
 py mcp-server/server.py analyze-package samples/references/fire
 py mcp-server/server.py prepare-assets samples/references/fire
 py mcp-server/server.py review samples/references/fire
+```
+
+To use OpenAI vision:
+
+```powershell
+$env:OPENAI_API_KEY="sk-..."
+$env:VFXMCP_VISION_PROVIDER="openai"
+py mcp-server/server.py understand samples/references/fire --vision-provider openai
 ```
 
 ## Review Rule

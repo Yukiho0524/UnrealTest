@@ -172,7 +172,8 @@ generated/specs/fire.vfxspec.json
 
 ## 下一步
 
-- 讓 UE 端依 `vfx_plan.emitters` 建立多個實際 Niagara emitter，而不只使用 primary emitter。
-- 從 GIF 生成 flipbook 或序列幀 texture。
-- 將網址擷取出的圖片走同一套資料包分析流程。
-- 加入 vision model，提升形狀、材質與動態拆解精度。
+- 已完成初版：UE 端會依 `vfx_plan.emitters` 建立多個 Niagara layer system，並在 `BP_<name>_VFXPreview` 中組成 bundle preview；review 會檢查 `multi_emitter_unreal_bundle`，避免退回只生成 primary emitter。
+- 已完成初版：GIF 會被取樣成 reference flipbook atlas，並帶入 atlas columns、rows、frame count、fps metadata。
+- 已完成初版：`ingest-url` 可以把圖片 URL、一般網頁圖片或 YouTube thumbnail 擷取成 `samples/references/<package>/images/` 資料包，UI 也提供 Reference URL 匯入。
+- 已完成初版：`reference_understanding` 會先輸出特效類型、主輪廓、motion model、layer stack、renderer stack 與 negative requirements。設定 `VFXMCP_VISION_PROVIDER=openai` 並提供 `OPENAI_API_KEY` 時，會使用 OpenAI vision；否則使用本地 heuristic fallback。
+- 仍需強化：目前 Unreal 視覺結果還不能當作可直接用的遊戲實戰特效。下一階段重點是把 preview card/mesh helper 升級成真正 Niagara ribbon、volume/material graph、motion vector、depth/thickness、normal/lighting、distortion flow 與 AI/simulation 生成的 production pass bundle。

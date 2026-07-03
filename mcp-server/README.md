@@ -9,7 +9,7 @@ The MVP flow is:
 3. Save specs as JSON for inspection and iteration.
 4. Pass a spec to Unreal-side tooling to create Niagara assets.
 
-The current implementation intentionally keeps image analysis heuristic-based. A later pass can replace `tools/analyze_images.py` with a vision model without changing the Unreal bridge contract.
+The current implementation has a structured `reference_understanding` layer. By default it uses local image heuristics. Set `VFXMCP_VISION_PROVIDER=openai` and `OPENAI_API_KEY` to use the OpenAI vision adapter before pass generation.
 
 ## Local Run
 
@@ -20,7 +20,8 @@ python mcp-server/server.py analyze-folder samples/references --out generated/sp
 ## Planned MCP Tools
 
 - `analyze_reference_folder(path) -> VFXSpec[]`
-- `analyze_reference_url(url) -> VFXSpec`
+- `ingest_reference_url(url, package_name) -> ReferencePackage`
+- `understand_reference_package(path, vision_provider) -> ReferenceUnderstanding`
 - `create_niagara_from_spec(spec, destination_path) -> UnrealAssetResult`
 - `preview_effect(asset_path) -> PreviewResult`
 - `iterate_effect(asset_path, instruction) -> UnrealAssetResult`
