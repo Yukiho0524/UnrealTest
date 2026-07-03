@@ -295,29 +295,51 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             )
             emitter.setdefault("notes", []).append("Firestorm core uses a tapered 3D funnel: narrow ground contact, widening upper vortex, and a smoky crown.")
         else:
-            timeline.update({"delay": 0.07, "duration": 0.62, "opacity": [0.0, 0.82, 0.68, 0.0], "scale": [0.48, 1.05, 0.96, 0.66], "rotation_speed": 16.0})
+            timeline.update({"delay": 0.03, "duration": 0.78, "opacity": [0.0, 0.86, 0.62, 0.0], "scale": [0.42, 1.08, 1.0, 0.58], "rotation_speed": 10.0})
             material["opacity"] = max(float(material.get("opacity", 0.54)), 0.72)
             material["emissive_strength"] = max(float(material.get("emissive_strength", 14.0)), 15.0)
-            card.update({"enabled": True, "location": [0, 0, 92], "rotation": [88, 0, 0], "scale": [0.76, 1.46, 1.0]})
-            card["volume_mode"] = "cross_billboard_fire_column"
+            card.update({"enabled": True, "location": [0, 0, 82], "rotation": [88, 0, 0], "scale": [0.58, 1.34, 1.0]})
+            card["volume_mode"] = "tutorial_cross_billboard_core"
             card["instances"] = [
-                {"location": [0, 0, 84], "rotation": [88, 58, -6], "scale": [0.68, 1.28, 1.0]},
-                {"location": [0, 0, 98], "rotation": [88, 122, 8], "scale": [0.62, 1.18, 1.0]},
+                {"location": [0, 0, 72], "rotation": [88, 45, -6], "scale": [0.52, 1.22, 1.0]},
+                {"location": [0, 0, 88], "rotation": [88, 92, 5], "scale": [0.62, 1.28, 1.0]},
+                {"location": [0, 0, 104], "rotation": [88, 137, 8], "scale": [0.46, 0.98, 1.0]},
             ]
             mesh.update(
                 {
                     "enabled": True,
                     "mesh": "sphere",
                     "instances": [
-                        {"mesh": "sphere", "location": [0, 0, 28], "rotation": [0, 0, 0], "scale": [0.46, 0.46, 0.2]},
-                        {"mesh": "sphere", "location": [0, 0, 54], "rotation": [0, 0, 0], "scale": [0.38, 0.38, 0.28]},
-                        {"mesh": "cylinder", "location": [0, 0, 84], "rotation": [0, 0, 18], "scale": [0.32, 0.32, 0.46]},
+                        {"mesh": "sphere", "location": [0, 0, 24], "rotation": [0, 0, 0], "scale": [0.42, 0.42, 0.16]},
+                        {"mesh": "sphere", "location": [0, 0, 50], "rotation": [0, 0, 0], "scale": [0.34, 0.34, 0.22]},
+                        {"mesh": "cylinder", "location": [0, 0, 78], "rotation": [0, 0, 18], "scale": [0.28, 0.28, 0.42]},
+                        {"mesh": "sphere", "location": [0, 0, 106], "rotation": [0, 0, 0], "scale": [0.34, 0.34, 0.18]},
                     ],
                 }
             )
         niagara["enabled"] = False
     elif role == "flame_slashes":
-        if "back_spiral" in name:
+        if "rear_flame" in name:
+            timeline.update({"delay": 0.16, "duration": 0.68, "opacity": [0.0, 0.48, 0.34, 0.0], "scale": [0.46, 1.04, 1.16, 0.7], "rotation_speed": 18.0})
+            material["opacity"] = 0.46
+            material["emissive_strength"] = 7.4
+            card.update({"enabled": True, "location": [0, 12, 64], "rotation": [87, 0, 22], "scale": [0.88, 0.82, 1]})
+            card["volume_mode"] = "tutorial_rear_outer_tongues"
+            card["instances"] = [
+                {"location": [-8, 12, 52], "rotation": [87, 48, 24], "scale": [0.58, 0.62, 1.0]},
+                {"location": [9, 11, 78], "rotation": [87, -42, -18], "scale": [0.72, 0.7, 1.0]},
+            ]
+            mesh.update(
+                {
+                    "enabled": True,
+                    "mesh": "sphere",
+                    "instances": [
+                        {"mesh": "sphere", "location": [-8, 13, 54], "rotation": [0, 0, 0], "scale": [0.42, 0.18, 0.16]},
+                        {"mesh": "sphere", "location": [9, 12, 80], "rotation": [0, 0, 0], "scale": [0.48, 0.18, 0.16]},
+                    ],
+                }
+            )
+        elif "back_spiral" in name:
             timeline.update({"delay": 0.16, "duration": 0.78, "opacity": [0.0, 0.52, 0.42, 0.0], "scale": [0.48, 1.18, 1.24, 0.72], "rotation_speed": 22.0})
             material["opacity"] = max(float(material.get("opacity", 0.48)), 0.5)
             material["emissive_strength"] = max(float(material.get("emissive_strength", 7.5)), 9.0)
@@ -344,13 +366,14 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                     }
                 )
         else:
-            timeline.update({"delay": 0.1, "duration": 0.72, "opacity": [0.0, 0.82, 0.62, 0.0], "scale": [0.5, 1.14, 1.2, 0.78], "rotation_speed": -28.0})
-            material["opacity"] = max(float(material.get("opacity", 0.5)), 0.6)
-            material["emissive_strength"] = max(float(material.get("emissive_strength", 8.5)), 10.5)
-            card.update({"enabled": True, "location": [0, -6, 56], "rotation": [88, 0, -18], "scale": [1.35, 0.72, 1]})
+            timeline.update({"delay": 0.08, "duration": 0.62, "opacity": [0.0, 0.76, 0.52, 0.0], "scale": [0.44, 1.08, 1.16, 0.7], "rotation_speed": -18.0})
+            material["opacity"] = max(float(material.get("opacity", 0.5)), 0.56)
+            material["emissive_strength"] = max(float(material.get("emissive_strength", 8.5)), 9.2)
+            card.update({"enabled": True, "location": [0, -9, 52], "rotation": [88, 0, -18], "scale": [0.96, 0.62, 1]})
+            card["volume_mode"] = "tutorial_front_outer_tongues"
             card["instances"] = [
-                {"location": [8, -8, 52], "rotation": [87, 40, -24], "scale": [0.92, 0.58, 1.0]},
-                {"location": [-8, 4, 46], "rotation": [87, -44, 18], "scale": [0.78, 0.52, 1.0]},
+                {"location": [8, -10, 48], "rotation": [87, 44, -28], "scale": [0.62, 0.48, 1.0]},
+                {"location": [-9, -8, 62], "rotation": [87, -48, 22], "scale": [0.58, 0.44, 1.0]},
             ]
             if is_firestorm:
                 timeline.update({"delay": 0.08, "duration": 0.92, "opacity": [0.0, 0.42, 0.34, 0.0], "scale": [0.58, 1.0, 1.04, 0.8], "rotation_speed": -42.0})
@@ -449,11 +472,32 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             niagara["enabled"] = False
             emitter.setdefault("notes", []).append("Firestorm smoke crown is visible at very low opacity to break the bright spike silhouette without creating black cards.")
             return
-        timeline.update({"delay": 0.18, "duration": 1.05, "opacity": [0.0, 0.24, 0.18, 0.0], "scale": [0.62, 1.0, 1.22, 1.46], "rotation_speed": 5.0})
-        material["opacity"] = min(float(material.get("opacity", 0.2)), 0.1)
-        material["emissive_strength"] = min(float(material.get("emissive_strength", 0.35)), 0.22)
+        if "heat_distortion" in name:
+            timeline.update({"delay": 0.08, "duration": 0.82, "opacity": [0.0, 0.08, 0.06, 0.0], "scale": [0.52, 1.0, 1.12, 1.28], "rotation_speed": 9.0})
+            material["opacity"] = 0.055
+            material["emissive_strength"] = 0.04
+            material["distortion_strength"] = max(float(material.get("distortion_strength", 0.075)), 0.13)
+            material["blend_mode"] = "translucent"
+            card.update({"enabled": True, "location": [0, 3, 72], "rotation": [86, 0, 4], "scale": [1.1, 1.28, 1]})
+            card["volume_mode"] = "tutorial_heat_haze_shell"
+            mesh.update(
+                {
+                    "enabled": True,
+                    "mesh": "sphere",
+                    "instances": [
+                        {"mesh": "sphere", "location": [0, 2, 62], "rotation": [0, 0, 0], "scale": [0.68, 0.46, 0.2]},
+                        {"mesh": "sphere", "location": [0, 3, 88], "rotation": [0, 0, 0], "scale": [0.82, 0.54, 0.18]},
+                    ],
+                }
+            )
+            niagara["enabled"] = False
+            emitter.setdefault("notes", []).append("Tutorial heat haze is a low-opacity distortion carrier, not a visible smoke card.")
+            return
+        timeline.update({"delay": 0.18, "duration": 1.05, "opacity": [0.0, 0.2, 0.14, 0.0], "scale": [0.62, 1.0, 1.22, 1.46], "rotation_speed": 5.0})
+        material["opacity"] = min(float(material.get("opacity", 0.2)), 0.085)
+        material["emissive_strength"] = min(float(material.get("emissive_strength", 0.35)), 0.18)
         material["blend_mode"] = "translucent"
-        card.update({"enabled": True, "location": [-5, 8, 58], "rotation": [86, 0, 8], "scale": [1.5, 1.02, 1]})
+        card.update({"enabled": True, "location": [-4, 8, 76], "rotation": [86, 0, 8], "scale": [1.18, 0.9, 1]})
         niagara["enabled"] = False
         emitter.setdefault("notes", []).append("Smoke preview uses a single low-opacity frame so it supports the fire without exposing atlas cards.")
     elif role == "detail_particles":

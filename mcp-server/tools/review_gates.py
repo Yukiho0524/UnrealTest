@@ -33,6 +33,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_fire_spatial_design(patched_spec, unreal_result),
         gate_firestorm_3d_volume_preview(patched_spec, unreal_result),
         gate_regular_fire_3d_preview(patched_spec, unreal_result),
+        gate_tutorial_fire_stack(patched_spec, unreal_result),
         gate_firestorm_visual_balance(patched_spec),
         gate_fire_ice_tornado_palette(manifest),
         gate_alpha_mask_applied(patched_spec, manifest),
@@ -569,6 +570,59 @@ def gate_regular_fire_3d_preview(spec: dict[str, Any], unreal_result: dict[str, 
             "core_card_count": len(core_cards),
             "side_card_count": len(side_cards),
             "core_volume_names": [component.get("name") for component in core_volume],
+        },
+    }
+
+
+def gate_tutorial_fire_stack(spec: dict[str, Any], unreal_result: dict[str, Any] | None) -> dict[str, Any]:
+    if spec.get("effect_type") != "fire_or_flame" or is_firestorm_spec(spec):
+        return {
+            "name": "tutorial_fire_stack",
+            "status": "pass",
+            "message": "Tutorial fire stack gate is not required for this effect.",
+            "data": {"required": False},
+        }
+    emitters = ((spec.get("vfx_plan") or {}).get("emitters") or [])
+    names = {str(emitter.get("name") or "") for emitter in emitters}
+    roles_by_name = {str(emitter.get("name") or ""): emitter.get("role") for emitter in emitters}
+    required_names = {
+        "central_fire_pillar",
+        "side_flame_slashes",
+        "rear_flame_tongues",
+        "smoke_dust_crown",
+        "heat_distortion_haze",
+        "ember_sparks",
+    }
+    components = preview_components(unreal_result)
+    component_names = [str(component.get("name") or "") for component in components]
+    missing_emitters = sorted(required_names - names)
+    missing_components = sorted(
+        name for name in required_names
+        if not any(name in component_name for component_name in component_names)
+    )
+    heat_material = next(
+        (((emitter.get("unreal_settings") or {}).get("material") or {}) for emitter in emitters if emitter.get("name") == "heat_distortion_haze"),
+        {},
+    )
+    primary = (spec.get("vfx_plan") or {}).get("primary_emitter")
+    ok = (
+        primary == "central_fire_pillar"
+        and not missing_emitters
+        and not missing_components
+        and roles_by_name.get("rear_flame_tongues") == "flame_slashes"
+        and roles_by_name.get("heat_distortion_haze") == "atmospheric_wisp"
+        and bool(heat_material.get("distortion_source"))
+    )
+    return {
+        "name": "tutorial_fire_stack",
+        "status": "pass" if ok else "warning",
+        "message": "Regular fire uses a tutorial-style Niagara/VFX layer stack." if ok else "Regular fire is missing one or more tutorial-style stack layers.",
+        "data": {
+            "primary_emitter": primary,
+            "missing_emitters": missing_emitters,
+            "missing_components": missing_components,
+            "heat_haze_has_distortion": bool(heat_material.get("distortion_source")),
+            "components": component_names,
         },
     }
 

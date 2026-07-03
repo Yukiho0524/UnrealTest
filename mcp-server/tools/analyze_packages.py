@@ -404,6 +404,19 @@ def build_vfx_plan(
                 notes=["Large side flame tongues and broken slash shapes around the base."],
             ),
             VFXEmitterPlan(
+                name="rear_flame_tongues",
+                role="flame_slashes",
+                sprite_shape="flame_slash",
+                material_style="fire_side_slashes",
+                motion="rear_tongues_lag_and_lift",
+                spawn_rate=2.0,
+                lifetime_seconds=0.58,
+                start_size=44.0,
+                end_size=170.0,
+                color_palette=fire_palette_values[1:],
+                notes=["Offset rear flame tongues create a tutorial-style crossed volume instead of a flat front sheet."],
+            ),
+            VFXEmitterPlan(
                 name=ground_name,
                 role="ground_energy_ring",
                 sprite_shape=ground_shape,
@@ -444,6 +457,19 @@ def build_vfx_plan(
                 notes=["Dark low crown around the blast base; it should support the fire, not cover it."],
             ),
             VFXEmitterPlan(
+                name="heat_distortion_haze",
+                role="atmospheric_wisp",
+                sprite_shape="smoke_wisp",
+                material_style="translucent_heat_distortion",
+                motion="rising_heat_haze_column",
+                spawn_rate=4.0,
+                lifetime_seconds=0.82,
+                start_size=70.0,
+                end_size=210.0,
+                color_palette=["#18120F", "#4A3024", fire_palette_values[1]],
+                notes=["Low-opacity heat haze shell that carries distortion and breaks the hard card silhouette."],
+            ),
+            VFXEmitterPlan(
                 name="ember_sparks",
                 role="detail_particles",
                 sprite_shape="shard",
@@ -459,8 +485,8 @@ def build_vfx_plan(
         ])
         emitters = apply_unreal_settings(emitters, config)
         return VFXPlan(
-            visual_intent="High-similarity fire impact: sampled reference motion layer plus native fire pillar, side slashes, small ground contact, smoke crown, and sparse embers.",
-            primary_emitter="reference_motion_flipbook" if reference_flipbook else "central_fire_pillar",
+            visual_intent="Tutorial-style Unreal fire stack: native core flame, crossed outer tongues, small contact flash, smoke/heat haze, and sparse embers. Reference media is only a target, not the rendered main layer.",
+            primary_emitter="central_fire_pillar",
             emitters=emitters,
             reference_card_source=reference_card_source,
             composition_layers=composition_layers_for_plan(effect_type, [emitter.__dict__ for emitter in emitters], bool(reference_card_source)),
