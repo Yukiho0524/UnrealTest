@@ -29,6 +29,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_unreal_material_creation(unreal_result),
         gate_fire_spatial_design(patched_spec, unreal_result),
         gate_firestorm_3d_volume_preview(patched_spec, unreal_result),
+        gate_regular_fire_3d_preview(patched_spec, unreal_result),
         gate_firestorm_visual_balance(patched_spec),
         gate_fire_ice_tornado_palette(manifest),
         gate_alpha_mask_applied(patched_spec, manifest),
@@ -416,6 +417,47 @@ def gate_firestorm_3d_volume_preview(spec: dict[str, Any], unreal_result: dict[s
             "missing_emitters": missing,
             "volume_component_names": [component.get("name") for component in volume_components],
             "ring_component_names": [component.get("name") for component in ring_components],
+        },
+    }
+
+
+def gate_regular_fire_3d_preview(spec: dict[str, Any], unreal_result: dict[str, Any] | None) -> dict[str, Any]:
+    if spec.get("effect_type") != "fire_or_flame" or is_firestorm_spec(spec):
+        return {
+            "name": "regular_fire_3d_preview",
+            "status": "pass",
+            "message": "Not a regular fire package.",
+            "data": {},
+        }
+    components = preview_components(unreal_result)
+    core_volume = [
+        component for component in components
+        if component.get("type") == "StaticMeshComponent"
+        and str(component.get("name") or "").startswith("VolumeMesh_")
+        and "central_fire_pillar" in str(component.get("name") or "")
+    ]
+    core_cards = [
+        component for component in components
+        if component.get("type") == "StaticMeshComponent"
+        and "central_fire_pillar" in str(component.get("name") or "")
+        and str(component.get("name") or "").startswith("LayerCard_")
+    ]
+    side_cards = [
+        component for component in components
+        if component.get("type") == "StaticMeshComponent"
+        and "side_flame_slashes" in str(component.get("name") or "")
+        and str(component.get("name") or "").startswith("LayerCard_")
+    ]
+    ok = len(core_volume) >= 2 and len(core_cards) >= 2 and len(side_cards) >= 2
+    return {
+        "name": "regular_fire_3d_preview",
+        "status": "pass" if ok else "fail",
+        "message": "Regular fire preview has core volume helpers and cross-billboard flame layers." if ok else "Regular fire preview is still too dependent on a single 2D card.",
+        "data": {
+            "core_volume_count": len(core_volume),
+            "core_card_count": len(core_cards),
+            "side_card_count": len(side_cards),
+            "core_volume_names": [component.get("name") for component in core_volume],
         },
     }
 
