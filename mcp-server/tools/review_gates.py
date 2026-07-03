@@ -24,6 +24,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_fire_pass_coverage(spec.effect_type, manifest),
         gate_layer_timing(patched_spec, unreal_result),
         gate_distortion_pass_link(patched_spec, manifest),
+        gate_material_data_pass_links(patched_spec, manifest),
         gate_reference_matched_anchor(patched_spec, manifest, unreal_result),
         gate_multi_emitter_unreal_bundle(patched_spec, unreal_result),
         gate_production_preview(patched_spec, unreal_result),
@@ -232,6 +233,49 @@ def gate_distortion_pass_link(spec: dict[str, Any], manifest: dict[str, Any]) ->
         "status": "pass" if ok else "warning",
         "message": "Distortion flow is available and linked into material settings." if ok else "Distortion flow is missing or not linked into material settings.",
         "data": {"distortion_ready": distortion_ready, "distortion_emitters": distortion_emitters},
+    }
+
+
+def gate_material_data_pass_links(spec: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
+    if spec.get("effect_type") != "fire_or_flame":
+        return {
+            "name": "material_data_pass_links",
+            "status": "pass",
+            "message": "Material data pass link gate is scoped to fire packages.",
+            "data": {},
+        }
+    entries = {entry.get("name"): entry for entry in manifest.get("passes", [])}
+    required_sources = {
+        "depth_or_thickness": "depth_thickness_source",
+        "normal_or_lighting": "normal_lighting_source",
+        "layer_mask_pack": "layer_mask_source",
+    }
+    emitters = ((spec.get("vfx_plan") or {}).get("emitters") or [])
+    material_emitters = [
+        emitter for emitter in emitters
+        if emitter.get("role") in {"fire_pillar", "flame_slashes", "atmospheric_wisp", "primary_body", "secondary_body"}
+    ]
+    linked = {key: [] for key in required_sources}
+    missing_ready_links = []
+    for pass_name, material_key in required_sources.items():
+        ready = (entries.get(pass_name) or {}).get("status") == "ready"
+        if not ready:
+            continue
+        for emitter in material_emitters:
+            material = ((emitter.get("unreal_settings") or {}).get("material") or {})
+            if material.get(material_key):
+                linked[pass_name].append(emitter.get("name"))
+        if not linked[pass_name]:
+            missing_ready_links.append(pass_name)
+    ok = not missing_ready_links
+    return {
+        "name": "material_data_pass_links",
+        "status": "pass" if ok else "warning",
+        "message": "Depth/thickness, normal/lighting, and layer masks are linked into fire material settings." if ok else "Some ready material data passes are not linked into fire material settings.",
+        "data": {
+            "linked": linked,
+            "missing_ready_links": missing_ready_links,
+        },
     }
 
 

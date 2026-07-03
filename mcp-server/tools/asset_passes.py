@@ -90,6 +90,9 @@ def apply_asset_pass_manifest_to_spec_dict(spec: dict[str, Any], manifest: dict[
     distortion_pass = passes_by_name.get("distortion_flow")
     distortion_selected = (distortion_pass or {}).get("selected_asset") or {}
     distortion_path = distortion_selected.get("path")
+    depth_path = ((passes_by_name.get("depth_or_thickness") or {}).get("selected_asset") or {}).get("path")
+    normal_path = ((passes_by_name.get("normal_or_lighting") or {}).get("selected_asset") or {}).get("path")
+    layer_mask_path = ((passes_by_name.get("layer_mask_pack") or {}).get("selected_asset") or {}).get("path")
     for emitter in plan.get("emitters") or []:
         pass_name = asset_pass_for_emitter(patched.get("effect_type"), emitter)
         if not pass_name:
@@ -117,6 +120,16 @@ def apply_asset_pass_manifest_to_spec_dict(spec: dict[str, Any], manifest: dict[
         if should_apply_distortion(emitter, distortion_path):
             material["distortion_source"] = distortion_path
             material["distortion_strength"] = material.get("distortion_strength", 0.075)
+        if should_apply_volume_material_passes(emitter):
+            if depth_path and Path(depth_path).exists():
+                material["depth_thickness_source"] = depth_path
+                material["depth_thickness_usage"] = "opacity_and_soft_volume_modulation"
+            if normal_path and Path(normal_path).exists():
+                material["normal_lighting_source"] = normal_path
+                material["normal_lighting_usage"] = "emissive_lighting_modulation"
+            if layer_mask_path and Path(layer_mask_path).exists():
+                material["layer_mask_source"] = layer_mask_path
+                material["layer_mask_usage"] = "core_edge_smoke_ground_channel_masks"
     apply_production_preview_layers(patched, manifest)
     patched["vfx_plan"] = plan
     patched.setdefault("notes", []).append(
@@ -2334,6 +2347,10 @@ def should_apply_distortion(emitter: dict[str, Any], distortion_path: str | None
     if not distortion_path or not Path(distortion_path).exists():
         return False
     return emitter.get("role") in {"fire_pillar", "flame_slashes", "atmospheric_wisp", "primary_bolt", "secondary_bolts"}
+
+
+def should_apply_volume_material_passes(emitter: dict[str, Any]) -> bool:
+    return emitter.get("role") in {"fire_pillar", "flame_slashes", "atmospheric_wisp", "primary_body", "secondary_body"}
 
 
 def quality_note_for_selected_asset(selected: dict[str, str] | None) -> str:

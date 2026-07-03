@@ -760,6 +760,9 @@ def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str)
         "texture_path": texture_path,
         "alpha_texture_path": None,
         "distortion_texture_path": None,
+        "depth_thickness_texture_path": None,
+        "normal_lighting_texture_path": None,
+        "layer_mask_texture_path": None,
         "palette": spec["color_palette"],
         "errors": [],
         "created": False,
@@ -769,14 +772,23 @@ def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str)
         texture = create_or_replace_sprite_texture(unreal_module, texture_name, destination_path, spec)
         alpha_texture = create_or_replace_alpha_texture(unreal_module, f"{texture_name}_Alpha", destination_path, spec)
         distortion_texture = create_or_replace_distortion_texture(unreal_module, f"{texture_name}_Distortion", destination_path, spec)
+        depth_texture = create_or_replace_depth_thickness_texture(unreal_module, f"{texture_name}_DepthThickness", destination_path, spec)
+        normal_texture = create_or_replace_normal_lighting_texture(unreal_module, f"{texture_name}_NormalLighting", destination_path, spec)
+        layer_mask_texture = create_or_replace_layer_mask_texture(unreal_module, f"{texture_name}_LayerMask", destination_path, spec)
         if alpha_texture:
             result["alpha_texture_path"] = alpha_texture_path
         if distortion_texture:
             result["distortion_texture_path"] = distortion_texture_path
+        if depth_texture:
+            result["depth_thickness_texture_path"] = f"{destination_path}/{texture_name}_DepthThickness"
+        if normal_texture:
+            result["normal_lighting_texture_path"] = f"{destination_path}/{texture_name}_NormalLighting"
+        if layer_mask_texture:
+            result["layer_mask_texture_path"] = f"{destination_path}/{texture_name}_LayerMask"
         delete_asset_if_exists(unreal_module, instance_path)
         delete_asset_if_exists(unreal_module, material_path)
-        material = create_or_replace_material(unreal_module, material_name, destination_path, spec, texture, alpha_texture, distortion_texture)
-        material_instance = create_or_replace_material_instance(unreal_module, instance_name, destination_path, material, spec, texture, alpha_texture, distortion_texture)
+        material = create_or_replace_material(unreal_module, material_name, destination_path, spec, texture, alpha_texture, distortion_texture, depth_texture, normal_texture, layer_mask_texture)
+        material_instance = create_or_replace_material_instance(unreal_module, instance_name, destination_path, material, spec, texture, alpha_texture, distortion_texture, depth_texture, normal_texture, layer_mask_texture)
         result["created"] = bool(material and material_instance)
         return result
     except Exception as exc:
@@ -828,6 +840,36 @@ def create_or_replace_distortion_texture(unreal_module, texture_name: str, desti
         return None
     texture = import_texture_from_source(unreal_module, texture_name, destination_path, distortion_source, spec)
     configure_distortion_texture_asset(unreal_module, texture)
+    unreal_module.EditorAssetLibrary.save_loaded_asset(texture)
+    return texture
+
+
+def create_or_replace_depth_thickness_texture(unreal_module, texture_name: str, destination_path: str, spec: dict):
+    source = primary_material_texture_source_path(spec, "depth_thickness_source")
+    if not source:
+        return None
+    texture = import_texture_from_source(unreal_module, texture_name, destination_path, source, spec)
+    configure_alpha_texture_asset(unreal_module, texture)
+    unreal_module.EditorAssetLibrary.save_loaded_asset(texture)
+    return texture
+
+
+def create_or_replace_normal_lighting_texture(unreal_module, texture_name: str, destination_path: str, spec: dict):
+    source = primary_material_texture_source_path(spec, "normal_lighting_source")
+    if not source:
+        return None
+    texture = import_texture_from_source(unreal_module, texture_name, destination_path, source, spec)
+    configure_texture_asset(unreal_module, texture)
+    unreal_module.EditorAssetLibrary.save_loaded_asset(texture)
+    return texture
+
+
+def create_or_replace_layer_mask_texture(unreal_module, texture_name: str, destination_path: str, spec: dict):
+    source = primary_material_texture_source_path(spec, "layer_mask_source")
+    if not source:
+        return None
+    texture = import_texture_from_source(unreal_module, texture_name, destination_path, source, spec)
+    configure_alpha_texture_asset(unreal_module, texture)
     unreal_module.EditorAssetLibrary.save_loaded_asset(texture)
     return texture
 
@@ -1286,7 +1328,7 @@ def set_texture_mip_setting(unreal_module, texture, *setting_names: str) -> None
             return
 
 
-def create_or_replace_material(unreal_module, material_name: str, destination_path: str, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None):
+def create_or_replace_material(unreal_module, material_name: str, destination_path: str, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None, depth_texture=None, normal_texture=None, layer_mask_texture=None):
     material_path = f"{destination_path}/{material_name}"
 
     asset_tools = unreal_module.AssetToolsHelpers.get_asset_tools()
@@ -1296,13 +1338,13 @@ def create_or_replace_material(unreal_module, material_name: str, destination_pa
         raise RuntimeError(f"Could not create material: {material_path}")
 
     configure_material_properties(unreal_module, material, spec)
-    build_sprite_material_graph(unreal_module, material, spec, sprite_texture, alpha_texture, distortion_texture)
+    build_sprite_material_graph(unreal_module, material, spec, sprite_texture, alpha_texture, distortion_texture, depth_texture, normal_texture, layer_mask_texture)
     annotate_asset(unreal_module, material, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(material)
     return material
 
 
-def create_or_replace_material_instance(unreal_module, instance_name: str, destination_path: str, material, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None):
+def create_or_replace_material_instance(unreal_module, instance_name: str, destination_path: str, material, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None, depth_texture=None, normal_texture=None, layer_mask_texture=None):
     instance_path = f"{destination_path}/{instance_name}"
 
     asset_tools = unreal_module.AssetToolsHelpers.get_asset_tools()
@@ -1324,6 +1366,12 @@ def create_or_replace_material_instance(unreal_module, instance_name: str, desti
         unreal_module.MaterialEditingLibrary.set_material_instance_texture_parameter_value(material_instance, "AlphaTexture", alpha_texture)
     if distortion_texture:
         unreal_module.MaterialEditingLibrary.set_material_instance_texture_parameter_value(material_instance, "DistortionTexture", distortion_texture)
+    if depth_texture:
+        unreal_module.MaterialEditingLibrary.set_material_instance_texture_parameter_value(material_instance, "DepthThicknessTexture", depth_texture)
+    if normal_texture:
+        unreal_module.MaterialEditingLibrary.set_material_instance_texture_parameter_value(material_instance, "NormalLightingTexture", normal_texture)
+    if layer_mask_texture:
+        unreal_module.MaterialEditingLibrary.set_material_instance_texture_parameter_value(material_instance, "LayerMaskTexture", layer_mask_texture)
     annotate_asset(unreal_module, material_instance, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(material_instance)
     return material_instance
@@ -1454,7 +1502,7 @@ def configure_material_properties(unreal_module, material, spec: dict) -> None:
     material.set_editor_property("use_material_attributes", False)
 
 
-def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None) -> None:
+def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None, depth_texture=None, normal_texture=None, layer_mask_texture=None) -> None:
     library = unreal_module.MaterialEditingLibrary
     palette = palette_as_linear_colors(spec["color_palette"])
 
@@ -1479,6 +1527,24 @@ def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_text
         strength_node = library.create_material_expression(material, unreal_module.MaterialExpressionScalarParameter, -940, 610)
         strength_node.set_editor_property("parameter_name", "DistortionStrength")
         strength_node.set_editor_property("default_value", inferred_distortion_strength(spec))
+    depth_sample = None
+    if depth_texture and hasattr(unreal_module, "MaterialExpressionTextureSampleParameter2D"):
+        depth_sample = library.create_material_expression(material, unreal_module.MaterialExpressionTextureSampleParameter2D, -980, 560)
+        depth_sample.set_editor_property("parameter_name", "DepthThicknessTexture")
+        depth_sample.set_editor_property("texture", depth_texture)
+        connect_flipbook_uv_if_needed(unreal_module, material, depth_sample, spec)
+    normal_sample = None
+    if normal_texture and hasattr(unreal_module, "MaterialExpressionTextureSampleParameter2D"):
+        normal_sample = library.create_material_expression(material, unreal_module.MaterialExpressionTextureSampleParameter2D, -980, 720)
+        normal_sample.set_editor_property("parameter_name", "NormalLightingTexture")
+        normal_sample.set_editor_property("texture", normal_texture)
+        connect_flipbook_uv_if_needed(unreal_module, material, normal_sample, spec)
+    layer_mask_sample = None
+    if layer_mask_texture and hasattr(unreal_module, "MaterialExpressionTextureSampleParameter2D"):
+        layer_mask_sample = library.create_material_expression(material, unreal_module.MaterialExpressionTextureSampleParameter2D, -760, 560)
+        layer_mask_sample.set_editor_property("parameter_name", "LayerMaskTexture")
+        layer_mask_sample.set_editor_property("texture", layer_mask_texture)
+        connect_flipbook_uv_if_needed(unreal_module, material, layer_mask_sample, spec)
 
     particle_color = library.create_material_expression(material, unreal_module.MaterialExpressionParticleColor, -760, 40)
     core_color = library.create_material_expression(material, unreal_module.MaterialExpressionVectorParameter, -760, 220)
@@ -1497,6 +1563,10 @@ def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_text
     opacity.set_editor_property("default_value", inferred_opacity(spec))
     opacity_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -60, 300)
     alpha_mask_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, -210, 410) if alpha_sample else None
+    depth_opacity_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, 120, 350) if depth_sample else None
+    layer_opacity_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, 300, 350) if layer_mask_sample else None
+    normal_emissive_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, 120, 90) if normal_sample else None
+    layer_emissive_multiply = library.create_material_expression(material, unreal_module.MaterialExpressionMultiply, 300, 90) if layer_mask_sample else None
 
     library.connect_material_expressions(particle_color, "RGB", particle_tint_multiply, "A")
     library.connect_material_expressions(core_color, "", particle_tint_multiply, "B")
@@ -1521,11 +1591,28 @@ def build_sprite_material_graph(unreal_module, material, spec: dict, sprite_text
         opacity_output = opacity
     library.connect_material_expressions(texture_color_multiply, "", emissive_multiply, "A")
     library.connect_material_expressions(strength, "", emissive_multiply, "B")
+    emissive_output = emissive_multiply
+    if normal_sample and normal_emissive_multiply:
+        library.connect_material_expressions(emissive_output, "", normal_emissive_multiply, "A")
+        library.connect_material_expressions(normal_sample, "B", normal_emissive_multiply, "B")
+        emissive_output = normal_emissive_multiply
+    if layer_mask_sample and layer_emissive_multiply:
+        library.connect_material_expressions(emissive_output, "", layer_emissive_multiply, "A")
+        library.connect_material_expressions(layer_mask_sample, "R", layer_emissive_multiply, "B")
+        emissive_output = layer_emissive_multiply
+    if depth_sample and depth_opacity_multiply:
+        library.connect_material_expressions(opacity_output, "", depth_opacity_multiply, "A")
+        library.connect_material_expressions(depth_sample, "R", depth_opacity_multiply, "B")
+        opacity_output = depth_opacity_multiply
+    if layer_mask_sample and layer_opacity_multiply:
+        library.connect_material_expressions(opacity_output, "", layer_opacity_multiply, "A")
+        library.connect_material_expressions(layer_mask_sample, "A", layer_opacity_multiply, "B")
+        opacity_output = layer_opacity_multiply
     try:
         library.connect_material_property(texture_color_multiply, "", unreal_module.MaterialProperty.MP_BASE_COLOR)
     except Exception:
         pass
-    library.connect_material_property(emissive_multiply, "", unreal_module.MaterialProperty.MP_EMISSIVE_COLOR)
+    library.connect_material_property(emissive_output, "", unreal_module.MaterialProperty.MP_EMISSIVE_COLOR)
     library.connect_material_property(opacity_output, "", unreal_module.MaterialProperty.MP_OPACITY)
     library.layout_material_expressions(material)
 
@@ -1775,6 +1862,14 @@ def primary_distortion_source_path(spec: dict) -> Path | None:
     if source_path.exists():
         return source_path
     return None
+
+
+def primary_material_texture_source_path(spec: dict, key: str) -> Path | None:
+    source = material_setting(spec, key)
+    if not source:
+        return None
+    source_path = Path(str(source))
+    return source_path if source_path.exists() else None
 
 
 def try_set_editor_property(asset, property_name: str, value) -> None:
