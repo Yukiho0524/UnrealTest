@@ -319,6 +319,16 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             )
         niagara["enabled"] = False
     elif role == "flame_slashes":
+        if not is_firestorm:
+            timeline.update({"delay": 0.08, "duration": 0.62, "opacity": [0.0, 0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0, 1.0], "rotation_speed": 0.0})
+            material["opacity"] = 0.0
+            material["emissive_strength"] = 0.0
+            card["enabled"] = False
+            card.pop("instances", None)
+            mesh["enabled"] = False
+            niagara["enabled"] = False
+            emitter.setdefault("notes", []).append("Regular fire hides standalone flame slash cards; large side flame textures read as floating pasted images. Rebuild this layer as ribbons or small SubUV particles.")
+            return
         if "rear_flame" in name:
             timeline.update({"delay": 0.16, "duration": 0.68, "opacity": [0.0, 0.48, 0.34, 0.0], "scale": [0.46, 1.04, 1.16, 0.7], "rotation_speed": 18.0})
             material["opacity"] = 0.46

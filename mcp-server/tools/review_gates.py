@@ -444,6 +444,19 @@ def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any]
         expected_bands["central_fire_pillar"] = {"z": (68, 118), "scale_xy_max": 1.35, "component_type": "StaticMeshComponent"}
         expected_bands["side_flame_slashes"] = {"z": (42, 96), "scale_xy_max": 1.35, "component_type": "StaticMeshComponent"}
         expected_bands["smoke_dust_crown"] = {"z": (92, 128), "scale_xy_max": 1.6, "component_type": "StaticMeshComponent"}
+    else:
+        expected_bands.pop("side_flame_slashes", None)
+        standalone_flame_cards = [
+            component.get("name")
+            for component in components
+            if str(component.get("name") or "").startswith("LayerCard_")
+            and (
+                "side_flame_slashes" in str(component.get("name") or "")
+                or "rear_flame_tongues" in str(component.get("name") or "")
+            )
+        ]
+        if standalone_flame_cards:
+            issues.append({"emitter": "flame_slashes", "type": "standalone_flame_cards_visible", "components": standalone_flame_cards})
     for emitter_name, rule in expected_bands.items():
         if firestorm_preview and emitter_name in hidden_emitters:
             continue
@@ -554,21 +567,24 @@ def gate_regular_fire_3d_preview(spec: dict[str, Any], unreal_result: dict[str, 
         and "central_fire_pillar" in str(component.get("name") or "")
         and str(component.get("name") or "").startswith("LayerCard_")
     ]
-    side_cards = [
+    standalone_flame_cards = [
         component for component in components
         if component.get("type") == "StaticMeshComponent"
-        and "side_flame_slashes" in str(component.get("name") or "")
         and str(component.get("name") or "").startswith("LayerCard_")
+        and (
+            "side_flame_slashes" in str(component.get("name") or "")
+            or "rear_flame_tongues" in str(component.get("name") or "")
+        )
     ]
-    ok = len(core_volume) >= 2 and len(core_cards) >= 2 and len(side_cards) >= 2
+    ok = len(core_volume) >= 2 and len(core_cards) >= 2 and not standalone_flame_cards
     return {
         "name": "regular_fire_3d_preview",
         "status": "pass" if ok else "fail",
-        "message": "Regular fire preview has core volume helpers and cross-billboard flame layers." if ok else "Regular fire preview is still too dependent on a single 2D card.",
+        "message": "Regular fire preview uses core volume helpers without standalone pasted side-flame cards." if ok else "Regular fire preview still contains standalone side-flame texture cards or lacks core volume.",
         "data": {
             "core_volume_count": len(core_volume),
             "core_card_count": len(core_cards),
-            "side_card_count": len(side_cards),
+            "standalone_flame_cards": [component.get("name") for component in standalone_flame_cards],
             "core_volume_names": [component.get("name") for component in core_volume],
         },
     }
@@ -596,10 +612,16 @@ def gate_tutorial_fire_stack(spec: dict[str, Any], unreal_result: dict[str, Any]
     components = preview_components(unreal_result)
     component_names = [str(component.get("name") or "") for component in components]
     missing_emitters = sorted(required_names - names)
+    required_visible_names = required_names - {"side_flame_slashes", "rear_flame_tongues"}
     missing_components = sorted(
-        name for name in required_names
+        name for name in required_visible_names
         if not any(name in component_name for component_name in component_names)
     )
+    standalone_flame_cards = [
+        component_name for component_name in component_names
+        if component_name.startswith("LayerCard_")
+        and ("side_flame_slashes" in component_name or "rear_flame_tongues" in component_name)
+    ]
     heat_material = next(
         (((emitter.get("unreal_settings") or {}).get("material") or {}) for emitter in emitters if emitter.get("name") == "heat_distortion_haze"),
         {},
@@ -609,6 +631,7 @@ def gate_tutorial_fire_stack(spec: dict[str, Any], unreal_result: dict[str, Any]
         primary == "central_fire_pillar"
         and not missing_emitters
         and not missing_components
+        and not standalone_flame_cards
         and roles_by_name.get("rear_flame_tongues") == "flame_slashes"
         and roles_by_name.get("heat_distortion_haze") == "atmospheric_wisp"
         and bool(heat_material.get("distortion_source"))
@@ -621,6 +644,7 @@ def gate_tutorial_fire_stack(spec: dict[str, Any], unreal_result: dict[str, Any]
             "primary_emitter": primary,
             "missing_emitters": missing_emitters,
             "missing_components": missing_components,
+            "standalone_flame_cards": standalone_flame_cards,
             "heat_haze_has_distortion": bool(heat_material.get("distortion_source")),
             "components": component_names,
         },
