@@ -1330,14 +1330,18 @@ def set_texture_mip_setting(unreal_module, texture, *setting_names: str) -> None
 
 def create_or_replace_material(unreal_module, material_name: str, destination_path: str, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None, depth_texture=None, normal_texture=None, layer_mask_texture=None):
     material_path = f"{destination_path}/{material_name}"
+    delete_asset_if_exists(unreal_module, material_path)
 
     asset_tools = unreal_module.AssetToolsHelpers.get_asset_tools()
     factory = unreal_module.MaterialFactoryNew()
     material = asset_tools.create_asset(material_name, destination_path, unreal_module.Material, factory)
     if not material:
-        raise RuntimeError(f"Could not create material: {material_path}")
+        material = unreal_module.EditorAssetLibrary.load_asset(material_path)
+    if not material:
+        raise RuntimeError(f"Could not create or load material: {material_path}")
 
     configure_material_properties(unreal_module, material, spec)
+    clear_material_graph_if_possible(unreal_module, material)
     build_sprite_material_graph(unreal_module, material, spec, sprite_texture, alpha_texture, distortion_texture, depth_texture, normal_texture, layer_mask_texture)
     annotate_asset(unreal_module, material, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(material)
@@ -1346,12 +1350,15 @@ def create_or_replace_material(unreal_module, material_name: str, destination_pa
 
 def create_or_replace_material_instance(unreal_module, instance_name: str, destination_path: str, material, spec: dict, sprite_texture=None, alpha_texture=None, distortion_texture=None, depth_texture=None, normal_texture=None, layer_mask_texture=None):
     instance_path = f"{destination_path}/{instance_name}"
+    delete_asset_if_exists(unreal_module, instance_path)
 
     asset_tools = unreal_module.AssetToolsHelpers.get_asset_tools()
     factory = unreal_module.MaterialInstanceConstantFactoryNew()
     material_instance = asset_tools.create_asset(instance_name, destination_path, unreal_module.MaterialInstanceConstant, factory)
     if not material_instance:
-        raise RuntimeError(f"Could not create material instance: {instance_path}")
+        material_instance = unreal_module.EditorAssetLibrary.load_asset(instance_path)
+    if not material_instance:
+        raise RuntimeError(f"Could not create or load material instance: {instance_path}")
 
     material_instance.set_editor_property("parent", material)
     palette = palette_as_linear_colors(spec["color_palette"])
@@ -1375,6 +1382,13 @@ def create_or_replace_material_instance(unreal_module, instance_name: str, desti
     annotate_asset(unreal_module, material_instance, spec)
     unreal_module.EditorAssetLibrary.save_loaded_asset(material_instance)
     return material_instance
+
+
+def clear_material_graph_if_possible(unreal_module, material) -> None:
+    try:
+        unreal_module.MaterialEditingLibrary.delete_all_material_expressions(material)
+    except Exception:
+        pass
 
 
 def delete_asset_if_exists(unreal_module, asset_path: str) -> bool:

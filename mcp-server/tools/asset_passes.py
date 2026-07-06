@@ -558,11 +558,27 @@ def asset_pass_for_emitter(effect_type: str | None, emitter: dict[str, Any]) -> 
 def sprite_path_for_emitter(pass_name: str, selected: dict[str, str], emitter: dict[str, Any]) -> str | None:
     role = emitter.get("role")
     preview_path = selected.get("preview_frame_path")
-    if playable_firestorm_atlas(selected, emitter):
+    if playable_material_flipbook(pass_name, selected, emitter):
         return selected.get("path")
     if preview_path and role in {"fire_pillar", "flame_slashes", "ground_energy_ring", "impact_core", "atmospheric_wisp", "detail_particles"}:
         return preview_path
     return selected.get("path")
+
+
+def playable_material_flipbook(pass_name: str, selected: dict[str, str], emitter: dict[str, Any]) -> bool:
+    if not selected.get("atlas_columns") or not selected.get("atlas_rows"):
+        return False
+    if playable_firestorm_atlas(selected, emitter):
+        return True
+    if emitter.get("role") == "detail_particles":
+        return False
+    return pass_name in {
+        "core_flame_flipbook",
+        "flame_slash_flipbook",
+        "ground_ring_mask",
+        "impact_flash_mask",
+        "smoke_heat_flipbook",
+    }
 
 
 def playable_firestorm_atlas(selected: dict[str, str], emitter: dict[str, Any]) -> bool:
