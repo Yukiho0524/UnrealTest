@@ -647,6 +647,12 @@ def gate_regular_fire_3d_preview(spec: dict[str, Any], unreal_result: dict[str, 
         if component.get("type") == "NiagaraComponent"
         and "central_fire_pillar" in str(component.get("name") or "")
     ]
+    core_volume_meshes = [
+        component for component in components
+        if component.get("type") == "StaticMeshComponent"
+        and str(component.get("name") or "").startswith("VolumeMesh_")
+        and "central_fire_pillar" in str(component.get("name") or "")
+    ]
     bad_air_cards = [
         component for component in components
         if component.get("type") == "StaticMeshComponent"
@@ -659,15 +665,31 @@ def gate_regular_fire_3d_preview(spec: dict[str, Any], unreal_result: dict[str, 
             or "heat_distortion_haze" in str(component.get("name") or "")
         )
     ]
-    ok = bool(core_niagara) and not bad_air_cards
+    structure = ((spec.get("reference_understanding") or {}).get("structure") or {})
+    shape_contract = structure.get("shape_contract") or {}
+    primary_form = str(structure.get("primary_form") or "").lower()
+    short_core_emitters = [
+        emitter for emitter in ((spec.get("vfx_plan") or {}).get("emitters") or [])
+        if emitter.get("role") == "fire_pillar" and float(emitter.get("end_size") or 0.0) <= 170.0
+    ]
+    short_burst_preview = (
+        shape_contract.get("height_class") == "short_burst"
+        or "short" in primary_form
+        or bool(short_core_emitters)
+    )
+    required_volume_count = 4 if short_burst_preview else 0
+    ok = bool(core_niagara) and len(core_volume_meshes) >= required_volume_count and not bad_air_cards
     return {
         "name": "regular_fire_3d_preview",
         "status": "pass" if ok else "fail",
-        "message": "Regular fire preview drives airborne fire/smoke through Niagara without large pasted cards." if ok else "Regular fire preview still contains large airborne texture cards or lacks a Niagara core.",
+        "message": "Regular fire preview drives airborne fire/smoke through Niagara and compact 3D volume helpers without large pasted cards." if ok else "Regular fire preview still contains large airborne texture cards, lacks a Niagara core, or lacks compact 3D volume helpers.",
         "data": {
             "core_niagara_count": len(core_niagara),
+            "core_volume_mesh_count": len(core_volume_meshes),
+            "required_core_volume_mesh_count": required_volume_count,
             "bad_air_cards": [component.get("name") for component in bad_air_cards],
             "core_niagara_names": [component.get("name") for component in core_niagara],
+            "core_volume_mesh_names": [component.get("name") for component in core_volume_meshes],
         },
     }
 

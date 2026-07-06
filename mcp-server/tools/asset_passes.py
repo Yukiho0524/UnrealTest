@@ -306,11 +306,26 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             material["emissive_strength"] = max(float(material.get("emissive_strength", 14.0)), 15.0)
             card["enabled"] = False
             card.pop("instances", None)
-            mesh["enabled"] = False
-            niagara.update(niagara_transform)
-            emitter.setdefault("notes", []).append("Regular fire core is rendered through Niagara, not Blueprint static mesh cards.")
             if is_short_burst:
-                emitter.setdefault("notes", []).append("Reference contract classifies this as a short gameplay burst, so the core stays compact instead of becoming a tall fire column.")
+                mesh.update(
+                    {
+                        "enabled": True,
+                        "mesh": "sphere",
+                        "instances": [
+                            {"mesh": "sphere", "location": [0, 0, 18], "rotation": [0, 0, 0], "scale": [0.28, 0.22, 0.12]},
+                            {"mesh": "sphere", "location": [-8, -3, 30], "rotation": [0, 0, -16], "scale": [0.22, 0.16, 0.16]},
+                            {"mesh": "sphere", "location": [8, 3, 34], "rotation": [0, 0, 18], "scale": [0.2, 0.15, 0.18]},
+                            {"mesh": "sphere", "location": [-4, 6, 44], "rotation": [0, 0, 28], "scale": [0.16, 0.12, 0.2]},
+                            {"mesh": "cone", "location": [2, -2, 52], "rotation": [0, 0, 8], "scale": [0.16, 0.16, 0.26]},
+                        ],
+                    }
+                )
+            else:
+                mesh["enabled"] = False
+            niagara.update(niagara_transform)
+            emitter.setdefault("notes", []).append("Regular fire core is rendered through Niagara with no large Blueprint card.")
+            if is_short_burst:
+                emitter.setdefault("notes", []).append("Short gameplay burst adds clustered 3D emissive volume helpers so the preview is not only a flat sprite fountain.")
         niagara["enabled"] = bool(niagara.get("enabled")) if not is_firestorm else False
     elif role == "flame_slashes":
         if not is_firestorm:
