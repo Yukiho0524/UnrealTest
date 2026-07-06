@@ -677,7 +677,7 @@ def gate_regular_fire_3d_preview(spec: dict[str, Any], unreal_result: dict[str, 
         or "short" in primary_form
         or bool(short_core_emitters)
     )
-    required_volume_count = 4 if short_burst_preview else 0
+    required_volume_count = 4 if short_burst_preview else 5
     ok = bool(core_niagara) and len(core_volume_meshes) >= required_volume_count and not bad_air_cards
     return {
         "name": "regular_fire_3d_preview",

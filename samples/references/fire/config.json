@@ -1,9 +1,10 @@
 {
   "effect_type": "fire_or_flame",
-  "motion": "ignite_burst_rise_and_collapse",
+  "preset": "sustained_fire",
+  "motion": "looping_flame_lift_and_turbulence",
   "render_mode": "flipbook",
-  "duration_seconds": 0.9,
-  "looping": false,
+  "duration_seconds": 1.4,
+  "looping": true,
   "high_similarity": true,
   "lock_color_palette": true,
   "color_palette": ["#FFF4B0", "#FFB22E", "#FF4A12", "#2A0703"],
@@ -80,8 +81,8 @@
     },
     "impact_flash": {
       "material": {
-        "opacity": 0.8,
-        "emissive_strength": 22.0
+        "opacity": 0.18,
+        "emissive_strength": 4.0
       },
       "preview": {
         "card": {

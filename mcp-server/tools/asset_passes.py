@@ -250,6 +250,7 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         or name == "back_spiral_flame_wall"
     )
     is_short_burst = role == "fire_pillar" and float(emitter.get("end_size") or 0.0) <= 170.0
+    is_sustained_fire = role == "fire_pillar" and any(token in marker_text for token in ("looping_flame", "sustained", "continuous"))
 
     if role == "reference_motion":
         material["opacity"] = min(float(material.get("opacity", 0.72)), 0.16)
@@ -320,12 +321,28 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                         ],
                     }
                 )
+            elif is_sustained_fire:
+                mesh.update(
+                    {
+                        "enabled": True,
+                        "mesh": "sphere",
+                        "instances": [
+                            {"mesh": "sphere", "location": [0, 0, 24], "rotation": [0, 0, 0], "scale": [0.34, 0.26, 0.16]},
+                            {"mesh": "sphere", "location": [-7, -2, 48], "rotation": [0, 0, -12], "scale": [0.28, 0.2, 0.24]},
+                            {"mesh": "sphere", "location": [7, 3, 66], "rotation": [0, 0, 16], "scale": [0.24, 0.18, 0.28]},
+                            {"mesh": "sphere", "location": [-3, 5, 86], "rotation": [0, 0, 24], "scale": [0.2, 0.15, 0.3]},
+                            {"mesh": "cone", "location": [2, -2, 108], "rotation": [0, 0, 8], "scale": [0.18, 0.18, 0.34]},
+                        ],
+                    }
+                )
             else:
                 mesh["enabled"] = False
             niagara.update(niagara_transform)
             emitter.setdefault("notes", []).append("Regular fire core is rendered through Niagara with no large Blueprint card.")
             if is_short_burst:
                 emitter.setdefault("notes", []).append("Short gameplay burst adds clustered 3D emissive volume helpers so the preview is not only a flat sprite fountain.")
+            if is_sustained_fire:
+                emitter.setdefault("notes", []).append("Sustained fire adds stacked 3D emissive volume helpers so the preview reads as a flame body instead of a one-shot sprite burst.")
         niagara["enabled"] = bool(niagara.get("enabled")) if not is_firestorm else False
     elif role == "flame_slashes":
         if not is_firestorm:

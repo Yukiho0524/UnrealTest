@@ -52,6 +52,7 @@ def analyze_effect_package(package_dir: Path) -> VFXSpec:
     media_files = find_package_media(package_dir)
     visual_profile = analyze_media_files(media_files)
     reference_understanding = build_reference_understanding(package_dir, media_files, visual_profile, prompt)
+    reference_understanding = apply_config_reference_intent(reference_understanding, config)
     visual_profile["reference_understanding"] = reference_understanding
 
     effect_type, motion, palette, notes = infer_package_defaults(package_dir, media_files, prompt)
@@ -126,6 +127,45 @@ def read_package_prompt(package_dir: Path) -> str:
     if not prompt_path.exists():
         return ""
     return prompt_path.read_text(encoding="utf-8").strip()
+
+
+def apply_config_reference_intent(reference_understanding: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    preset = str(config.get("preset") or config.get("fire_intent") or "").lower()
+    motion = str(config.get("motion") or "").lower()
+    if preset not in {"sustained_fire", "looping_fire", "sustained_flame"} and not any(token in motion for token in ("sustain", "looping_flame", "continuous")):
+        return reference_understanding
+    result = dict(reference_understanding)
+    structure = dict(result.get("vfx_structure") or {})
+    structure.update(
+        {
+            "primary_form": "looping_gameplay_fire_plume",
+            "silhouette": "sustained connected flame plume with a hot core, licking edges, and sparse upward embers",
+            "motion_model": "continuous flame lift, turbulent edge licking, subtle base contact pulse, looping ember drift",
+            "camera_read": "must read as sustained fire, not a one-shot explosion, fireball, or impact burst",
+            "required_layers": ["hot_flame_core", "connected_flame_tongues", "thin_heat_distortion", "soft_smoke_wisp", "sparse_upward_embers", "small_ground_contact"],
+            "ground_role": "support_only",
+            "renderer_bias": ["niagara_subuv_particles", "mesh_or_ribbon_flame_lobes", "small_particles"],
+            "shape_contract": {
+                "height_class": "sustained_plume",
+                "footprint_class": "tight_gameplay_contact",
+                "primary_silhouette": "connected rising flame body with broken licking edge",
+                "allowed_airborne_shapes": ["connected_flame_lobes", "vertical_flame_tongues", "tiny_embers", "thin_heat_haze", "soft_smoke_wisp"],
+                "forbidden_airborne_shapes": [
+                    "detached_large_flame_stamps",
+                    "one_shot_fireball",
+                    "explosion_bloom",
+                    "flat_square_sheets",
+                    "decorative_floor_symbol_as_main_read",
+                    "smoke_wall",
+                ],
+                "max_airborne_card_role": "none_for_regular_preview",
+                "target_height_to_width": [1.4, 2.4],
+            },
+        }
+    )
+    result["vfx_structure"] = structure
+    result["dominant_read"] = "fire_plume: looping_gameplay_fire_plume / sustained connected flame, not a one-shot burst"
+    return result
 
 
 def find_package_media(package_dir: Path) -> list[Path]:
@@ -318,12 +358,13 @@ def build_vfx_plan(
         structure = understanding.get("vfx_structure") or {}
         shape_contract = structure.get("shape_contract") or {}
         is_short_gameplay_burst = shape_contract.get("height_class") == "short_burst"
+        is_sustained_fire = shape_contract.get("height_class") == "sustained_plume" or (config or {}).get("preset") in {"sustained_fire", "looping_fire", "sustained_flame"}
         ground_role = (structure.get("ground_role") or "impact_ring")
         uses_small_ground_contact = ground_role in {"small_contact_flash", "support_only"}
         ground_name = "ground_contact_flash" if uses_small_ground_contact else "ground_rune_ring"
         ground_shape = "fire_contact_flash" if uses_small_ground_contact else "fire_rune_ring"
         ground_style = "fire_ground_contact_flash" if uses_small_ground_contact else "fire_ground_rune_ring"
-        ground_motion = "contact_heat_flash_then_decay" if uses_small_ground_contact else "radial_ignite_then_decay"
+        ground_motion = "subtle_contact_heat_pulse" if is_sustained_fire else ("contact_heat_flash_then_decay" if uses_small_ground_contact else "radial_ignite_then_decay")
         ground_start_size = 58.0 if is_short_gameplay_burst else (82.0 if uses_small_ground_contact else 160.0)
         ground_end_size = 96.0 if is_short_gameplay_burst else (142.0 if uses_small_ground_contact else 280.0)
         ground_notes = (
@@ -331,28 +372,28 @@ def build_vfx_plan(
             if uses_small_ground_contact
             else "Readable molten magic circle/ring at the ground contact point."
         )
-        core_lifetime = 0.38 if is_short_gameplay_burst else 0.48
-        core_start_size = 58.0 if is_short_gameplay_burst else 72.0
-        core_end_size = 155.0 if is_short_gameplay_burst else 260.0
-        tongue_start_size = 28.0 if is_short_gameplay_burst else 54.0
-        tongue_end_size = 86.0 if is_short_gameplay_burst else 190.0
-        rear_tongue_start_size = 24.0 if is_short_gameplay_burst else 44.0
-        rear_tongue_end_size = 76.0 if is_short_gameplay_burst else 170.0
-        smoke_start_size = 42.0 if is_short_gameplay_burst else 80.0
-        smoke_end_size = 96.0 if is_short_gameplay_burst else 220.0
-        heat_start_size = 44.0 if is_short_gameplay_burst else 70.0
-        heat_end_size = 118.0 if is_short_gameplay_burst else 210.0
-        impact_start_size = 62.0 if is_short_gameplay_burst else 92.0
-        impact_end_size = 116.0 if is_short_gameplay_burst else 185.0
+        core_lifetime = 0.68 if is_sustained_fire else (0.38 if is_short_gameplay_burst else 0.48)
+        core_start_size = 76.0 if is_sustained_fire else (58.0 if is_short_gameplay_burst else 72.0)
+        core_end_size = 220.0 if is_sustained_fire else (155.0 if is_short_gameplay_burst else 260.0)
+        tongue_start_size = 46.0 if is_sustained_fire else (28.0 if is_short_gameplay_burst else 54.0)
+        tongue_end_size = 150.0 if is_sustained_fire else (86.0 if is_short_gameplay_burst else 190.0)
+        rear_tongue_start_size = 38.0 if is_sustained_fire else (24.0 if is_short_gameplay_burst else 44.0)
+        rear_tongue_end_size = 132.0 if is_sustained_fire else (76.0 if is_short_gameplay_burst else 170.0)
+        smoke_start_size = 58.0 if is_sustained_fire else (42.0 if is_short_gameplay_burst else 80.0)
+        smoke_end_size = 168.0 if is_sustained_fire else (96.0 if is_short_gameplay_burst else 220.0)
+        heat_start_size = 58.0 if is_sustained_fire else (44.0 if is_short_gameplay_burst else 70.0)
+        heat_end_size = 172.0 if is_sustained_fire else (118.0 if is_short_gameplay_burst else 210.0)
+        impact_start_size = 38.0 if is_sustained_fire else (62.0 if is_short_gameplay_burst else 92.0)
+        impact_end_size = 72.0 if is_sustained_fire else (116.0 if is_short_gameplay_burst else 185.0)
         core_notes = (
-            "Short connected gameplay burst; keep the flame crown compact and avoid a tall environmental pillar."
-            if is_short_gameplay_burst
-            else "Dominant vertical fire column; this layer must read before sparks or smoke."
+            "Sustained gameplay flame; keep a connected hot core and avoid explosion bloom or fireball timing."
+            if is_sustained_fire
+            else ("Short connected gameplay burst; keep the flame crown compact and avoid a tall environmental pillar." if is_short_gameplay_burst else "Dominant vertical fire column; this layer must read before sparks or smoke.")
         )
         visual_intent = (
-            "Reference-understood short gameplay fire burst: compact ground ignition, connected flame crown, thin heat haze, sparse embers, and no detached large flame stamps."
-            if is_short_gameplay_burst
-            else "Tutorial-style Unreal fire stack: native core flame, crossed outer tongues, small contact flash, smoke/heat haze, and sparse embers. Reference media is only a target, not the rendered main layer."
+            "Reference-understood sustained gameplay fire: connected hot core, looping flame tongues, thin heat haze, soft smoke, sparse upward embers, and no explosion bloom or detached flame stamps."
+            if is_sustained_fire
+            else ("Reference-understood short gameplay fire burst: compact ground ignition, connected flame crown, thin heat haze, sparse embers, and no detached large flame stamps." if is_short_gameplay_burst else "Tutorial-style Unreal fire stack: native core flame, crossed outer tongues, small contact flash, smoke/heat haze, and sparse embers. Reference media is only a target, not the rendered main layer.")
         )
         emitters = []
         if reference_flipbook:
@@ -407,7 +448,7 @@ def build_vfx_plan(
                 role="fire_pillar",
                 sprite_shape="fire_pillar",
                 material_style="fire_pillar_core",
-                motion="ignite_burst_rise_and_collapse",
+                motion="looping_flame_lift_and_turbulence" if is_sustained_fire else "ignite_burst_rise_and_collapse",
                 spawn_rate=1.0,
                 lifetime_seconds=core_lifetime,
                 start_size=core_start_size,
@@ -462,12 +503,12 @@ def build_vfx_plan(
                 material_style="fire_impact_flash",
                 motion="flash_expand_then_fade",
                 spawn_rate=1.0,
-                lifetime_seconds=0.18 if is_short_gameplay_burst else 0.24,
+                lifetime_seconds=0.42 if is_sustained_fire else (0.18 if is_short_gameplay_burst else 0.24),
                 start_size=impact_start_size,
                 end_size=impact_end_size,
                 color_palette=fire_palette_values[:3],
                 sprite_source=None,
-                notes=["Overexposed hot center that sells the ignition moment."],
+                notes=["Subtle low hot contact pulse only; this must not read as an explosion bloom." if is_sustained_fire else "Overexposed hot center that sells the ignition moment."],
             ),
             VFXEmitterPlan(
                 name="smoke_dust_crown",
@@ -475,12 +516,12 @@ def build_vfx_plan(
                 sprite_shape="smoke_wisp",
                 material_style="translucent_smoke_dust",
                 motion="low_crown_roll_and_fade",
-                spawn_rate=4.0 if is_short_gameplay_burst else 8.0,
-                lifetime_seconds=0.54 if is_short_gameplay_burst else 0.92,
+                spawn_rate=6.0 if is_sustained_fire else (4.0 if is_short_gameplay_burst else 8.0),
+                lifetime_seconds=1.05 if is_sustained_fire else (0.54 if is_short_gameplay_burst else 0.92),
                 start_size=smoke_start_size,
                 end_size=smoke_end_size,
                 color_palette=["#2A211C", "#6A5144", fire_palette_values[2]],
-                notes=["Dark low crown around the blast base; it should support the fire, not cover it."],
+                notes=["Soft smoke wisp that trails the sustained flame; it should support the fire, not become a blast cloud." if is_sustained_fire else "Dark low crown around the blast base; it should support the fire, not cover it."],
             ),
             VFXEmitterPlan(
                 name="heat_distortion_haze",
@@ -488,8 +529,8 @@ def build_vfx_plan(
                 sprite_shape="smoke_wisp",
                 material_style="translucent_heat_distortion",
                 motion="rising_heat_haze_column",
-                spawn_rate=3.0 if is_short_gameplay_burst else 4.0,
-                lifetime_seconds=0.48 if is_short_gameplay_burst else 0.82,
+                spawn_rate=4.0 if is_sustained_fire else (3.0 if is_short_gameplay_burst else 4.0),
+                lifetime_seconds=1.0 if is_sustained_fire else (0.48 if is_short_gameplay_burst else 0.82),
                 start_size=heat_start_size,
                 end_size=heat_end_size,
                 color_palette=["#18120F", "#4A3024", fire_palette_values[1]],
@@ -500,9 +541,9 @@ def build_vfx_plan(
                 role="detail_particles",
                 sprite_shape="shard",
                 material_style="orange_emissive",
-                motion="short_radial_spark_scatter",
-                spawn_rate=10.0 if is_short_gameplay_burst else 18.0,
-                lifetime_seconds=0.24 if is_short_gameplay_burst else 0.32,
+                motion="upward_ember_drift" if is_sustained_fire else "short_radial_spark_scatter",
+                spawn_rate=12.0 if is_sustained_fire else (10.0 if is_short_gameplay_burst else 18.0),
+                lifetime_seconds=0.58 if is_sustained_fire else (0.24 if is_short_gameplay_burst else 0.32),
                 start_size=5.0,
                 end_size=1.2,
                 color_palette=fire_palette_values[1:3],
