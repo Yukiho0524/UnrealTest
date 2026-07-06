@@ -249,6 +249,7 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         any(marker in marker_text for marker in firestorm_markers)
         or name == "back_spiral_flame_wall"
     )
+    is_short_burst = role == "fire_pillar" and float(emitter.get("end_size") or 0.0) <= 170.0
 
     if role == "reference_motion":
         material["opacity"] = min(float(material.get("opacity", 0.72)), 0.16)
@@ -295,14 +296,21 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             )
             emitter.setdefault("notes", []).append("Firestorm core uses a tapered 3D funnel: narrow ground contact, widening upper vortex, and a smoky crown.")
         else:
-            timeline.update({"delay": 0.03, "duration": 0.78, "opacity": [0.0, 0.86, 0.62, 0.0], "scale": [0.42, 1.08, 1.0, 0.58], "rotation_speed": 10.0})
+            if is_short_burst:
+                timeline.update({"delay": 0.02, "duration": 0.46, "opacity": [0.0, 0.9, 0.48, 0.0], "scale": [0.56, 1.0, 0.78, 0.28], "rotation_speed": 6.0})
+                niagara_transform = {"enabled": True, "location": [0, 0, 48], "rotation": [0, 0, 0], "scale": [0.42, 0.42, 0.42]}
+            else:
+                timeline.update({"delay": 0.03, "duration": 0.78, "opacity": [0.0, 0.86, 0.62, 0.0], "scale": [0.42, 1.08, 1.0, 0.58], "rotation_speed": 10.0})
+                niagara_transform = {"enabled": True, "location": [0, 0, 78], "rotation": [0, 0, 0], "scale": [0.62, 0.62, 0.62]}
             material["opacity"] = max(float(material.get("opacity", 0.54)), 0.72)
             material["emissive_strength"] = max(float(material.get("emissive_strength", 14.0)), 15.0)
             card["enabled"] = False
             card.pop("instances", None)
             mesh["enabled"] = False
-            niagara.update({"enabled": True, "location": [0, 0, 78], "rotation": [0, 0, 0], "scale": [0.62, 0.62, 0.62]})
+            niagara.update(niagara_transform)
             emitter.setdefault("notes", []).append("Regular fire core is rendered through Niagara, not Blueprint static mesh cards.")
+            if is_short_burst:
+                emitter.setdefault("notes", []).append("Reference contract classifies this as a short gameplay burst, so the core stays compact instead of becoming a tall fire column.")
         niagara["enabled"] = bool(niagara.get("enabled")) if not is_firestorm else False
     elif role == "flame_slashes":
         if not is_firestorm:
@@ -429,10 +437,15 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             mesh["enabled"] = False
         niagara["enabled"] = False
     elif role == "impact_core":
-        timeline.update({"delay": 0.0, "duration": 0.24, "opacity": [0.0, 0.58, 0.2, 0.0], "scale": [0.32, 0.82, 0.58, 0.0]})
+        short_impact = float(emitter.get("end_size") or 0.0) <= 130.0
+        timeline.update(
+            {"delay": 0.0, "duration": 0.18, "opacity": [0.0, 0.62, 0.18, 0.0], "scale": [0.34, 0.72, 0.42, 0.0]}
+            if short_impact
+            else {"delay": 0.0, "duration": 0.24, "opacity": [0.0, 0.58, 0.2, 0.0], "scale": [0.32, 0.82, 0.58, 0.0]}
+        )
         material["opacity"] = 0.58 if is_firestorm else max(float(material.get("opacity", 0.8)), 0.86)
         material["emissive_strength"] = 9.5 if is_firestorm else max(float(material.get("emissive_strength", 22.0)), 24.0)
-        card.update({"enabled": True, "location": [0, -1, 22], "rotation": [88, 0, 0], "scale": [0.54, 0.38, 1]})
+        card.update({"enabled": True, "location": [0, -1, 16] if short_impact else [0, -1, 22], "rotation": [88, 0, 0], "scale": [0.38, 0.28, 1] if short_impact else [0.54, 0.38, 1]})
         if is_firestorm:
             card["instances"] = [
                 {"location": [0, 0, 22], "rotation": [88, 90, 0], "scale": [0.42, 0.28, 1.0]},
@@ -469,7 +482,12 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             emitter.setdefault("notes", []).append("Firestorm smoke crown is visible at very low opacity to break the bright spike silhouette without creating black cards.")
             return
         if "heat_distortion" in name:
-            timeline.update({"delay": 0.08, "duration": 0.82, "opacity": [0.0, 0.08, 0.06, 0.0], "scale": [0.52, 1.0, 1.12, 1.28], "rotation_speed": 9.0})
+            short_wisp = float(emitter.get("end_size") or 0.0) <= 130.0
+            timeline.update(
+                {"delay": 0.05, "duration": 0.5, "opacity": [0.0, 0.06, 0.035, 0.0], "scale": [0.48, 0.88, 0.9, 0.72], "rotation_speed": 5.0}
+                if short_wisp
+                else {"delay": 0.08, "duration": 0.82, "opacity": [0.0, 0.08, 0.06, 0.0], "scale": [0.52, 1.0, 1.12, 1.28], "rotation_speed": 9.0}
+            )
             material["opacity"] = 0.055
             material["emissive_strength"] = 0.04
             material["distortion_strength"] = max(float(material.get("distortion_strength", 0.075)), 0.13)
@@ -477,17 +495,22 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             card["enabled"] = False
             card.pop("instances", None)
             mesh["enabled"] = False
-            niagara.update({"enabled": True, "location": [0, 2, 76], "rotation": [0, 0, 0], "scale": [0.52, 0.52, 0.52]})
+            niagara.update({"enabled": True, "location": [0, 2, 54] if short_wisp else [0, 2, 76], "rotation": [0, 0, 0], "scale": [0.38, 0.38, 0.38] if short_wisp else [0.52, 0.52, 0.52]})
             emitter.setdefault("notes", []).append("Tutorial heat haze is a low-opacity Niagara distortion carrier, not a visible smoke card.")
             return
-        timeline.update({"delay": 0.18, "duration": 1.05, "opacity": [0.0, 0.2, 0.14, 0.0], "scale": [0.62, 1.0, 1.22, 1.46], "rotation_speed": 5.0})
+        short_smoke = float(emitter.get("end_size") or 0.0) <= 130.0
+        timeline.update(
+            {"delay": 0.1, "duration": 0.58, "opacity": [0.0, 0.12, 0.06, 0.0], "scale": [0.58, 0.9, 0.84, 0.52], "rotation_speed": 3.0}
+            if short_smoke
+            else {"delay": 0.18, "duration": 1.05, "opacity": [0.0, 0.2, 0.14, 0.0], "scale": [0.62, 1.0, 1.22, 1.46], "rotation_speed": 5.0}
+        )
         material["opacity"] = min(float(material.get("opacity", 0.2)), 0.085)
         material["emissive_strength"] = min(float(material.get("emissive_strength", 0.35)), 0.18)
         material["blend_mode"] = "translucent"
         card["enabled"] = False
         card.pop("instances", None)
         mesh["enabled"] = False
-        niagara.update({"enabled": True, "location": [-2, 4, 76], "rotation": [0, 0, 0], "scale": [0.54, 0.54, 0.54]})
+        niagara.update({"enabled": True, "location": [-2, 4, 48] if short_smoke else [-2, 4, 76], "rotation": [0, 0, 0], "scale": [0.36, 0.36, 0.36] if short_smoke else [0.54, 0.54, 0.54]})
         emitter.setdefault("notes", []).append("Smoke preview renders through Niagara so it does not expose a large static atlas/card.")
     elif role == "detail_particles":
         if is_firestorm:
@@ -498,11 +521,16 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             niagara["enabled"] = False
             emitter.setdefault("notes", []).append("Firestorm preview bakes spark accents into the authored flame/ground atlases and hides the unstable standalone ember component.")
             return
-        timeline.update({"delay": 0.12, "duration": 0.32, "opacity": [0.0, 0.55, 0.32, 0.0], "scale": [0.55, 0.72, 0.44, 0.15], "rotation_speed": 130.0})
+        short_sparks = float(emitter.get("spawn_rate") or 0.0) <= 10.0
+        timeline.update(
+            {"delay": 0.1, "duration": 0.24, "opacity": [0.0, 0.45, 0.18, 0.0], "scale": [0.42, 0.58, 0.28, 0.08], "rotation_speed": 110.0}
+            if short_sparks
+            else {"delay": 0.12, "duration": 0.32, "opacity": [0.0, 0.55, 0.32, 0.0], "scale": [0.55, 0.72, 0.44, 0.15], "rotation_speed": 130.0}
+        )
         material["opacity"] = min(float(material.get("opacity", 0.78)), 0.46)
         material["emissive_strength"] = min(float(material.get("emissive_strength", 10.0)), 6.0)
         card["enabled"] = False
-        niagara.update({"enabled": True, "location": [0, 0, 72], "rotation": [0, 0, 0], "scale": [0.22, 0.22, 0.22]})
+        niagara.update({"enabled": True, "location": [0, 0, 48] if short_sparks else [0, 0, 72], "rotation": [0, 0, 0], "scale": [0.16, 0.16, 0.16] if short_sparks else [0.22, 0.22, 0.22]})
 
 
 def apply_electric_production_preview(emitter: dict[str, Any]) -> None:

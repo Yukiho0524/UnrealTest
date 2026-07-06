@@ -426,6 +426,8 @@ def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any]
         or "firestorm" in str(((emitter.get("unreal_settings") or {}).get("material") or {}).get("style", "")).lower()
         for emitter in emitters
     )
+    shape_contract = ((((spec.get("visual_profile") or {}).get("reference_understanding") or {}).get("vfx_structure") or {}).get("shape_contract") or {})
+    short_burst_preview = shape_contract.get("height_class") == "short_burst"
     ground_emitter_name = next(
         (str(emitter.get("name") or "") for emitter in emitters if emitter.get("role") == "ground_energy_ring"),
         "ground_rune_ring",
@@ -446,9 +448,11 @@ def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any]
         expected_bands["smoke_dust_crown"] = {"z": (92, 128), "scale_xy_max": 1.6, "component_type": "StaticMeshComponent"}
     else:
         expected_bands.pop("side_flame_slashes", None)
-        expected_bands["central_fire_pillar"] = {"z": (54, 110), "scale_xy_max": 1.0, "component_type": "NiagaraComponent"}
-        expected_bands["smoke_dust_crown"] = {"z": (52, 96), "scale_xy_max": 0.9, "component_type": "NiagaraComponent"}
-        expected_bands["heat_distortion_haze"] = {"z": (52, 96), "scale_xy_max": 0.9, "component_type": "NiagaraComponent"}
+        expected_bands["central_fire_pillar"] = {"z": (36, 72), "scale_xy_max": 0.75, "component_type": "NiagaraComponent"} if short_burst_preview else {"z": (54, 110), "scale_xy_max": 1.0, "component_type": "NiagaraComponent"}
+        expected_bands["smoke_dust_crown"] = {"z": (32, 70), "scale_xy_max": 0.65, "component_type": "NiagaraComponent"} if short_burst_preview else {"z": (52, 96), "scale_xy_max": 0.9, "component_type": "NiagaraComponent"}
+        expected_bands["heat_distortion_haze"] = {"z": (36, 74), "scale_xy_max": 0.65, "component_type": "NiagaraComponent"} if short_burst_preview else {"z": (52, 96), "scale_xy_max": 0.9, "component_type": "NiagaraComponent"}
+        if short_burst_preview:
+            expected_bands["ember_sparks"] = {"z": (34, 72), "scale_xy_max": 0.35, "component_type": "NiagaraComponent"}
         bad_air_cards = [
             component.get("name")
             for component in components

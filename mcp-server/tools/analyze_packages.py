@@ -315,18 +315,44 @@ def build_vfx_plan(
     if effect_type == "fire_or_flame":
         fire_palette_values = fire_palette(palette)
         understanding = visual_profile.get("reference_understanding") or {}
-        ground_role = ((understanding.get("vfx_structure") or {}).get("ground_role") or "impact_ring")
+        structure = understanding.get("vfx_structure") or {}
+        shape_contract = structure.get("shape_contract") or {}
+        is_short_gameplay_burst = shape_contract.get("height_class") == "short_burst"
+        ground_role = (structure.get("ground_role") or "impact_ring")
         uses_small_ground_contact = ground_role in {"small_contact_flash", "support_only"}
         ground_name = "ground_contact_flash" if uses_small_ground_contact else "ground_rune_ring"
         ground_shape = "fire_contact_flash" if uses_small_ground_contact else "fire_rune_ring"
         ground_style = "fire_ground_contact_flash" if uses_small_ground_contact else "fire_ground_rune_ring"
         ground_motion = "contact_heat_flash_then_decay" if uses_small_ground_contact else "radial_ignite_then_decay"
-        ground_start_size = 82.0 if uses_small_ground_contact else 160.0
-        ground_end_size = 142.0 if uses_small_ground_contact else 280.0
+        ground_start_size = 58.0 if is_short_gameplay_burst else (82.0 if uses_small_ground_contact else 160.0)
+        ground_end_size = 96.0 if is_short_gameplay_burst else (142.0 if uses_small_ground_contact else 280.0)
         ground_notes = (
             "Small hot ground contact flash only; avoid a decorative floor symbol unless the reference clearly shows one."
             if uses_small_ground_contact
             else "Readable molten magic circle/ring at the ground contact point."
+        )
+        core_lifetime = 0.38 if is_short_gameplay_burst else 0.48
+        core_start_size = 58.0 if is_short_gameplay_burst else 72.0
+        core_end_size = 155.0 if is_short_gameplay_burst else 260.0
+        tongue_start_size = 28.0 if is_short_gameplay_burst else 54.0
+        tongue_end_size = 86.0 if is_short_gameplay_burst else 190.0
+        rear_tongue_start_size = 24.0 if is_short_gameplay_burst else 44.0
+        rear_tongue_end_size = 76.0 if is_short_gameplay_burst else 170.0
+        smoke_start_size = 42.0 if is_short_gameplay_burst else 80.0
+        smoke_end_size = 96.0 if is_short_gameplay_burst else 220.0
+        heat_start_size = 44.0 if is_short_gameplay_burst else 70.0
+        heat_end_size = 118.0 if is_short_gameplay_burst else 210.0
+        impact_start_size = 62.0 if is_short_gameplay_burst else 92.0
+        impact_end_size = 116.0 if is_short_gameplay_burst else 185.0
+        core_notes = (
+            "Short connected gameplay burst; keep the flame crown compact and avoid a tall environmental pillar."
+            if is_short_gameplay_burst
+            else "Dominant vertical fire column; this layer must read before sparks or smoke."
+        )
+        visual_intent = (
+            "Reference-understood short gameplay fire burst: compact ground ignition, connected flame crown, thin heat haze, sparse embers, and no detached large flame stamps."
+            if is_short_gameplay_burst
+            else "Tutorial-style Unreal fire stack: native core flame, crossed outer tongues, small contact flash, smoke/heat haze, and sparse embers. Reference media is only a target, not the rendered main layer."
         )
         emitters = []
         if reference_flipbook:
@@ -383,12 +409,12 @@ def build_vfx_plan(
                 material_style="fire_pillar_core",
                 motion="ignite_burst_rise_and_collapse",
                 spawn_rate=1.0,
-                lifetime_seconds=0.48,
-                start_size=72.0,
-                end_size=260.0,
+                lifetime_seconds=core_lifetime,
+                start_size=core_start_size,
+                end_size=core_end_size,
                 color_palette=fire_palette_values,
                 sprite_source=None,
-                notes=["Dominant vertical fire column; this layer must read before sparks or smoke."],
+                notes=[core_notes],
             ),
             VFXEmitterPlan(
                 name="side_flame_slashes",
@@ -396,12 +422,12 @@ def build_vfx_plan(
                 sprite_shape="flame_slash",
                 material_style="fire_side_slashes",
                 motion="curl_outward_then_lift",
-                spawn_rate=3.0,
-                lifetime_seconds=0.42,
-                start_size=54.0,
-                end_size=190.0,
+                spawn_rate=1.0 if is_short_gameplay_burst else 3.0,
+                lifetime_seconds=0.28 if is_short_gameplay_burst else 0.42,
+                start_size=tongue_start_size,
+                end_size=tongue_end_size,
                 color_palette=fire_palette_values[1:],
-                notes=["Large side flame tongues and broken slash shapes around the base."],
+                notes=["Small connected flame licks around the burst crown; never render as detached large flame stamps." if is_short_gameplay_burst else "Large side flame tongues and broken slash shapes around the base."],
             ),
             VFXEmitterPlan(
                 name="rear_flame_tongues",
@@ -409,12 +435,12 @@ def build_vfx_plan(
                 sprite_shape="flame_slash",
                 material_style="fire_side_slashes",
                 motion="rear_tongues_lag_and_lift",
-                spawn_rate=2.0,
-                lifetime_seconds=0.58,
-                start_size=44.0,
-                end_size=170.0,
+                spawn_rate=1.0 if is_short_gameplay_burst else 2.0,
+                lifetime_seconds=0.34 if is_short_gameplay_burst else 0.58,
+                start_size=rear_tongue_start_size,
+                end_size=rear_tongue_end_size,
                 color_palette=fire_palette_values[1:],
-                notes=["Offset rear flame tongues create a tutorial-style crossed volume instead of a flat front sheet."],
+                notes=["Tiny rear licks only for volume breakup; do not create a second pasted flame image." if is_short_gameplay_burst else "Offset rear flame tongues create a tutorial-style crossed volume instead of a flat front sheet."],
             ),
             VFXEmitterPlan(
                 name=ground_name,
@@ -436,9 +462,9 @@ def build_vfx_plan(
                 material_style="fire_impact_flash",
                 motion="flash_expand_then_fade",
                 spawn_rate=1.0,
-                lifetime_seconds=0.24,
-                start_size=92.0,
-                end_size=185.0,
+                lifetime_seconds=0.18 if is_short_gameplay_burst else 0.24,
+                start_size=impact_start_size,
+                end_size=impact_end_size,
                 color_palette=fire_palette_values[:3],
                 sprite_source=None,
                 notes=["Overexposed hot center that sells the ignition moment."],
@@ -449,10 +475,10 @@ def build_vfx_plan(
                 sprite_shape="smoke_wisp",
                 material_style="translucent_smoke_dust",
                 motion="low_crown_roll_and_fade",
-                spawn_rate=8.0,
-                lifetime_seconds=0.92,
-                start_size=80.0,
-                end_size=220.0,
+                spawn_rate=4.0 if is_short_gameplay_burst else 8.0,
+                lifetime_seconds=0.54 if is_short_gameplay_burst else 0.92,
+                start_size=smoke_start_size,
+                end_size=smoke_end_size,
                 color_palette=["#2A211C", "#6A5144", fire_palette_values[2]],
                 notes=["Dark low crown around the blast base; it should support the fire, not cover it."],
             ),
@@ -462,10 +488,10 @@ def build_vfx_plan(
                 sprite_shape="smoke_wisp",
                 material_style="translucent_heat_distortion",
                 motion="rising_heat_haze_column",
-                spawn_rate=4.0,
-                lifetime_seconds=0.82,
-                start_size=70.0,
-                end_size=210.0,
+                spawn_rate=3.0 if is_short_gameplay_burst else 4.0,
+                lifetime_seconds=0.48 if is_short_gameplay_burst else 0.82,
+                start_size=heat_start_size,
+                end_size=heat_end_size,
                 color_palette=["#18120F", "#4A3024", fire_palette_values[1]],
                 notes=["Low-opacity heat haze shell that carries distortion and breaks the hard card silhouette."],
             ),
@@ -475,8 +501,8 @@ def build_vfx_plan(
                 sprite_shape="shard",
                 material_style="orange_emissive",
                 motion="short_radial_spark_scatter",
-                spawn_rate=18.0,
-                lifetime_seconds=0.32,
+                spawn_rate=10.0 if is_short_gameplay_burst else 18.0,
+                lifetime_seconds=0.24 if is_short_gameplay_burst else 0.32,
                 start_size=5.0,
                 end_size=1.2,
                 color_palette=fire_palette_values[1:3],
@@ -485,7 +511,7 @@ def build_vfx_plan(
         ])
         emitters = apply_unreal_settings(emitters, config)
         return VFXPlan(
-            visual_intent="Tutorial-style Unreal fire stack: native core flame, crossed outer tongues, small contact flash, smoke/heat haze, and sparse embers. Reference media is only a target, not the rendered main layer.",
+            visual_intent=visual_intent,
             primary_emitter="central_fire_pillar",
             emitters=emitters,
             reference_card_source=reference_card_source,

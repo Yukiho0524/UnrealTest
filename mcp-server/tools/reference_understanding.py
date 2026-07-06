@@ -85,6 +85,7 @@ def build_local_reference_understanding(package_path: Path, media_files: list[Pa
 
     category = infer_effect_category(text, shape, style)
     structure = infer_structure(category, shape, motion, style, visual_profile)
+    structure = apply_designer_intent_to_structure(structure, category, text)
     generation_strategy = generation_strategy_for(category, structure)
     unreal_strategy = unreal_strategy_for(category, structure)
     failure_modes = failure_modes_for(category, structure)
@@ -108,6 +109,7 @@ def build_local_reference_understanding(package_path: Path, media_files: list[Pa
             "center_energy": visual_profile.get("center_energy"),
             "bright_pixel_ratio": visual_profile.get("bright_pixel_ratio"),
             "warm_pixel_ratio": visual_profile.get("warm_pixel_ratio"),
+            "designer_intent_tags": designer_intent_tags(text),
         },
         "vfx_structure": structure,
         "generation_strategy": generation_strategy,
@@ -235,6 +237,14 @@ def infer_structure(category: str, shape: str, motion: str, style: str, visual_p
             "ground_role": ground_role,
             "renderer_bias": ["volume_mesh_helpers", "cross_billboard_flipbooks", "small_particles"],
             "needs_motion_target": animated > 0,
+            "shape_contract": {
+                "height_class": "medium_plume",
+                "footprint_class": "compact",
+                "primary_silhouette": "single connected torn flame mass",
+                "allowed_airborne_shapes": ["connected_flame_core", "small_licking_tongues", "thin_heat_haze", "sparse_embers"],
+                "forbidden_airborne_shapes": ["detached_large_flame_stamps", "flat_square_sheets", "decorative_floor_symbol_as_main_read"],
+                "max_airborne_card_role": "debug_only",
+            },
         }
     if category == "electric_arc":
         return {
@@ -257,6 +267,56 @@ def infer_structure(category: str, shape: str, motion: str, style: str, visual_p
         "renderer_bias": ["flipbook_cards", "particles"],
         "needs_motion_target": animated > 0,
     }
+
+
+def designer_intent_tags(text: str) -> list[str]:
+    tags = []
+    if any(token in text for token in ("character", "skill", "attack", "spell", "角色", "技能", "攻擊")):
+        tags.append("character_skill")
+    if any(token in text for token in ("short", "quick", "burst", "one-shot", "one shot", "短", "快速", "爆發")):
+        tags.append("short_burst")
+    negated_environmental = any(token in text for token in ("shorter than a looping environmental", "not a looping environmental", "not environmental", "不是環境", "不要環境"))
+    if not negated_environmental and any(token in text for token in ("looping environmental", "environmental fire", "環境", "循環")):
+        tags.append("environmental_loop")
+    if any(token in text for token in ("ground", "contact", "ignition", "地面", "接觸", "點燃")):
+        tags.append("ground_ignition")
+    return tags
+
+
+def apply_designer_intent_to_structure(structure: dict[str, Any], category: str, text: str) -> dict[str, Any]:
+    if category != "fire_plume":
+        return structure
+    tags = set(designer_intent_tags(text))
+    if not {"character_skill", "short_burst"}.issubset(tags):
+        return structure
+    result = dict(structure)
+    result.update(
+        {
+            "primary_form": "short_gameplay_fire_burst",
+            "silhouette": "compact ground ignition that rises into a short connected flame crown, then breaks into tiny embers",
+            "motion_model": "fast ignition squash, connected flame lift, ember scatter, quick fade",
+            "camera_read": "must read as a short gameplay hit VFX, not a tall environmental fire column",
+            "required_layers": ["hot_ignition_core", "connected_flame_lobes", "thin_heat_distortion", "sparse_embers", "small_contact_flash"],
+            "ground_role": "small_contact_flash",
+            "renderer_bias": ["niagara_subuv_particles", "ribbon_or_mesh_flame_lobes", "small_particles"],
+            "shape_contract": {
+                "height_class": "short_burst",
+                "footprint_class": "tight_gameplay_contact",
+                "primary_silhouette": "connected flame crown with broken upper edge",
+                "allowed_airborne_shapes": ["connected_flame_lobes", "small_flame_licks", "tiny_embers", "thin_heat_haze"],
+                "forbidden_airborne_shapes": [
+                    "detached_large_flame_stamps",
+                    "tall_fire_pillar",
+                    "flat_square_sheets",
+                    "decorative_floor_symbol_as_main_read",
+                    "smoke_wall",
+                ],
+                "max_airborne_card_role": "none_for_regular_preview",
+                "target_height_to_width": [0.9, 1.6],
+            },
+        }
+    )
+    return result
 
 
 def generation_strategy_for(category: str, structure: dict[str, Any]) -> dict[str, Any]:
@@ -332,19 +392,26 @@ def failure_modes_for(category: str, structure: dict[str, Any]) -> list[str]:
                 "2D card stack visible from side view",
             ]
         )
+    contract = structure.get("shape_contract") or {}
+    common.extend(str(item) for item in contract.get("forbidden_airborne_shapes") or [])
     if category == "fire_magic_vortex":
         common.extend(["straight vertical tower instead of spiral flow", "solid cone or goblet silhouette instead of a hollow vortex"])
     return common
 
 
 def review_focus_for(category: str, structure: dict[str, Any]) -> list[str]:
-    return [
+    focus = [
         f"Does the thumbnail read as {structure.get('primary_form')}?",
         f"Does the silhouette match: {structure.get('silhouette')}?",
         "Does the preview stay readable when viewed from the side?",
         "Are secondary particles clearly secondary?",
         "Are data passes present enough to avoid a flat 2D look?",
     ]
+    contract = structure.get("shape_contract") or {}
+    if contract:
+        focus.append(f"Does it obey the shape contract: {contract.get('primary_silhouette')}?")
+        focus.append(f"Forbidden shapes absent: {', '.join(contract.get('forbidden_airborne_shapes') or [])}")
+    return focus
 
 
 def dominant_read_for(category: str, structure: dict[str, Any]) -> str:
