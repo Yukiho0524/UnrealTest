@@ -37,7 +37,7 @@ def build_asset_pass_manifest(
     ai_outputs = collect_ai_outputs(package_path.name, ai_art_root)
     reference_candidates = reference_candidates_for_spec(spec.to_dict(), reference_media)
     ai_companion_candidates = derive_ai_companion_candidates(package_path.name, pass_specs, ai_outputs, output_root)
-    derived_candidates = derive_bootstrap_candidates(package_path.name, pass_specs, reference_candidates, reference_media, output_root)
+    derived_candidates = derive_bootstrap_candidates(package_path.name, pass_specs, reference_candidates, reference_media, output_root, spec.to_dict())
 
     entries = [
         asset_pass_entry(pass_spec, manual_outputs, reference_candidates, ai_companion_candidates, derived_candidates, ai_outputs, package_path.name, output_root)
@@ -1250,10 +1250,13 @@ def derive_bootstrap_candidates(
     reference_candidates: dict[str, list[dict[str, str]]],
     reference_media: list[Path],
     output_root: Path,
+    spec: dict[str, Any] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     beauty = first_existing_candidate(reference_candidates.get("beauty_flipbook", []))
     reference_motion = first_existing_candidate(reference_candidates.get("reference_motion_overlay", []))
     source = beauty or reference_motion
+    shape_contract = ((((spec or {}).get("visual_profile") or {}).get("reference_understanding") or {}).get("vfx_structure") or {}).get("shape_contract") or {}
+    procedural_short_burst = shape_contract.get("height_class") == "short_burst"
     procedural_only = "firestorm" in package_name.lower()
     if not source and not procedural_only:
         return {}
@@ -1292,7 +1295,10 @@ def derive_bootstrap_candidates(
 
     if "core_flame_flipbook" in target_names:
         core_path = output_dir / f"{package_name}_core_flame_flipbook.png"
-        if core_source:
+        if procedural_short_burst:
+            create_fire_atlas_pass(core_path, "short_burst_core")
+            candidates.setdefault("core_flame_flipbook", []).append(derived_candidate(core_path, "procedural_short_burst_core", source="procedural_layer_synthesis", confidence="medium"))
+        elif core_source:
             create_reference_extracted_fire_atlas(core_source, core_path, "core_flame")
             candidates.setdefault("core_flame_flipbook", []).append(derived_candidate(core_path, "core_flame_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
         else:
@@ -1306,7 +1312,10 @@ def derive_bootstrap_candidates(
 
     if "flame_slash_flipbook" in target_names:
         slash_path = output_dir / f"{package_name}_flame_slash_flipbook.png"
-        if side_source:
+        if procedural_short_burst:
+            create_fire_atlas_pass(slash_path, "short_burst_lobes")
+            candidates.setdefault("flame_slash_flipbook", []).append(derived_candidate(slash_path, "procedural_short_burst_lobes", source="procedural_layer_synthesis", confidence="medium"))
+        elif side_source:
             create_reference_extracted_fire_atlas(side_source, slash_path, "flame_slashes")
             candidates.setdefault("flame_slash_flipbook", []).append(derived_candidate(slash_path, "side_flames_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
         else:
@@ -1320,7 +1329,10 @@ def derive_bootstrap_candidates(
 
     if "impact_flash_mask" in target_names:
         flash_path = output_dir / f"{package_name}_impact_flash_mask.png"
-        if ring_source:
+        if procedural_short_burst:
+            create_fire_atlas_pass(flash_path, "short_burst_impact")
+            candidates.setdefault("impact_flash_mask", []).append(derived_candidate(flash_path, "procedural_short_burst_impact", source="procedural_layer_synthesis", confidence="medium"))
+        elif ring_source:
             create_reference_extracted_fire_atlas(ring_source, flash_path, "impact_flash")
             candidates.setdefault("impact_flash_mask", []).append(derived_candidate(flash_path, "impact_flash_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
         else:
@@ -1329,7 +1341,10 @@ def derive_bootstrap_candidates(
 
     if "ember_sprite_set" in target_names:
         ember_path = output_dir / f"{package_name}_ember_sprite_set.png"
-        if target_reference:
+        if procedural_short_burst:
+            create_fire_atlas_pass(ember_path, "short_burst_embers")
+            candidates.setdefault("ember_sprite_set", []).append(derived_candidate(ember_path, "procedural_short_burst_embers", source="procedural_layer_synthesis", confidence="medium"))
+        elif target_reference:
             create_reference_extracted_fire_atlas(target_reference, ember_path, "embers")
             candidates.setdefault("ember_sprite_set", []).append(derived_candidate(ember_path, "embers_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
         else:
@@ -1954,6 +1969,14 @@ def create_fire_atlas_pass(output_path: Path, pass_kind: str, columns: int = 4, 
             draw_firestorm_slash_frame(draw, frame_size, phase)
         elif pass_kind == "firestorm_ground_ring":
             draw_firestorm_ground_ring_frame(draw, frame_size, phase)
+        elif pass_kind == "short_burst_core":
+            draw_short_burst_core_frame(draw, frame_size, phase)
+        elif pass_kind == "short_burst_lobes":
+            draw_short_burst_lobes_frame(draw, frame_size, phase)
+        elif pass_kind == "short_burst_impact":
+            draw_short_burst_impact_frame(draw, frame_size, phase)
+        elif pass_kind == "short_burst_embers":
+            draw_short_burst_ember_frame(draw, frame_size, phase, index)
         elif pass_kind == "alpha_mask":
             draw_firestorm_alpha_frame(draw, frame_size, phase)
         elif pass_kind == "normal_or_lighting":
@@ -1988,6 +2011,14 @@ def blur_radius_for_fire_pass(pass_kind: str) -> float:
         return 1.45
     if pass_kind == "firestorm_slashes":
         return 1.15
+    if pass_kind == "short_burst_core":
+        return 2.4
+    if pass_kind == "short_burst_lobes":
+        return 1.35
+    if pass_kind == "short_burst_impact":
+        return 0.8
+    if pass_kind == "short_burst_embers":
+        return 0.05
     if pass_kind == "firestorm_ground_ring":
         return 0.35
     if pass_kind in {"normal_or_lighting", "depth_or_thickness", "layer_mask_pack", "sdf_or_vector_field"}:
@@ -1995,6 +2026,95 @@ def blur_radius_for_fire_pass(pass_kind: str) -> float:
     if pass_kind == "embers":
         return 0.05
     return 0.22
+
+
+def draw_short_burst_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    pulse = math.sin(phase * math.pi)
+    cx = size * (0.5 + math.sin(phase * math.tau * 0.8) * 0.025)
+    cy = size * (0.56 - pulse * 0.06)
+
+    # This is a flame volume cell, not a complete flame drawing. Repeated
+    # Niagara sprites should blend into one connected burst instead of reading
+    # as many pasted fire icons.
+    for index in range(16):
+        t = index / 15
+        band = (index % 5) / 4
+        rx = size * (0.075 + 0.055 * (1.0 - band) + pulse * 0.012)
+        ry = size * (0.09 + 0.08 * (1.0 - t) + pulse * 0.018)
+        x = cx + signed_noise(index * 1.1, phase) * size * 0.085
+        y = cy - t * size * 0.24 + signed_noise(index * 1.6, phase + 1.0) * size * 0.035
+        alpha = int((30 + 54 * (1.0 - t)) * (0.72 + pulse * 0.28))
+        draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(255, int(78 + 116 * (1.0 - t)), 20, alpha))
+
+    for index in range(7):
+        t = index / 6
+        rx = size * (0.036 + pulse * 0.006)
+        ry = size * (0.08 + pulse * 0.012)
+        x = cx + signed_noise(index * 2.3, phase + 4.0) * size * 0.055
+        y = cy - size * (0.02 + t * 0.22)
+        draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(255, 218, 96, int((30 + 38 * (1.0 - t)) * (0.78 + pulse * 0.22))))
+
+    for index in range(6):
+        side = -1 if index % 2 == 0 else 1
+        origin_x = cx + side * size * (0.05 + index * 0.012)
+        origin_y = cy + size * 0.1 - index * size * 0.025
+        draw_flame_ribbon(
+            draw,
+            size,
+            origin_x,
+            origin_y,
+            size * (0.14 + pulse * 0.04),
+            size * (0.018 + index * 0.002),
+            math.radians(72 + index * 8) * side,
+            side * 0.28,
+            phase,
+            (255, 76 + index * 22, 16, int(28 + 34 * pulse)),
+            11.0 + index,
+            steps=8,
+        )
+
+
+def draw_short_burst_lobes_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    pulse = math.sin(phase * math.pi)
+    cx = size * 0.5
+    cy = size * (0.7 - pulse * 0.08)
+    for index in range(7):
+        side = -1 if index % 2 == 0 else 1
+        distance = size * (0.05 + index * 0.018)
+        origin_x = cx + side * distance
+        origin_y = cy + signed_noise(index, phase) * size * 0.018
+        angle = math.radians(64 + index * 7) * side
+        length = size * (0.16 + pulse * 0.09 + index * 0.006)
+        width = size * (0.026 + (6 - index) * 0.004)
+        color = (255, 82 + index * 14, 18, int(96 + 78 * pulse))
+        draw_flame_ribbon(draw, size, origin_x, origin_y, length, width, angle, side * 0.42, phase, color, 3.1 + index)
+    draw.ellipse((cx - size * 0.18, cy - size * 0.1, cx + size * 0.18, cy + size * 0.08), fill=(255, 142, 24, int(70 + 52 * pulse)))
+
+
+def draw_short_burst_impact_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
+    pulse = math.sin(phase * math.pi)
+    cx = cy = size * 0.5
+    for index in range(5):
+        radius_x = size * (0.09 + index * 0.05 + pulse * 0.025)
+        radius_y = size * (0.035 + index * 0.016)
+        alpha = int((155 - index * 28) * (0.72 + pulse * 0.28))
+        draw.ellipse((cx - radius_x, cy - radius_y, cx + radius_x, cy + radius_y), fill=(255, 130 + index * 16, 28, alpha))
+    draw.ellipse((cx - size * 0.055, cy - size * 0.055, cx + size * 0.055, cy + size * 0.055), fill=(255, 252, 208, int(220 * pulse)))
+
+
+def draw_short_burst_ember_frame(draw: ImageDraw.ImageDraw, size: int, phase: float, seed: int) -> None:
+    pulse = 0.65 + math.sin(phase * math.pi) * 0.35
+    cx = size * (0.5 + signed_noise(seed * 1.2, phase) * 0.08)
+    cy = size * (0.52 + signed_noise(seed * 1.7, phase + 2.0) * 0.08)
+    radius = size * (0.016 + (seed % 3) * 0.004)
+    angle = phase * math.tau + seed * 0.9
+    trail = size * (0.04 + (seed % 4) * 0.012)
+    tx = math.cos(angle) * trail
+    ty = math.sin(angle) * trail
+    draw.line((cx - tx, cy - ty, cx + tx * 0.2, cy + ty * 0.2), fill=(255, 82, 18, int(86 * pulse)), width=max(1, int(size * 0.012)))
+    draw.ellipse((cx - radius * 2.0, cy - radius * 2.0, cx + radius * 2.0, cy + radius * 2.0), fill=(255, 72, 14, int(58 * pulse)))
+    draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=(255, 174, 42, int(170 * pulse)))
+    draw.ellipse((cx - radius * 0.42, cy - radius * 0.42, cx + radius * 0.42, cy + radius * 0.42), fill=(255, 246, 198, int(230 * pulse)))
 
 
 def draw_firestorm_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
