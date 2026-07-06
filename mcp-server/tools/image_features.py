@@ -30,6 +30,14 @@ def analyze_media_files(media_files: list[Path]) -> dict[str, Any]:
         "base_energy": round(mean(profile["base_energy"] for profile in image_profiles), 3),
         "center_energy": round(mean(profile["center_energy"] for profile in image_profiles), 3),
         "dark_smoke_ratio": round(mean(profile["dark_smoke_ratio"] for profile in image_profiles), 3),
+        "effect_bbox_aspect": round(mean(profile["effect_bbox_aspect"] for profile in image_profiles), 3),
+        "effect_bbox_fill": round(mean(profile["effect_bbox_fill"] for profile in image_profiles), 3),
+        "bottom_width_ratio": round(mean(profile["bottom_width_ratio"] for profile in image_profiles), 3),
+        "top_width_ratio": round(mean(profile["top_width_ratio"] for profile in image_profiles), 3),
+        "connectedness": round(mean(profile["connectedness"] for profile in image_profiles), 3),
+        "sprite_sheet_likelihood": round(mean(profile["sprite_sheet_likelihood"] for profile in image_profiles), 3),
+        "motion_area_growth": round(mean(profile["motion_area_growth"] for profile in image_profiles), 3),
+        "motion_centroid_lift": round(mean(profile["motion_centroid_lift"] for profile in image_profiles), 3),
         "sparks_hint": any(profile["sparks_hint"] for profile in image_profiles),
         "motion_hint": infer_motion_hint(image_profiles),
         "shape_hint": infer_shape_hint(image_profiles),
@@ -42,6 +50,7 @@ def analyze_media_file(path: Path) -> dict[str, Any]:
     with Image.open(path) as image:
         frames = sample_frames(image)
         frame_profiles = [analyze_frame(frame) for frame in frames]
+        motion_profile = analyze_frame_motion(frame_profiles)
 
     return {
         "file": str(path),
@@ -58,6 +67,14 @@ def analyze_media_file(path: Path) -> dict[str, Any]:
         "base_energy": round(mean(profile["base_energy"] for profile in frame_profiles), 3),
         "center_energy": round(mean(profile["center_energy"] for profile in frame_profiles), 3),
         "dark_smoke_ratio": round(mean(profile["dark_smoke_ratio"] for profile in frame_profiles), 3),
+        "effect_bbox_aspect": round(mean(profile["effect_bbox_aspect"] for profile in frame_profiles), 3),
+        "effect_bbox_fill": round(mean(profile["effect_bbox_fill"] for profile in frame_profiles), 3),
+        "bottom_width_ratio": round(mean(profile["bottom_width_ratio"] for profile in frame_profiles), 3),
+        "top_width_ratio": round(mean(profile["top_width_ratio"] for profile in frame_profiles), 3),
+        "connectedness": round(mean(profile["connectedness"] for profile in frame_profiles), 3),
+        "sprite_sheet_likelihood": round(mean(profile["sprite_sheet_likelihood"] for profile in frame_profiles), 3),
+        "motion_area_growth": motion_profile["area_growth"],
+        "motion_centroid_lift": motion_profile["centroid_lift"],
         "sparks_hint": any(profile["sparks_hint"] for profile in frame_profiles),
     }
 
@@ -87,6 +104,7 @@ def analyze_frame(frame: Image.Image) -> dict[str, Any]:
 
     heat_map = build_heat_map(image)
     bright_components = analyze_bright_components(image)
+    silhouette = analyze_effect_silhouette(image)
     return {
         "palette": dominant_palette([rgb_to_hex(pixel[:3]) for pixel in warm_pixels or visible]),
         "brightness": average_luminance(visible),
@@ -99,8 +117,127 @@ def analyze_frame(frame: Image.Image) -> dict[str, Any]:
         "base_energy": heat_map["base_energy"],
         "center_energy": heat_map["center_energy"],
         "dark_smoke_ratio": ratio(len(dark_warm_pixels), len(visible)),
+        "effect_bbox_aspect": silhouette["bbox_aspect"],
+        "effect_bbox_fill": silhouette["bbox_fill"],
+        "bottom_width_ratio": silhouette["bottom_width_ratio"],
+        "top_width_ratio": silhouette["top_width_ratio"],
+        "connectedness": silhouette["connectedness"],
+        "sprite_sheet_likelihood": silhouette["sprite_sheet_likelihood"],
+        "effect_centroid_y": silhouette["centroid_y"],
+        "effect_area_ratio": silhouette["area_ratio"],
         "sparks_hint": ratio(len(spark_pixels), len(visible)) > 0.015,
     }
+
+
+def analyze_frame_motion(frame_profiles: list[dict[str, Any]]) -> dict[str, float]:
+    if len(frame_profiles) < 2:
+        return {"area_growth": 0.0, "centroid_lift": 0.0}
+    first = frame_profiles[0]
+    last = frame_profiles[-1]
+    first_area = max(float(first.get("effect_area_ratio") or 0.0), 0.0001)
+    last_area = float(last.get("effect_area_ratio") or 0.0)
+    first_y = float(first.get("effect_centroid_y") or 0.0)
+    last_y = float(last.get("effect_centroid_y") or 0.0)
+    return {
+        "area_growth": round((last_area - first_area) / first_area, 3),
+        "centroid_lift": round(first_y - last_y, 3),
+    }
+
+
+def analyze_effect_silhouette(image: Image.Image) -> dict[str, float]:
+    width, height = image.size
+    mask = set()
+    for y in range(height):
+        for x in range(width):
+            r, g, b, a = image.getpixel((x, y))
+            if a <= 16:
+                continue
+            lum = luminance((r, g, b, a))
+            warm = is_warm((r, g, b, a), loose=True)
+            if (warm and lum > 0.16) or lum > 0.58:
+                mask.add((x, y))
+    if not mask:
+        return {
+            "bbox_aspect": 0.0,
+            "bbox_fill": 0.0,
+            "bottom_width_ratio": 0.0,
+            "top_width_ratio": 0.0,
+            "connectedness": 0.0,
+            "sprite_sheet_likelihood": 0.0,
+            "centroid_y": 0.0,
+            "area_ratio": 0.0,
+        }
+    xs = [point[0] for point in mask]
+    ys = [point[1] for point in mask]
+    left, right = min(xs), max(xs)
+    top, bottom = min(ys), max(ys)
+    box_w = right - left + 1
+    box_h = bottom - top + 1
+    bbox_area = max(box_w * box_h, 1)
+    area = len(mask)
+    top_band_y = top + box_h * 0.33
+    bottom_band_y = top + box_h * 0.67
+    top_xs = [x for x, y in mask if y <= top_band_y]
+    bottom_xs = [x for x, y in mask if y >= bottom_band_y]
+    top_width = (max(top_xs) - min(top_xs) + 1) if top_xs else 0
+    bottom_width = (max(bottom_xs) - min(bottom_xs) + 1) if bottom_xs else 0
+    components = connected_components(mask)
+    largest = max((len(component) for component in components), default=0)
+    connectedness = largest / max(area, 1)
+    sheet_likelihood = sprite_sheet_likelihood_for_components(components, width, height)
+    centroid_y = sum(ys) / (height * len(ys))
+    return {
+        "bbox_aspect": round(box_w / max(box_h, 1), 3),
+        "bbox_fill": round(area / bbox_area, 3),
+        "bottom_width_ratio": round(bottom_width / max(box_w, 1), 3),
+        "top_width_ratio": round(top_width / max(box_w, 1), 3),
+        "connectedness": round(connectedness, 3),
+        "sprite_sheet_likelihood": round(sheet_likelihood, 3),
+        "centroid_y": round(centroid_y, 3),
+        "area_ratio": round(area / max(width * height, 1), 3),
+    }
+
+
+def connected_components(mask: set[tuple[int, int]]) -> list[set[tuple[int, int]]]:
+    visited = set()
+    components = []
+    for point in mask:
+        if point in visited:
+            continue
+        stack = [point]
+        visited.add(point)
+        component = set()
+        while stack:
+            px, py = stack.pop()
+            component.add((px, py))
+            for neighbor in ((px - 1, py), (px + 1, py), (px, py - 1), (px, py + 1)):
+                if neighbor in mask and neighbor not in visited:
+                    visited.add(neighbor)
+                    stack.append(neighbor)
+        components.append(component)
+    return components
+
+
+def sprite_sheet_likelihood_for_components(components: list[set[tuple[int, int]]], width: int, height: int) -> float:
+    if len(components) < 4:
+        return 0.0
+    centers = []
+    medium = 0
+    for component in components:
+        if len(component) < 6:
+            continue
+        xs = [point[0] for point in component]
+        ys = [point[1] for point in component]
+        box_w = max(xs) - min(xs) + 1
+        box_h = max(ys) - min(ys) + 1
+        if box_w > width * 0.08 and box_h > height * 0.08:
+            medium += 1
+            centers.append((sum(xs) / len(xs), sum(ys) / len(ys)))
+    if medium < 3:
+        return 0.0
+    horizontal_spread = (max(x for x, _ in centers) - min(x for x, _ in centers)) / max(width, 1)
+    vertical_spread = (max(y for _, y in centers) - min(y for _, y in centers)) / max(height, 1)
+    return clamp01((medium / 8.0) * 0.5 + horizontal_spread * 0.25 + vertical_spread * 0.25)
 
 
 def build_heat_map(image: Image.Image) -> dict[str, float]:
@@ -178,6 +315,16 @@ def analyze_bright_components(image: Image.Image) -> dict[str, float]:
 def infer_motion_hint(profiles: list[dict[str, Any]]) -> str:
     vertical = mean(profile["vertical_energy"] for profile in profiles)
     base = mean(profile["base_energy"] for profile in profiles)
+    lift = mean(profile["motion_centroid_lift"] for profile in profiles)
+    area_growth = mean(profile["motion_area_growth"] for profile in profiles)
+    bbox_aspect = mean(profile["effect_bbox_aspect"] for profile in profiles)
+    bottom_width = mean(profile["bottom_width_ratio"] for profile in profiles)
+    if lift > 0.08 and area_growth > 0.12:
+        return "ignite_expand_lift"
+    if vertical > 0.24 and bbox_aspect < 0.78:
+        return "vertical_column_rise"
+    if base > 0.45 and bottom_width > 0.55:
+        return "ground_ignition_burst"
     if vertical > 0.24:
         return "vertical_column_rise"
     if base > 0.45:
@@ -192,13 +339,22 @@ def infer_shape_hint(profiles: list[dict[str, Any]]) -> str:
     square_ratio = mean(profile["square_component_ratio"] for profile in profiles)
     component_count = mean(profile["bright_component_count"] for profile in profiles)
     warm = mean(profile["warm_pixel_ratio"] for profile in profiles)
+    bbox_aspect = mean(profile["effect_bbox_aspect"] for profile in profiles)
+    bbox_fill = mean(profile["effect_bbox_fill"] for profile in profiles)
+    bottom_width = mean(profile["bottom_width_ratio"] for profile in profiles)
+    sheet_likelihood = mean(profile["sprite_sheet_likelihood"] for profile in profiles)
+    animated_count = sum(1 for profile in profiles if profile["is_animated"])
+    if sheet_likelihood > 0.28 and animated_count == 0:
+        return "reference_sheet_multiple_fire_shapes"
     if component_count >= 12 and 0.25 <= square_ratio < 0.68 and warm < 0.1:
         return "glowing_shard_particles"
     if component_count >= 6 and square_ratio > 0.28 and warm < 0.1:
         return "glowing_square_particles"
+    if vertical > 0.24 and center > 0.32 and bbox_aspect >= 0.72 and bottom_width > 0.58:
+        return "compact_fire_burst_with_flame_crown"
     if vertical > 0.24 and center > 0.32:
         return "bright_core_column_with_outer_flames"
-    if base > 0.42:
+    if base > 0.42 and bbox_fill > 0.18:
         return "ground_ring_with_upward_flare"
     return "compact_sprite_burst"
 
@@ -208,8 +364,12 @@ def infer_style_hint(profiles: list[dict[str, Any]]) -> str:
     warm = mean(profile["warm_pixel_ratio"] for profile in profiles)
     smoke = mean(profile["dark_smoke_ratio"] for profile in profiles)
     vertical = mean(profile["vertical_energy"] for profile in profiles)
+    shape_hint = infer_shape_hint(profiles)
     square_ratio = mean(profile["square_component_ratio"] for profile in profiles)
     component_count = mean(profile["bright_component_count"] for profile in profiles)
+    sheet_likelihood = mean(profile["sprite_sheet_likelihood"] for profile in profiles)
+    if shape_hint == "reference_sheet_multiple_fire_shapes" or sheet_likelihood > 0.28:
+        return "reference_sheet_fire_designs"
     if bright > 0.025 and warm < 0.1 and component_count >= 12 and 0.25 <= square_ratio < 0.68:
         return "white_gold_glowing_shards"
     if bright > 0.025 and warm < 0.1 and component_count >= 6 and square_ratio > 0.28:
@@ -228,7 +388,7 @@ def effect_palette(profiles: list[dict[str, Any]], palette: list[str]) -> list[s
         return ["#FFFFFF", "#FFF0C8", "#FFD36A", "#A87528"]
     if shape_hint == "glowing_square_particles" or style_hint == "white_glowing_square_particles":
         return ["#FFFFFF", "#FFFCE8", "#DDE6FF", "#9FB3D9"]
-    if shape_hint == "bright_core_column_with_outer_flames" or style_hint == "high_intensity_stylized_fire":
+    if shape_hint in {"bright_core_column_with_outer_flames", "compact_fire_burst_with_flame_crown", "reference_sheet_multiple_fire_shapes"} or style_hint in {"high_intensity_stylized_fire", "reference_sheet_fire_designs"}:
         warm = next((color for color in palette if color not in {"#FFF8C8", "#FFD36A"}), "#FF6A21")
         return ["#FFF8C8", "#FFD36A", warm, "#371008"]
     return palette
@@ -266,3 +426,7 @@ def ratio(value: int, total: int) -> float:
     if total <= 0:
         return 0.0
     return round(value / total, 3)
+
+
+def clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))

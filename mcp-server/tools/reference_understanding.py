@@ -109,6 +109,14 @@ def build_local_reference_understanding(package_path: Path, media_files: list[Pa
             "center_energy": visual_profile.get("center_energy"),
             "bright_pixel_ratio": visual_profile.get("bright_pixel_ratio"),
             "warm_pixel_ratio": visual_profile.get("warm_pixel_ratio"),
+            "effect_bbox_aspect": visual_profile.get("effect_bbox_aspect"),
+            "effect_bbox_fill": visual_profile.get("effect_bbox_fill"),
+            "bottom_width_ratio": visual_profile.get("bottom_width_ratio"),
+            "top_width_ratio": visual_profile.get("top_width_ratio"),
+            "connectedness": visual_profile.get("connectedness"),
+            "sprite_sheet_likelihood": visual_profile.get("sprite_sheet_likelihood"),
+            "motion_area_growth": visual_profile.get("motion_area_growth"),
+            "motion_centroid_lift": visual_profile.get("motion_centroid_lift"),
             "designer_intent_tags": designer_intent_tags(text),
         },
         "vfx_structure": structure,
@@ -228,6 +236,26 @@ def infer_structure(category: str, shape: str, motion: str, style: str, visual_p
         ground_role = "small_contact_flash"
         if base > 0.5 and vertical < 0.22:
             ground_role = "impact_ring"
+        if shape == "compact_fire_burst_with_flame_crown":
+            return {
+                "primary_form": "compact_fire_burst",
+                "silhouette": "wide grounded ignition with a connected short flame crown and broken upper edge",
+                "motion_model": "ground ignition, compact expansion, short lift, then ember fade",
+                "camera_read": "should read as a short gameplay burst; avoid a tall pillar or repeated flame stamps",
+                "required_layers": ["hot_ignition_core", "connected_flame_lobes", "thin_heat_distortion", "embers", "small_contact_flash"],
+                "ground_role": "small_contact_flash",
+                "renderer_bias": ["niagara_subuv_particles", "ribbon_or_mesh_flame_lobes", "small_particles"],
+                "needs_motion_target": animated > 0,
+                "shape_contract": {
+                    "height_class": "short_burst",
+                    "footprint_class": "tight_gameplay_contact",
+                    "primary_silhouette": "connected flame crown with broken upper edge",
+                    "allowed_airborne_shapes": ["connected_flame_lobes", "small_flame_licks", "tiny_embers", "thin_heat_haze"],
+                    "forbidden_airborne_shapes": ["detached_large_flame_stamps", "tall_fire_pillar", "flat_square_sheets", "decorative_floor_symbol_as_main_read", "smoke_wall"],
+                    "max_airborne_card_role": "none_for_regular_preview",
+                    "target_height_to_width": [0.9, 1.6],
+                },
+            }
         return {
             "primary_form": "volumetric_flame_plume",
             "silhouette": "irregular rising fire mass with torn edges, hot inner core, and darker outer smoke",
