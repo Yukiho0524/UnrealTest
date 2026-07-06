@@ -2030,8 +2030,8 @@ def blur_radius_for_fire_pass(pass_kind: str) -> float:
 
 def draw_short_burst_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
     pulse = math.sin(phase * math.pi)
-    cx = size * (0.5 + math.sin(phase * math.tau * 0.8) * 0.025)
-    cy = size * (0.56 - pulse * 0.06)
+    cx = size * (0.5 + math.sin(phase * math.tau * 0.8) * 0.03)
+    cy = size * (0.59 - pulse * 0.045)
 
     # This is a flame volume cell, not a complete flame drawing. Repeated
     # Niagara sprites should blend into one connected burst instead of reading
@@ -2039,32 +2039,32 @@ def draw_short_burst_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: flo
     for index in range(16):
         t = index / 15
         band = (index % 5) / 4
-        rx = size * (0.075 + 0.055 * (1.0 - band) + pulse * 0.012)
-        ry = size * (0.09 + 0.08 * (1.0 - t) + pulse * 0.018)
-        x = cx + signed_noise(index * 1.1, phase) * size * 0.085
-        y = cy - t * size * 0.24 + signed_noise(index * 1.6, phase + 1.0) * size * 0.035
-        alpha = int((30 + 54 * (1.0 - t)) * (0.72 + pulse * 0.28))
+        rx = size * (0.058 + 0.05 * (1.0 - band) + pulse * 0.01)
+        ry = size * (0.07 + 0.062 * (1.0 - t) + pulse * 0.014)
+        x = cx + signed_noise(index * 1.1, phase) * size * 0.13
+        y = cy - t * size * 0.2 + signed_noise(index * 1.6, phase + 1.0) * size * 0.046
+        alpha = int((24 + 46 * (1.0 - t)) * (0.72 + pulse * 0.28))
         draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(255, int(78 + 116 * (1.0 - t)), 20, alpha))
 
     for index in range(7):
         t = index / 6
         rx = size * (0.036 + pulse * 0.006)
         ry = size * (0.08 + pulse * 0.012)
-        x = cx + signed_noise(index * 2.3, phase + 4.0) * size * 0.055
-        y = cy - size * (0.02 + t * 0.22)
-        draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(255, 218, 96, int((30 + 38 * (1.0 - t)) * (0.78 + pulse * 0.22))))
+        x = cx + signed_noise(index * 2.3, phase + 4.0) * size * 0.082
+        y = cy - size * (0.015 + t * 0.18)
+        draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(255, 218, 96, int((22 + 28 * (1.0 - t)) * (0.78 + pulse * 0.22))))
 
     for index in range(6):
         side = -1 if index % 2 == 0 else 1
-        origin_x = cx + side * size * (0.05 + index * 0.012)
-        origin_y = cy + size * 0.1 - index * size * 0.025
+        origin_x = cx + side * size * (0.08 + index * 0.018)
+        origin_y = cy + size * 0.08 - index * size * 0.019
         draw_flame_ribbon(
             draw,
             size,
             origin_x,
             origin_y,
-            size * (0.14 + pulse * 0.04),
-            size * (0.018 + index * 0.002),
+            size * (0.17 + pulse * 0.035),
+            size * (0.014 + index * 0.0015),
             math.radians(72 + index * 8) * side,
             side * 0.28,
             phase,
@@ -2610,8 +2610,10 @@ def quality_note_for_selected_asset(selected: dict[str, str] | None) -> str:
         return "missing_required_generation_or_assignment"
     if selected.get("source") == "derived_reference_bootstrap":
         return "bootstrap_only_replace_with_ai_or_simulation_for_final_aaa_quality"
-    if selected.get("source") == "reference_extraction":
+    if selected.get("source") in {"reference_extraction", "reference_layer_extraction"}:
         return "reference_extraction_useful_for_match_but_should_be_rebuilt_as_editable_layers"
+    if str(selected.get("role") or "").startswith("procedural_short_burst_"):
+        return "short_burst_procedural_cell_available_replace_with_sim_or_ai_for_final_quality"
     return "candidate_available"
 
 

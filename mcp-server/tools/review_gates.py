@@ -22,6 +22,7 @@ def review_effect_package(package_path: Path, destination_path: str | None = Non
         gate_required_passes(manifest),
         gate_similarity_target(manifest),
         gate_fire_pass_coverage(spec.effect_type, manifest),
+        gate_fire_art_direction(patched_spec, manifest),
         gate_layer_timing(patched_spec, unreal_result),
         gate_distortion_pass_link(patched_spec, manifest),
         gate_material_data_pass_links(patched_spec, manifest),
@@ -195,6 +196,82 @@ def gate_fire_pass_coverage(effect_type: str, manifest: dict[str, Any]) -> dict[
     }
 
 
+def gate_fire_art_direction(spec: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
+    if spec.get("effect_type") != "fire_or_flame":
+        return {
+            "name": "fire_art_direction",
+            "status": "pass",
+            "message": "Not a fire package.",
+            "data": {},
+        }
+    structure = (((spec.get("visual_profile") or {}).get("reference_understanding") or {}).get("vfx_structure") or {})
+    shape_contract = structure.get("shape_contract") or {}
+    is_short_burst = shape_contract.get("height_class") == "short_burst"
+    entries = {entry.get("name"): entry for entry in manifest.get("passes", [])}
+    issues: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+
+    if is_short_burst:
+        expected_roles = {
+            "core_flame_flipbook": "procedural_short_burst_core",
+            "flame_slash_flipbook": "procedural_short_burst_lobes",
+            "impact_flash_mask": "procedural_short_burst_impact",
+            "ember_sprite_set": "procedural_short_burst_embers",
+        }
+        for pass_name, expected_role in expected_roles.items():
+            selected = (entries.get(pass_name) or {}).get("selected_asset") or {}
+            actual_role = str(selected.get("role") or "")
+            source = str(selected.get("source") or "")
+            if actual_role != expected_role:
+                issues.append(
+                    {
+                        "pass": pass_name,
+                        "type": "wrong_short_burst_asset_role",
+                        "expected_role": expected_role,
+                        "actual_role": actual_role,
+                        "source": source,
+                    }
+                )
+            if source == "reference_layer_extraction" and pass_name in {"core_flame_flipbook", "ember_sprite_set"}:
+                issues.append(
+                    {
+                        "pass": pass_name,
+                        "type": "reference_stamp_source_for_airborne_layer",
+                        "reason": "Short gameplay fire must not spray complete reference flame cutouts as particles.",
+                    }
+                )
+
+        core_selected = (entries.get("core_flame_flipbook") or {}).get("selected_asset") or {}
+        core_preview = core_selected.get("preview_frame_path") or core_selected.get("path")
+        metrics = sprite_art_metrics(core_preview)
+        if metrics:
+            if not 0.08 <= float(metrics.get("alpha_coverage") or 0.0) <= 0.34:
+                issues.append({"pass": "core_flame_flipbook", "type": "core_sprite_coverage_out_of_range", "metrics": metrics})
+            if float(metrics.get("strong_alpha_ratio") or 0.0) > 0.08:
+                issues.append({"pass": "core_flame_flipbook", "type": "core_sprite_too_opaque_for_volume_cell", "metrics": metrics})
+            if float(metrics.get("largest_component_fill") or 0.0) > 0.72 and float(metrics.get("largest_component_aspect") or 0.0) < 0.85:
+                warnings.append({"pass": "core_flame_flipbook", "type": "core_sprite_reads_like_complete_icon", "metrics": metrics})
+        else:
+            warnings.append({"pass": "core_flame_flipbook", "type": "core_sprite_metrics_unavailable", "path": core_preview})
+
+    forbidden = set(shape_contract.get("forbidden_airborne_shapes") or [])
+    ok = not issues
+    return {
+        "name": "fire_art_direction",
+        "status": "pass" if ok else "fail",
+        "message": (
+            "Fire asset choices match the analyzed VFX art direction."
+            if ok
+            else "Fire asset choices still violate the analyzed VFX art direction."
+        ),
+        "data": {
+            "primary_form": structure.get("primary_form"),
+            "shape_contract": shape_contract,
+            "forbidden_airborne_shapes": sorted(forbidden),
+            "issues": issues,
+            "warnings": warnings,
+        },
+    }
 def gate_layer_timing(spec: dict[str, Any], unreal_result: dict[str, Any] | None) -> dict[str, Any]:
     plan = spec.get("vfx_plan") or {}
     emitters = [
@@ -782,6 +859,65 @@ def whole_image_palette_metrics(image: Any) -> dict[str, float]:
     return {
         "warmth": round(warmth_ratio(image), 3),
         "cyan": round(cyan_ratio(image), 3),
+    }
+
+
+def sprite_art_metrics(path: str | None) -> dict[str, Any]:
+    if not path:
+        return {}
+    image_path = Path(path)
+    if not image_path.exists():
+        return {}
+    try:
+        from PIL import Image
+        image = Image.open(image_path).convert("RGBA")
+    except Exception:
+        return {}
+    image.thumbnail((160, 160))
+    width, height = image.size
+    pixels = image.load()
+    visible = set()
+    strong = 0
+    for y in range(height):
+        for x in range(width):
+            alpha = pixels[x, y][3]
+            if alpha > 16:
+                visible.add((x, y))
+            if alpha > 128:
+                strong += 1
+    total = max(width * height, 1)
+    components = []
+    visited = set()
+    for point in visible:
+        if point in visited:
+            continue
+        stack = [point]
+        visited.add(point)
+        xs = []
+        ys = []
+        while stack:
+            px, py = stack.pop()
+            xs.append(px)
+            ys.append(py)
+            for nx, ny in ((px - 1, py), (px + 1, py), (px, py - 1), (px, py + 1)):
+                neighbor = (nx, ny)
+                if neighbor in visible and neighbor not in visited:
+                    visited.add(neighbor)
+                    stack.append(neighbor)
+        area = len(xs)
+        box_w = max(xs) - min(xs) + 1
+        box_h = max(ys) - min(ys) + 1
+        fill = area / max(box_w * box_h, 1)
+        aspect = box_w / max(box_h, 1)
+        components.append({"area": area, "box": [box_w, box_h], "fill": fill, "aspect": aspect})
+    largest = max(components, key=lambda item: item["area"], default={})
+    return {
+        "alpha_coverage": round(len(visible) / total, 4),
+        "strong_alpha_ratio": round(strong / total, 4),
+        "component_count": len(components),
+        "largest_component_fill": round(float(largest.get("fill") or 0.0), 4),
+        "largest_component_aspect": round(float(largest.get("aspect") or 0.0), 4),
+        "largest_component_box": largest.get("box") or [0, 0],
     }
 
 
