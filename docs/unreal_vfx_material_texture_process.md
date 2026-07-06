@@ -28,6 +28,8 @@ This project should treat generated art as Unreal-ready VFX inputs, not final sc
 
 ## Current Implementation
 
-The Unreal material builder now imports and exposes alpha, distortion, depth/thickness, normal/lighting, and layer mask textures. Depth and layer masks modulate opacity; normal/lighting and layer masks modulate emissive intensity.
+The Unreal material builder now imports and exposes alpha, distortion, depth/thickness, normal/lighting, and layer mask textures. Sprite alpha remains the primary opacity source when the sprite already has a clean cutout. Global alpha masks are only safe when they match the same UV layout as the sprite or flipbook.
 
-This is still not a complete AAA fire shader. The next production step is replacing bootstrap data passes with AI/simulation-authored pass bundles and adding true Niagara ribbons, volume materials, and material functions for erosion, depth fade, refraction, and vector-field-driven motion.
+Depth/thickness, layer masks, and normal/lighting support textures are currently used as conservative material modulation signals. They must not blindly erase opacity, because mismatched support maps create holes, floating patches, and broken-looking cards.
+
+This is still not a complete AAA fire shader. The next production step is replacing bootstrap data passes with AI/simulation-authored pass bundles and adding true Niagara SubUV playback, ribbons, volume materials, material functions for erosion/depth fade/refraction, and vector-field-driven motion.
