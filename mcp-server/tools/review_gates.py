@@ -665,6 +665,12 @@ def gate_regular_fire_3d_preview(spec: dict[str, Any], unreal_result: dict[str, 
             or "heat_distortion_haze" in str(component.get("name") or "")
         )
     ]
+    bad_volume_materials = [
+        component.get("name")
+        for component in core_volume_meshes
+        if str(component.get("material") or "").endswith("_VFX")
+        and not str(component.get("material") or "").endswith("_VFX_Volume")
+    ]
     structure = ((spec.get("reference_understanding") or {}).get("structure") or {})
     shape_contract = structure.get("shape_contract") or {}
     primary_form = str(structure.get("primary_form") or "").lower()
@@ -678,16 +684,17 @@ def gate_regular_fire_3d_preview(spec: dict[str, Any], unreal_result: dict[str, 
         or bool(short_core_emitters)
     )
     required_volume_count = 4 if short_burst_preview else 5
-    ok = bool(core_niagara) and len(core_volume_meshes) >= required_volume_count and not bad_air_cards
+    ok = bool(core_niagara) and len(core_volume_meshes) >= required_volume_count and not bad_air_cards and not bad_volume_materials
     return {
         "name": "regular_fire_3d_preview",
         "status": "pass" if ok else "fail",
-        "message": "Regular fire preview drives airborne fire/smoke through Niagara and compact 3D volume helpers without large pasted cards." if ok else "Regular fire preview still contains large airborne texture cards, lacks a Niagara core, or lacks compact 3D volume helpers.",
+        "message": "Regular fire preview drives airborne fire/smoke through Niagara and soft 3D volume helpers without large pasted cards or sprite-wrapped meshes." if ok else "Regular fire preview still contains large airborne texture cards, lacks a Niagara core, lacks 3D volume helpers, or wraps volume meshes with the sprite material.",
         "data": {
             "core_niagara_count": len(core_niagara),
             "core_volume_mesh_count": len(core_volume_meshes),
             "required_core_volume_mesh_count": required_volume_count,
             "bad_air_cards": [component.get("name") for component in bad_air_cards],
+            "bad_volume_materials": bad_volume_materials,
             "core_niagara_names": [component.get("name") for component in core_niagara],
             "core_volume_mesh_names": [component.get("name") for component in core_volume_meshes],
         },

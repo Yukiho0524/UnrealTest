@@ -335,16 +335,18 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
                     if transform_index:
                         component["volume_instance"] = transform_index + 1
                     result["components"].append(component)
+            volume_material_path = (system.get("materials") or {}).get("volume_material_instance_path") or material_path
             for mesh_index, mesh_transform in enumerate(preview_mesh_transforms_for_emitter(emitter, index), start=1):
                 mesh_asset = preview_mesh_for_kind(mesh_transform.get("mesh"), cone_mesh, sphere_mesh, cylinder_mesh, torus_mesh)
-                if mesh_asset and material_path:
+                mesh_material_path = mesh_transform.get("material_path") or volume_material_path
+                if mesh_asset and mesh_material_path:
                     component = add_static_mesh_component_to_blueprint(
                         unreal_module,
                         blueprint,
                         root_handle,
                         f"VolumeMesh_{index}_{safe_asset_token(emitter.get('name', 'layer'))}_{mesh_index}",
                         mesh_asset,
-                        material_path,
+                        mesh_material_path,
                         location=mesh_transform["location"],
                         rotation=mesh_transform["rotation"],
                         scale=mesh_transform["scale"],
@@ -747,9 +749,13 @@ def annotate_asset(unreal_module, asset, spec: dict) -> None:
 def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str) -> dict:
     material_name = f"M_{spec['name']}_VFX"
     instance_name = f"MI_{spec['name']}_VFX"
+    volume_material_name = f"M_{spec['name']}_VFX_Volume"
+    volume_instance_name = f"MI_{spec['name']}_VFX_Volume"
     texture_name = f"T_{spec['name']}_VFX_Sprite"
     material_path = f"{destination_path}/{material_name}"
     instance_path = f"{destination_path}/{instance_name}"
+    volume_material_path = f"{destination_path}/{volume_material_name}"
+    volume_instance_path = f"{destination_path}/{volume_instance_name}"
     texture_path = f"{destination_path}/{texture_name}"
     alpha_texture_path = f"{destination_path}/{texture_name}_Alpha"
     distortion_texture_path = f"{destination_path}/{texture_name}_Distortion"
@@ -757,6 +763,8 @@ def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str)
     result = {
         "material_path": material_path,
         "material_instance_path": instance_path,
+        "volume_material_path": volume_material_path,
+        "volume_material_instance_path": volume_instance_path,
         "texture_path": texture_path,
         "alpha_texture_path": None,
         "distortion_texture_path": None,
@@ -789,11 +797,42 @@ def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str)
         delete_asset_if_exists(unreal_module, material_path)
         material = create_or_replace_material(unreal_module, material_name, destination_path, spec, texture, alpha_texture, distortion_texture, depth_texture, normal_texture, layer_mask_texture)
         material_instance = create_or_replace_material_instance(unreal_module, instance_name, destination_path, material, spec, texture, alpha_texture, distortion_texture, depth_texture, normal_texture, layer_mask_texture)
-        result["created"] = bool(material and material_instance)
+        volume_spec = volume_material_spec(spec)
+        delete_asset_if_exists(unreal_module, volume_instance_path)
+        delete_asset_if_exists(unreal_module, volume_material_path)
+        volume_material = create_or_replace_material(unreal_module, volume_material_name, destination_path, volume_spec, None, None, None, None, None, None)
+        volume_material_instance = create_or_replace_material_instance(unreal_module, volume_instance_name, destination_path, volume_material, volume_spec, None, None, None, None, None, None)
+        result["created"] = bool(material and material_instance and volume_material and volume_material_instance)
         return result
     except Exception as exc:
         result["errors"].append(str(exc))
         return result
+
+
+def volume_material_spec(spec: dict) -> dict:
+    volume_spec = json.loads(json.dumps(spec))
+    plan = volume_spec.get("vfx_plan") or {}
+    emitters = plan.get("emitters") or []
+    if emitters:
+        emitter = emitters[0]
+        emitter["material_style"] = "soft_emissive_fire_volume"
+        settings = emitter.setdefault("unreal_settings", {})
+        material = settings.setdefault("material", {})
+        material["blend_mode"] = "additive"
+        material["opacity"] = min(float(material.get("opacity", 0.22)), 0.22)
+        material["emissive_strength"] = min(float(material.get("emissive_strength", 4.2)), 4.2)
+        for key in (
+            "flipbook",
+            "preview_playback",
+            "distortion_source",
+            "depth_thickness_source",
+            "normal_lighting_source",
+            "layer_mask_source",
+        ):
+            material.pop(key, None)
+        emitter.pop("sprite_source", None)
+    volume_spec["name"] = f"{spec['name']}_volume"
+    return volume_spec
 
 
 def create_or_replace_sprite_texture(unreal_module, texture_name: str, destination_path: str, spec: dict):
