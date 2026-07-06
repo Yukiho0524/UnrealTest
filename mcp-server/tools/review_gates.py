@@ -446,17 +446,23 @@ def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any]
         expected_bands["smoke_dust_crown"] = {"z": (92, 128), "scale_xy_max": 1.6, "component_type": "StaticMeshComponent"}
     else:
         expected_bands.pop("side_flame_slashes", None)
-        standalone_flame_cards = [
+        expected_bands["central_fire_pillar"] = {"z": (54, 110), "scale_xy_max": 1.0, "component_type": "NiagaraComponent"}
+        expected_bands["smoke_dust_crown"] = {"z": (52, 96), "scale_xy_max": 0.9, "component_type": "NiagaraComponent"}
+        expected_bands["heat_distortion_haze"] = {"z": (52, 96), "scale_xy_max": 0.9, "component_type": "NiagaraComponent"}
+        bad_air_cards = [
             component.get("name")
             for component in components
             if str(component.get("name") or "").startswith("LayerCard_")
             and (
-                "side_flame_slashes" in str(component.get("name") or "")
+                "central_fire_pillar" in str(component.get("name") or "")
+                or "side_flame_slashes" in str(component.get("name") or "")
                 or "rear_flame_tongues" in str(component.get("name") or "")
+                or "smoke_dust_crown" in str(component.get("name") or "")
+                or "heat_distortion_haze" in str(component.get("name") or "")
             )
         ]
-        if standalone_flame_cards:
-            issues.append({"emitter": "flame_slashes", "type": "standalone_flame_cards_visible", "components": standalone_flame_cards})
+        if bad_air_cards:
+            issues.append({"emitter": "airborne_fire_layers", "type": "large_airborne_cards_visible", "components": bad_air_cards})
     for emitter_name, rule in expected_bands.items():
         if firestorm_preview and emitter_name in hidden_emitters:
             continue
@@ -555,37 +561,32 @@ def gate_regular_fire_3d_preview(spec: dict[str, Any], unreal_result: dict[str, 
             "data": {},
         }
     components = preview_components(unreal_result)
-    core_volume = [
+    core_niagara = [
         component for component in components
-        if component.get("type") == "StaticMeshComponent"
-        and str(component.get("name") or "").startswith("VolumeMesh_")
+        if component.get("type") == "NiagaraComponent"
         and "central_fire_pillar" in str(component.get("name") or "")
     ]
-    core_cards = [
-        component for component in components
-        if component.get("type") == "StaticMeshComponent"
-        and "central_fire_pillar" in str(component.get("name") or "")
-        and str(component.get("name") or "").startswith("LayerCard_")
-    ]
-    standalone_flame_cards = [
+    bad_air_cards = [
         component for component in components
         if component.get("type") == "StaticMeshComponent"
         and str(component.get("name") or "").startswith("LayerCard_")
         and (
-            "side_flame_slashes" in str(component.get("name") or "")
+            "central_fire_pillar" in str(component.get("name") or "")
+            or "side_flame_slashes" in str(component.get("name") or "")
             or "rear_flame_tongues" in str(component.get("name") or "")
+            or "smoke_dust_crown" in str(component.get("name") or "")
+            or "heat_distortion_haze" in str(component.get("name") or "")
         )
     ]
-    ok = len(core_volume) >= 2 and len(core_cards) >= 2 and not standalone_flame_cards
+    ok = bool(core_niagara) and not bad_air_cards
     return {
         "name": "regular_fire_3d_preview",
         "status": "pass" if ok else "fail",
-        "message": "Regular fire preview uses core volume helpers without standalone pasted side-flame cards." if ok else "Regular fire preview still contains standalone side-flame texture cards or lacks core volume.",
+        "message": "Regular fire preview drives airborne fire/smoke through Niagara without large pasted cards." if ok else "Regular fire preview still contains large airborne texture cards or lacks a Niagara core.",
         "data": {
-            "core_volume_count": len(core_volume),
-            "core_card_count": len(core_cards),
-            "standalone_flame_cards": [component.get("name") for component in standalone_flame_cards],
-            "core_volume_names": [component.get("name") for component in core_volume],
+            "core_niagara_count": len(core_niagara),
+            "bad_air_cards": [component.get("name") for component in bad_air_cards],
+            "core_niagara_names": [component.get("name") for component in core_niagara],
         },
     }
 
@@ -617,10 +618,16 @@ def gate_tutorial_fire_stack(spec: dict[str, Any], unreal_result: dict[str, Any]
         name for name in required_visible_names
         if not any(name in component_name for component_name in component_names)
     )
-    standalone_flame_cards = [
+    bad_air_cards = [
         component_name for component_name in component_names
         if component_name.startswith("LayerCard_")
-        and ("side_flame_slashes" in component_name or "rear_flame_tongues" in component_name)
+        and (
+            "central_fire_pillar" in component_name
+            or "side_flame_slashes" in component_name
+            or "rear_flame_tongues" in component_name
+            or "smoke_dust_crown" in component_name
+            or "heat_distortion_haze" in component_name
+        )
     ]
     heat_material = next(
         (((emitter.get("unreal_settings") or {}).get("material") or {}) for emitter in emitters if emitter.get("name") == "heat_distortion_haze"),
@@ -631,7 +638,7 @@ def gate_tutorial_fire_stack(spec: dict[str, Any], unreal_result: dict[str, Any]
         primary == "central_fire_pillar"
         and not missing_emitters
         and not missing_components
-        and not standalone_flame_cards
+        and not bad_air_cards
         and roles_by_name.get("rear_flame_tongues") == "flame_slashes"
         and roles_by_name.get("heat_distortion_haze") == "atmospheric_wisp"
         and bool(heat_material.get("distortion_source"))
@@ -644,7 +651,7 @@ def gate_tutorial_fire_stack(spec: dict[str, Any], unreal_result: dict[str, Any]
             "primary_emitter": primary,
             "missing_emitters": missing_emitters,
             "missing_components": missing_components,
-            "standalone_flame_cards": standalone_flame_cards,
+            "bad_air_cards": bad_air_cards,
             "heat_haze_has_distortion": bool(heat_material.get("distortion_source")),
             "components": component_names,
         },
