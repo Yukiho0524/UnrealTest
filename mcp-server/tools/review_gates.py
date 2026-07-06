@@ -565,6 +565,7 @@ def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any]
     else:
         expected_bands.pop("side_flame_slashes", None)
         if sustained_preview:
+            expected_bands.pop("impact_flash", None)
             expected_bands["central_fire_pillar"] = {"z": (18, 112), "scale_xy_max": 0.45, "component_type": "StaticMeshComponent"}
         else:
             expected_bands["central_fire_pillar"] = {"z": (36, 72), "scale_xy_max": 0.75, "component_type": "NiagaraComponent"} if short_burst_preview else {"z": (54, 110), "scale_xy_max": 1.0, "component_type": "NiagaraComponent"}

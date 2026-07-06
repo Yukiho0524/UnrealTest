@@ -328,13 +328,15 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                 mesh.update(
                     {
                         "enabled": True,
-                        "mesh": "sphere",
+                        "mesh": "cone",
                         "instances": [
-                            {"mesh": "sphere", "location": [0, 0, 24], "rotation": [0, 0, 0], "scale": [0.34, 0.26, 0.16]},
-                            {"mesh": "sphere", "location": [-7, -2, 48], "rotation": [0, 0, -12], "scale": [0.28, 0.2, 0.24]},
-                            {"mesh": "sphere", "location": [7, 3, 66], "rotation": [0, 0, 16], "scale": [0.24, 0.18, 0.28]},
-                            {"mesh": "sphere", "location": [-3, 5, 86], "rotation": [0, 0, 24], "scale": [0.2, 0.15, 0.3]},
-                            {"mesh": "cone", "location": [2, -2, 108], "rotation": [0, 0, 8], "scale": [0.18, 0.18, 0.34]},
+                            {"mesh": "cone", "location": [-5, -2, 34], "rotation": [8, -10, -16], "scale": [0.1, 0.055, 0.34]},
+                            {"mesh": "cone", "location": [6, 3, 48], "rotation": [-6, 12, 18], "scale": [0.09, 0.05, 0.42]},
+                            {"mesh": "cone", "location": [-3, 4, 64], "rotation": [10, -8, 26], "scale": [0.075, 0.045, 0.46]},
+                            {"mesh": "cone", "location": [4, -3, 82], "rotation": [-10, 10, -24], "scale": [0.065, 0.04, 0.44]},
+                            {"mesh": "cone", "location": [0, 2, 102], "rotation": [6, 0, 8], "scale": [0.055, 0.036, 0.38]},
+                            {"mesh": "cylinder", "location": [-8, 2, 58], "rotation": [0, -14, -34], "scale": [0.045, 0.025, 0.34]},
+                            {"mesh": "cylinder", "location": [9, -1, 74], "rotation": [0, 12, 32], "scale": [0.04, 0.024, 0.36]},
                         ],
                     }
                 )
@@ -475,14 +477,21 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         niagara["enabled"] = False
     elif role == "impact_core":
         short_impact = float(emitter.get("end_size") or 0.0) <= 130.0
+        sustained_contact_pulse = not is_firestorm and float(emitter.get("end_size") or 0.0) <= 80.0
         timeline.update(
             {"delay": 0.0, "duration": 0.18, "opacity": [0.0, 0.62, 0.18, 0.0], "scale": [0.34, 0.72, 0.42, 0.0]}
             if short_impact
             else {"delay": 0.0, "duration": 0.24, "opacity": [0.0, 0.58, 0.2, 0.0], "scale": [0.32, 0.82, 0.58, 0.0]}
         )
-        material["opacity"] = 0.58 if is_firestorm else max(float(material.get("opacity", 0.8)), 0.86)
-        material["emissive_strength"] = 9.5 if is_firestorm else max(float(material.get("emissive_strength", 22.0)), 24.0)
-        card.update({"enabled": True, "location": [0, -1, 16] if short_impact else [0, -1, 22], "rotation": [88, 0, 0], "scale": [0.38, 0.28, 1] if short_impact else [0.54, 0.38, 1]})
+        if sustained_contact_pulse:
+            timeline.update({"delay": 0.0, "duration": 0.42, "opacity": [0.0, 0.14, 0.08, 0.0], "scale": [0.28, 0.5, 0.42, 0.22]})
+            material["opacity"] = 0.12
+            material["emissive_strength"] = 3.0
+            card.update({"enabled": False, "location": [0, -1, 10], "rotation": [88, 0, 0], "scale": [0.22, 0.16, 1]})
+        else:
+            material["opacity"] = 0.58 if is_firestorm else max(float(material.get("opacity", 0.8)), 0.86)
+            material["emissive_strength"] = 9.5 if is_firestorm else max(float(material.get("emissive_strength", 22.0)), 24.0)
+            card.update({"enabled": True, "location": [0, -1, 16] if short_impact else [0, -1, 22], "rotation": [88, 0, 0], "scale": [0.38, 0.28, 1] if short_impact else [0.54, 0.38, 1]})
         if is_firestorm:
             card["instances"] = [
                 {"location": [0, 0, 22], "rotation": [88, 90, 0], "scale": [0.42, 0.28, 1.0]},
