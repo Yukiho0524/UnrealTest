@@ -543,6 +543,7 @@ def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any]
     )
     shape_contract = ((((spec.get("visual_profile") or {}).get("reference_understanding") or {}).get("vfx_structure") or {}).get("shape_contract") or {})
     short_burst_preview = shape_contract.get("height_class") == "short_burst"
+    sustained_preview = shape_contract.get("height_class") == "sustained_plume"
     ground_emitter_name = next(
         (str(emitter.get("name") or "") for emitter in emitters if emitter.get("role") == "ground_energy_ring"),
         "ground_rune_ring",
@@ -563,7 +564,10 @@ def gate_fire_spatial_design(spec: dict[str, Any], unreal_result: dict[str, Any]
         expected_bands["smoke_dust_crown"] = {"z": (92, 128), "scale_xy_max": 1.6, "component_type": "StaticMeshComponent"}
     else:
         expected_bands.pop("side_flame_slashes", None)
-        expected_bands["central_fire_pillar"] = {"z": (36, 72), "scale_xy_max": 0.75, "component_type": "NiagaraComponent"} if short_burst_preview else {"z": (54, 110), "scale_xy_max": 1.0, "component_type": "NiagaraComponent"}
+        if sustained_preview:
+            expected_bands["central_fire_pillar"] = {"z": (18, 112), "scale_xy_max": 0.45, "component_type": "StaticMeshComponent"}
+        else:
+            expected_bands["central_fire_pillar"] = {"z": (36, 72), "scale_xy_max": 0.75, "component_type": "NiagaraComponent"} if short_burst_preview else {"z": (54, 110), "scale_xy_max": 1.0, "component_type": "NiagaraComponent"}
         expected_bands["smoke_dust_crown"] = {"z": (32, 70), "scale_xy_max": 0.65, "component_type": "NiagaraComponent"} if short_burst_preview else {"z": (52, 96), "scale_xy_max": 0.9, "component_type": "NiagaraComponent"}
         expected_bands["heat_distortion_haze"] = {"z": (36, 74), "scale_xy_max": 0.65, "component_type": "NiagaraComponent"} if short_burst_preview else {"z": (52, 96), "scale_xy_max": 0.9, "component_type": "NiagaraComponent"}
         if short_burst_preview:
@@ -709,7 +713,8 @@ def gate_regular_fire_3d_preview(spec: dict[str, Any], unreal_result: dict[str, 
         if str(component.get("material") or "").endswith("_VFX")
         and not str(component.get("material") or "").endswith("_VFX_Volume")
     ]
-    structure = ((spec.get("reference_understanding") or {}).get("structure") or {})
+    understanding = (spec.get("reference_understanding") or {}) or ((spec.get("visual_profile") or {}).get("reference_understanding") or {})
+    structure = understanding.get("structure") or understanding.get("vfx_structure") or {}
     shape_contract = structure.get("shape_contract") or {}
     primary_form = str(structure.get("primary_form") or "").lower()
     short_core_emitters = [
@@ -721,14 +726,17 @@ def gate_regular_fire_3d_preview(spec: dict[str, Any], unreal_result: dict[str, 
         or "short" in primary_form
         or bool(short_core_emitters)
     )
+    sustained_preview = shape_contract.get("height_class") == "sustained_plume"
     required_volume_count = 4 if short_burst_preview else 5
-    ok = bool(core_niagara) and len(core_volume_meshes) >= required_volume_count and not bad_air_cards and not bad_volume_materials
+    core_niagara_ok = not core_niagara if sustained_preview else bool(core_niagara)
+    ok = core_niagara_ok and len(core_volume_meshes) >= required_volume_count and not bad_air_cards and not bad_volume_materials
     return {
         "name": "regular_fire_3d_preview",
         "status": "pass" if ok else "fail",
-        "message": "Regular fire preview drives airborne fire/smoke through Niagara and soft 3D volume helpers without large pasted cards or sprite-wrapped meshes." if ok else "Regular fire preview still contains large airborne texture cards, lacks a Niagara core, lacks 3D volume helpers, or wraps volume meshes with the sprite material.",
+        "message": "Regular fire preview uses soft 3D volume helpers and does not expose pasted sprite cards or sprite-wrapped meshes." if ok else "Regular fire preview still contains large airborne texture cards, has the wrong core Niagara policy, lacks 3D volume helpers, or wraps volume meshes with the sprite material.",
         "data": {
             "core_niagara_count": len(core_niagara),
+            "core_niagara_allowed": not sustained_preview,
             "core_volume_mesh_count": len(core_volume_meshes),
             "required_core_volume_mesh_count": required_volume_count,
             "bad_air_cards": [component.get("name") for component in bad_air_cards],

@@ -306,8 +306,8 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             material["opacity"] = max(float(material.get("opacity", 0.54)), 0.72)
             material["emissive_strength"] = max(float(material.get("emissive_strength", 14.0)), 15.0)
             if is_sustained_fire:
-                material["opacity"] = min(float(material.get("opacity", 0.22)), 0.22)
-                material["emissive_strength"] = min(float(material.get("emissive_strength", 6.0)), 6.0)
+                material["opacity"] = 0.0
+                material["emissive_strength"] = 0.0
             card["enabled"] = False
             card.pop("instances", None)
             if is_short_burst:
@@ -342,12 +342,12 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                 mesh["enabled"] = False
             niagara.update(niagara_transform)
             if is_sustained_fire:
-                niagara.update({"enabled": True, "location": [0, 0, 78], "rotation": [0, 0, 0], "scale": [0.38, 0.38, 0.38]})
+                niagara.update({"enabled": False, "location": [0, 0, 78], "rotation": [0, 0, 0], "scale": [0.0, 0.0, 0.0]})
             emitter.setdefault("notes", []).append("Regular fire core is rendered through Niagara with no large Blueprint card.")
             if is_short_burst:
                 emitter.setdefault("notes", []).append("Short gameplay burst adds clustered 3D emissive volume helpers so the preview is not only a flat sprite fountain.")
             if is_sustained_fire:
-                emitter.setdefault("notes", []).append("Sustained fire adds stacked 3D emissive volume helpers so the preview reads as a flame body instead of a one-shot sprite burst.")
+                emitter.setdefault("notes", []).append("Sustained fire disables the central sprite Niagara; the core preview is a soft volume body until a proper ribbon/fluid flipbook is available.")
         niagara["enabled"] = bool(niagara.get("enabled")) if not is_firestorm else False
     elif role == "flame_slashes":
         if not is_firestorm:

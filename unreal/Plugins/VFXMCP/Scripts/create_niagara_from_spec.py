@@ -811,6 +811,10 @@ def create_vfx_material_assets(unreal_module, spec: dict, destination_path: str)
 
 def volume_material_spec(spec: dict) -> dict:
     volume_spec = json.loads(json.dumps(spec))
+    palette = list(volume_spec.get("color_palette") or ["#FF9A22", "#FF5A18", "#FFF1A8"])
+    warm = palette[1] if len(palette) > 1 else "#FF9A22"
+    hot = palette[2] if len(palette) > 2 else palette[0]
+    volume_spec["color_palette"] = [warm, "#FF5A18", hot]
     plan = volume_spec.get("vfx_plan") or {}
     emitters = plan.get("emitters") or []
     if emitters:
@@ -818,9 +822,9 @@ def volume_material_spec(spec: dict) -> dict:
         emitter["material_style"] = "soft_emissive_fire_volume"
         settings = emitter.setdefault("unreal_settings", {})
         material = settings.setdefault("material", {})
-        material["blend_mode"] = "additive"
-        material["opacity"] = min(float(material.get("opacity", 0.22)), 0.22)
-        material["emissive_strength"] = min(float(material.get("emissive_strength", 4.2)), 4.2)
+        material["blend_mode"] = "translucent"
+        material["opacity"] = min(float(material.get("opacity", 0.08)), 0.08)
+        material["emissive_strength"] = min(float(material.get("emissive_strength", 2.4)), 2.4)
         for key in (
             "flipbook",
             "preview_playback",
