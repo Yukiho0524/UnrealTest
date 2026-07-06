@@ -207,6 +207,7 @@ def gate_fire_art_direction(spec: dict[str, Any], manifest: dict[str, Any]) -> d
     structure = (((spec.get("visual_profile") or {}).get("reference_understanding") or {}).get("vfx_structure") or {})
     shape_contract = structure.get("shape_contract") or {}
     is_short_burst = shape_contract.get("height_class") == "short_burst"
+    is_sustained_plume = shape_contract.get("height_class") == "sustained_plume"
     entries = {entry.get("name"): entry for entry in manifest.get("passes", [])}
     issues: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
@@ -251,6 +252,43 @@ def gate_fire_art_direction(spec: dict[str, Any], manifest: dict[str, Any]) -> d
                 issues.append({"pass": "core_flame_flipbook", "type": "core_sprite_too_opaque_for_volume_cell", "metrics": metrics})
             if float(metrics.get("largest_component_fill") or 0.0) > 0.72 and float(metrics.get("largest_component_aspect") or 0.0) < 0.85:
                 warnings.append({"pass": "core_flame_flipbook", "type": "core_sprite_reads_like_complete_icon", "metrics": metrics})
+        else:
+            warnings.append({"pass": "core_flame_flipbook", "type": "core_sprite_metrics_unavailable", "path": core_preview})
+
+    if is_sustained_plume:
+        expected_roles = {
+            "core_flame_flipbook": "procedural_sustained_flame_cells",
+            "flame_slash_flipbook": "procedural_sustained_flame_licks",
+        }
+        for pass_name, expected_role in expected_roles.items():
+            selected = (entries.get(pass_name) or {}).get("selected_asset") or {}
+            actual_role = str(selected.get("role") or "")
+            source = str(selected.get("source") or "")
+            if actual_role != expected_role:
+                issues.append(
+                    {
+                        "pass": pass_name,
+                        "type": "wrong_sustained_fire_asset_role",
+                        "expected_role": expected_role,
+                        "actual_role": actual_role,
+                        "source": source,
+                    }
+                )
+            if source == "reference_layer_extraction":
+                issues.append(
+                    {
+                        "pass": pass_name,
+                        "type": "reference_stamp_source_for_sustained_fire",
+                        "reason": "Sustained fire particles must be abstract flame cells/licks, not complete reference flame columns.",
+                    }
+                )
+
+        core_selected = (entries.get("core_flame_flipbook") or {}).get("selected_asset") or {}
+        core_preview = core_selected.get("preview_frame_path") or core_selected.get("path")
+        metrics = sprite_art_metrics(core_preview)
+        if metrics:
+            if float(metrics.get("largest_component_aspect") or 0.0) > 2.2 and float(metrics.get("largest_component_fill") or 0.0) > 0.5:
+                issues.append({"pass": "core_flame_flipbook", "type": "core_sprite_reads_like_complete_fire_column", "metrics": metrics})
         else:
             warnings.append({"pass": "core_flame_flipbook", "type": "core_sprite_metrics_unavailable", "path": core_preview})
 

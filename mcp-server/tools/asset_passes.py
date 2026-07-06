@@ -305,6 +305,9 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                 niagara_transform = {"enabled": True, "location": [0, 0, 78], "rotation": [0, 0, 0], "scale": [0.62, 0.62, 0.62]}
             material["opacity"] = max(float(material.get("opacity", 0.54)), 0.72)
             material["emissive_strength"] = max(float(material.get("emissive_strength", 14.0)), 15.0)
+            if is_sustained_fire:
+                material["opacity"] = min(float(material.get("opacity", 0.22)), 0.22)
+                material["emissive_strength"] = min(float(material.get("emissive_strength", 6.0)), 6.0)
             card["enabled"] = False
             card.pop("instances", None)
             if is_short_burst:
@@ -338,6 +341,8 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
             else:
                 mesh["enabled"] = False
             niagara.update(niagara_transform)
+            if is_sustained_fire:
+                niagara.update({"enabled": True, "location": [0, 0, 78], "rotation": [0, 0, 0], "scale": [0.38, 0.38, 0.38]})
             emitter.setdefault("notes", []).append("Regular fire core is rendered through Niagara with no large Blueprint card.")
             if is_short_burst:
                 emitter.setdefault("notes", []).append("Short gameplay burst adds clustered 3D emissive volume helpers so the preview is not only a flat sprite fountain.")
@@ -1298,6 +1303,7 @@ def derive_bootstrap_candidates(
         return {}
 
     static_references = [path for path in reference_media if path.suffix.lower() in IMAGE_SUFFIXES]
+    procedural_sustained_fire = shape_contract.get("height_class") == "sustained_plume"
     target_reference = best_reference_for_layer(static_references, "target_fire") or (static_references[0] if static_references else source_path)
     core_source = best_reference_for_layer(static_references, "core_flame") or target_reference
     side_source = best_reference_for_layer(static_references, "side_flames") or source_path or target_reference
@@ -1330,6 +1336,9 @@ def derive_bootstrap_candidates(
         if procedural_short_burst:
             create_fire_atlas_pass(core_path, "short_burst_core")
             candidates.setdefault("core_flame_flipbook", []).append(derived_candidate(core_path, "procedural_short_burst_core", source="procedural_layer_synthesis", confidence="medium"))
+        elif procedural_sustained_fire:
+            create_fire_atlas_pass(core_path, "sustained_flame_cells")
+            candidates.setdefault("core_flame_flipbook", []).append(derived_candidate(core_path, "procedural_sustained_flame_cells", source="procedural_layer_synthesis", confidence="medium"))
         elif core_source:
             create_reference_extracted_fire_atlas(core_source, core_path, "core_flame")
             candidates.setdefault("core_flame_flipbook", []).append(derived_candidate(core_path, "core_flame_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
@@ -1347,6 +1356,9 @@ def derive_bootstrap_candidates(
         if procedural_short_burst:
             create_fire_atlas_pass(slash_path, "short_burst_lobes")
             candidates.setdefault("flame_slash_flipbook", []).append(derived_candidate(slash_path, "procedural_short_burst_lobes", source="procedural_layer_synthesis", confidence="medium"))
+        elif procedural_sustained_fire:
+            create_fire_atlas_pass(slash_path, "sustained_flame_licks")
+            candidates.setdefault("flame_slash_flipbook", []).append(derived_candidate(slash_path, "procedural_sustained_flame_licks", source="procedural_layer_synthesis", confidence="medium"))
         elif side_source:
             create_reference_extracted_fire_atlas(side_source, slash_path, "flame_slashes")
             candidates.setdefault("flame_slash_flipbook", []).append(derived_candidate(slash_path, "side_flames_from_reference_layer", source="reference_layer_extraction", confidence="medium"))
@@ -2009,6 +2021,10 @@ def create_fire_atlas_pass(output_path: Path, pass_kind: str, columns: int = 4, 
             draw_short_burst_impact_frame(draw, frame_size, phase)
         elif pass_kind == "short_burst_embers":
             draw_short_burst_ember_frame(draw, frame_size, phase, index)
+        elif pass_kind == "sustained_flame_cells":
+            draw_sustained_flame_cell_frame(draw, frame_size, phase, index)
+        elif pass_kind == "sustained_flame_licks":
+            draw_sustained_flame_lick_frame(draw, frame_size, phase, index)
         elif pass_kind == "alpha_mask":
             draw_firestorm_alpha_frame(draw, frame_size, phase)
         elif pass_kind == "normal_or_lighting":
@@ -2051,6 +2067,10 @@ def blur_radius_for_fire_pass(pass_kind: str) -> float:
         return 0.8
     if pass_kind == "short_burst_embers":
         return 0.05
+    if pass_kind == "sustained_flame_cells":
+        return 1.35
+    if pass_kind == "sustained_flame_licks":
+        return 0.95
     if pass_kind == "firestorm_ground_ring":
         return 0.35
     if pass_kind in {"normal_or_lighting", "depth_or_thickness", "layer_mask_pack", "sdf_or_vector_field"}:
@@ -2147,6 +2167,63 @@ def draw_short_burst_ember_frame(draw: ImageDraw.ImageDraw, size: int, phase: fl
     draw.ellipse((cx - radius * 2.0, cy - radius * 2.0, cx + radius * 2.0, cy + radius * 2.0), fill=(255, 72, 14, int(58 * pulse)))
     draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=(255, 174, 42, int(170 * pulse)))
     draw.ellipse((cx - radius * 0.42, cy - radius * 0.42, cx + radius * 0.42, cy + radius * 0.42), fill=(255, 246, 198, int(230 * pulse)))
+
+
+def draw_sustained_flame_cell_frame(draw: ImageDraw.ImageDraw, size: int, phase: float, seed: int) -> None:
+    pulse = 0.68 + 0.32 * math.sin((phase + seed * 0.031) * math.tau)
+    cx = size * (0.5 + signed_noise(seed * 0.77, phase) * 0.035)
+
+    # A Niagara particle cell must be a fragment of flame, not a complete
+    # self-contained flame column. The Blueprint volume supplies the body.
+    for index in range(11):
+        side = -1 if index % 2 == 0 else 1
+        t = index / 10
+        origin_x = cx + signed_noise(index * 1.7, phase) * size * 0.115
+        origin_y = size * (0.73 - 0.34 * t + signed_noise(index * 1.31, phase + 2.0) * 0.035)
+        length = size * (0.13 + 0.09 * pulse + 0.035 * signed_noise(index, phase + 2.0))
+        width = size * (0.01 + 0.012 * (1.0 - t))
+        angle = math.radians(58 + signed_noise(index * 0.8, phase) * 32) * side
+        alpha = int((28 + 54 * (1.0 - abs(t - 0.45))) * pulse)
+        color = (255, int(78 + 122 * (1.0 - t)), 18, alpha)
+        draw_flame_ribbon(draw, size, origin_x, origin_y, length, width, angle, side * 0.62, phase, color, 21.0 + seed + index, steps=10)
+
+    for index in range(8):
+        t = index / 7
+        rx = size * (0.018 + 0.018 * signed_noise(index + 8.0, phase) ** 2)
+        ry = size * (0.028 + 0.038 * (1.0 - t))
+        x = cx + signed_noise(index * 2.2, seed + phase) * size * 0.11
+        y = size * (0.62 - 0.22 * t + signed_noise(index * 2.4, phase) * 0.035)
+        alpha = int((18 + 34 * (1.0 - t)) * pulse)
+        draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(255, 178 + int(42 * (1.0 - t)), 42, alpha))
+
+
+def draw_sustained_flame_lick_frame(draw: ImageDraw.ImageDraw, size: int, phase: float, seed: int) -> None:
+    pulse = 0.72 + 0.28 * math.sin((phase + seed * 0.047) * math.tau)
+    cx = size * (0.5 + signed_noise(seed * 1.9, phase) * 0.08)
+    cy = size * (0.68 + signed_noise(seed * 2.1, phase + 1.0) * 0.04)
+    side = -1 if seed % 2 == 0 else 1
+    for index in range(3):
+        t = index / 2
+        origin_x = cx + side * size * (0.025 + index * 0.026)
+        origin_y = cy - size * (0.03 * index)
+        length = size * (0.2 + 0.055 * pulse - index * 0.025)
+        width = size * (0.026 - index * 0.004)
+        angle = math.radians(62 + index * 12 + signed_noise(seed + index, phase) * 10) * side
+        draw_flame_ribbon(
+            draw,
+            size,
+            origin_x,
+            origin_y,
+            length,
+            width,
+            angle,
+            side * (0.45 + 0.08 * t),
+            phase,
+            (255, 74 + index * 44, 18, int(78 + 76 * pulse)),
+            41.0 + seed + index,
+            steps=12,
+        )
+    draw.ellipse((cx - size * 0.055, cy - size * 0.035, cx + size * 0.075, cy + size * 0.045), fill=(255, 216, 90, int(42 + 45 * pulse)))
 
 
 def draw_firestorm_core_frame(draw: ImageDraw.ImageDraw, size: int, phase: float) -> None:
