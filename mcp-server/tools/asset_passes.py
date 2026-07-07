@@ -589,35 +589,48 @@ def fire_framework_mesh_instances(spec: dict[str, Any]) -> list[dict[str, Any]]:
         points = curve.get("points") or []
         if len(points) < 2:
             continue
-        start = points[0]
-        end = points[-1]
-        if len(start) < 2 or len(end) < 2:
-            continue
-        x0, z0 = float(start[0]), float(start[1])
-        x1, z1 = float(end[0]), float(end[1])
-        mid_x = (x0 + x1) * 0.5
-        mid_z = (z0 + z1) * 0.5
-        dx = x1 - x0
-        dz = max(z1 - z0, 0.08)
         width = curve.get("width") or [0.06, 0.035]
-        base_width = float(width[0] if width else 0.06)
+        width0 = float(width[0] if width else 0.06)
+        width1 = float(width[1] if len(width) > 1 else width0 * 0.62)
         strength = float(curve.get("strength") or 0.65)
-        yaw = math.degrees(math.atan2(dx, dz)) * 0.8
-        pitch = max(-14.0, min(14.0, dx * -18.0))
-        mesh_kind = "cone" if index < 6 else "cylinder"
-        instances.append(
-            {
-                "mesh": mesh_kind,
-                "location": [round(mid_x * 34.0, 3), round((index % 3 - 1) * 2.5, 3), round(18.0 + mid_z * 92.0, 3)],
-                "rotation": [round(pitch, 3), round(dx * 24.0, 3), round(yaw, 3)],
-                "scale": [
-                    round(max(0.035, base_width * 0.92 * strength), 3),
-                    round(max(0.02, base_width * 0.42 * strength), 3),
-                    round(max(0.18, dz * 0.58 * strength), 3),
-                ],
-                "framework_curve": curve.get("name") or f"curve_{index + 1}",
-            }
-        )
+        curve_name = str(curve.get("name") or f"curve_{index + 1}")
+        if "rear" in curve_name:
+            y_offset = 3.5
+        elif "left" in curve_name:
+            y_offset = -1.2
+        elif "right" in curve_name:
+            y_offset = 1.2
+        else:
+            y_offset = 0.0
+        for segment_index in range(len(points) - 1):
+            start = points[segment_index]
+            end = points[segment_index + 1]
+            if len(start) < 2 or len(end) < 2:
+                continue
+            x0, z0 = float(start[0]), float(start[1])
+            x1, z1 = float(end[0]), float(end[1])
+            mid_x = (x0 + x1) * 0.5
+            mid_z = (z0 + z1) * 0.5
+            dx = x1 - x0
+            dz = max(z1 - z0, 0.06)
+            t = segment_index / max(len(points) - 2, 1)
+            local_width = width0 + (width1 - width0) * t
+            yaw = math.degrees(math.atan2(dx, dz)) * 0.86
+            pitch = max(-14.0, min(14.0, dx * -20.0))
+            mesh_kind = "cylinder" if segment_index == 0 and index < 4 else "cone"
+            instances.append(
+                {
+                    "mesh": mesh_kind,
+                    "location": [round(mid_x * 34.0, 3), round(y_offset, 3), round(18.0 + mid_z * 92.0, 3)],
+                    "rotation": [round(pitch, 3), round(dx * 26.0, 3), round(yaw, 3)],
+                    "scale": [
+                        round(max(0.026, local_width * 0.72 * strength), 3),
+                        round(max(0.014, local_width * 0.3 * strength), 3),
+                        round(max(0.13, dz * 0.48 * strength), 3),
+                    ],
+                    "framework_curve": f"{curve_name}_seg{segment_index + 1}",
+                }
+            )
     return instances
 
 
