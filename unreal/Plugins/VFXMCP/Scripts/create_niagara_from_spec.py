@@ -353,6 +353,8 @@ def create_preview_blueprint_from_bundle(unreal_module, spec: dict, destination_
                     )
                     component["timeline"] = preview_timeline_for_emitter(emitter)
                     component["volume_mesh"] = mesh_transform.get("mesh")
+                    if mesh_transform.get("framework_curve"):
+                        component["framework_curve"] = mesh_transform.get("framework_curve")
                     result["components"].append(component)
             niagara_transform = preview_niagara_transform_for_emitter(emitter, index)
             if niagara_transform:
@@ -549,6 +551,8 @@ def preview_mesh_transforms_for_emitter(emitter: dict, index: int) -> list[dict]
             default_scale=(1.0, 1.0, 1.0),
         )
         transform["mesh"] = str(entry.get("mesh") or mesh_settings.get("mesh") or "cone")
+        if entry.get("framework_curve"):
+            transform["framework_curve"] = str(entry.get("framework_curve"))
         transforms.append(transform)
     return transforms
 

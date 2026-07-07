@@ -77,7 +77,14 @@ def gate_reference_understanding(spec: dict[str, Any], manifest: dict[str, Any])
     required_layers = structure.get("required_layers") or []
     renderer_bias = structure.get("renderer_bias") or []
     negative = understanding.get("negative_requirements") or []
-    ok = bool(understanding.get("effect_category") and structure.get("primary_form") and required_layers)
+    needs_fire_framework = understanding.get("effect_category") == "fire_plume"
+    fire_framework = structure.get("fire_framework") or {}
+    ok = bool(
+        understanding.get("effect_category")
+        and structure.get("primary_form")
+        and required_layers
+        and (not needs_fire_framework or fire_framework.get("flame_tongue_curves"))
+    )
     return {
         "name": "reference_understanding",
         "status": "pass" if ok else "warning",
@@ -88,6 +95,7 @@ def gate_reference_understanding(spec: dict[str, Any], manifest: dict[str, Any])
             "primary_form": structure.get("primary_form"),
             "required_layers": required_layers,
             "renderer_bias": renderer_bias,
+            "fire_framework_curve_count": len(fire_framework.get("flame_tongue_curves") or []),
             "negative_requirement_count": len(negative),
         },
     }

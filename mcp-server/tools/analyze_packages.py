@@ -8,7 +8,7 @@ from typing import Any
 from schemas import VFXEmitterPlan, VFXParticles, VFXPlan, VFXSource, VFXSpec, VFXTiming
 from tools.analyze_images import IMAGE_EXTENSIONS, _classify_from_filename
 from tools.image_features import analyze_media_files
-from tools.reference_understanding import build_reference_understanding
+from tools.reference_understanding import attach_fire_framework, build_reference_understanding
 from tools.reference_sprites import create_reference_card_source, create_reference_flipbook_source, create_reference_sprite_source
 from tools.vfx_authoring import (
     asset_passes_for_plan,
@@ -163,8 +163,10 @@ def apply_config_reference_intent(reference_understanding: dict[str, Any], confi
             },
         }
     )
+    structure.pop("fire_framework", None)
     result["vfx_structure"] = structure
     result["dominant_read"] = "fire_plume: looping_gameplay_fire_plume / sustained connected flame, not a one-shot burst"
+    result["vfx_structure"] = attach_fire_framework(result["vfx_structure"], str(result.get("effect_category") or "fire_plume"), {})
     return result
 
 

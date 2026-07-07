@@ -86,6 +86,7 @@ def build_local_reference_understanding(package_path: Path, media_files: list[Pa
     category = infer_effect_category(text, shape, style)
     structure = infer_structure(category, shape, motion, style, visual_profile)
     structure = apply_designer_intent_to_structure(structure, category, text)
+    structure = attach_fire_framework(structure, category, visual_profile)
     generation_strategy = generation_strategy_for(category, structure)
     unreal_strategy = unreal_strategy_for(category, structure)
     failure_modes = failure_modes_for(category, structure)
@@ -190,6 +191,11 @@ def normalize_vision_understanding(parsed: dict[str, Any], local: dict[str, Any]
             "review_focus": parsed.get("review_focus") or parsed.get("similarity_review_focus") or local.get("review_focus") or [],
             "raw_vision_understanding": parsed,
         }
+    )
+    normalized["vfx_structure"] = attach_fire_framework(
+        normalized.get("vfx_structure") or {},
+        str(normalized.get("effect_category") or ""),
+        {},
     )
     return normalized
 
@@ -345,6 +351,76 @@ def apply_designer_intent_to_structure(structure: dict[str, Any], category: str,
         }
     )
     return result
+
+
+def attach_fire_framework(structure: dict[str, Any], category: str, visual_profile: dict[str, Any]) -> dict[str, Any]:
+    if category != "fire_plume" and structure.get("primary_form") not in {"looping_gameplay_fire_plume", "volumetric_flame_plume", "compact_fire_burst"}:
+        return structure
+    if structure.get("fire_framework"):
+        return structure
+    result = dict(structure)
+    result["fire_framework"] = build_fire_framework(structure, visual_profile)
+    return result
+
+
+def build_fire_framework(structure: dict[str, Any], visual_profile: dict[str, Any]) -> dict[str, Any]:
+    contract = structure.get("shape_contract") or {}
+    height_class = str(contract.get("height_class") or "")
+    sustained = height_class == "sustained_plume" or structure.get("primary_form") == "looping_gameplay_fire_plume"
+    aspect = float(visual_profile.get("effect_bbox_aspect") or 1.6)
+    bottom_width = float(visual_profile.get("bottom_width_ratio") or 0.72)
+    top_width = float(visual_profile.get("top_width_ratio") or 0.32)
+    envelope_height = 1.0 if sustained else 0.72
+    base_width = min(max(bottom_width, 0.42), 0.95)
+    crown_width = min(max(top_width, 0.18), 0.58)
+    if aspect > 1.8:
+        crown_width = min(crown_width, 0.38)
+    curves = [
+        flame_curve("center_spine", 0.0, 0.0, 0.0, envelope_height, 0.1, 0.08, 1.0),
+        flame_curve("left_inner_tongue", -0.12, 0.05, -0.2, envelope_height * 0.78, 0.085, 0.06, 0.82),
+        flame_curve("right_inner_tongue", 0.12, 0.04, 0.22, envelope_height * 0.84, 0.08, 0.055, 0.86),
+        flame_curve("left_outer_lick", -base_width * 0.32, 0.0, -crown_width * 0.42, envelope_height * 0.62, 0.065, 0.042, 0.64),
+        flame_curve("right_outer_lick", base_width * 0.33, 0.02, crown_width * 0.48, envelope_height * 0.68, 0.06, 0.04, 0.68),
+        flame_curve("rear_left_breakup", -base_width * 0.22, 0.18, -0.06, envelope_height * 0.52, 0.045, 0.03, 0.44),
+        flame_curve("rear_right_breakup", base_width * 0.2, 0.16, 0.08, envelope_height * 0.58, 0.042, 0.028, 0.46),
+    ]
+    if not sustained:
+        curves = [dict(curve, z_scale=curve["z_scale"] * 0.72, strength=curve["strength"] * 0.82) for curve in curves[:5]]
+    return {
+        "schema_version": 1,
+        "source": "local_reference_framework_v1",
+        "coordinate_space": "normalized_effect_bounds",
+        "core_envelope": {
+            "base_width": round(base_width, 3),
+            "crown_width": round(crown_width, 3),
+            "height": round(envelope_height, 3),
+            "centerline": [[0.0, 0.0], [0.03, 0.34], [-0.02, 0.68], [0.0, 1.0]],
+        },
+        "flame_tongue_curves": curves,
+        "flow_field": [
+            {"origin": [0.0, 0.0], "direction": [0.0, 1.0], "strength": 1.0},
+            {"origin": [-0.25, 0.2], "direction": [-0.18, 0.98], "strength": 0.62},
+            {"origin": [0.25, 0.2], "direction": [0.18, 0.98], "strength": 0.62},
+        ],
+        "runtime_policy": {
+            "main_body_renderer": "mesh_volume_or_fluid_flipbook",
+            "flame_tongue_renderer": "ribbon_or_mesh_streak",
+            "forbidden_particle_sources": ["reference_matched_preview", "reference_layer_extraction", "whole_fire_column_sprite"],
+        },
+    }
+
+
+def flame_curve(name: str, x0: float, z0: float, x1: float, z1: float, width0: float, width1: float, strength: float) -> dict[str, Any]:
+    mid_x = (x0 + x1) * 0.5
+    mid_z = (z0 + z1) * 0.5
+    bend = 0.08 if x1 >= x0 else -0.08
+    return {
+        "name": name,
+        "points": [[round(x0, 3), round(z0, 3)], [round(mid_x + bend, 3), round(mid_z, 3)], [round(x1, 3), round(z1, 3)]],
+        "width": [round(width0, 3), round(width1, 3)],
+        "z_scale": round(max(z1 - z0, 0.1), 3),
+        "strength": round(strength, 3),
+    }
 
 
 def generation_strategy_for(category: str, structure: dict[str, Any]) -> dict[str, Any]:

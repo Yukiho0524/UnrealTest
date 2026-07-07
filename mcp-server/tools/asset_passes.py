@@ -217,14 +217,14 @@ def apply_production_preview_layers(spec: dict[str, Any], manifest: dict[str, An
             "preview_instruction": "Open the preview Blueprint, enable Realtime, or press Play/Simulate to see flipbook-driven layer playback.",
         }
         for emitter in emitters:
-            apply_fire_production_preview(emitter)
+            apply_fire_production_preview(emitter, spec)
     elif effect_type == "electric_arc":
         plan["preview_mode"] = "production_layers"
         for emitter in emitters:
             apply_electric_production_preview(emitter)
 
 
-def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
+def apply_fire_production_preview(emitter: dict[str, Any], spec: dict[str, Any] | None = None) -> None:
     role = emitter.get("role")
     name = str(emitter.get("name") or "")
     settings = emitter.setdefault("unreal_settings", {})
@@ -325,18 +325,17 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
                     }
                 )
             elif is_sustained_fire:
+                framework_instances = fire_framework_mesh_instances(spec or {})
                 mesh.update(
                     {
                         "enabled": True,
                         "mesh": "cone",
-                        "instances": [
+                        "instances": framework_instances or [
                             {"mesh": "cone", "location": [-5, -2, 34], "rotation": [8, -10, -16], "scale": [0.1, 0.055, 0.34]},
                             {"mesh": "cone", "location": [6, 3, 48], "rotation": [-6, 12, 18], "scale": [0.09, 0.05, 0.42]},
                             {"mesh": "cone", "location": [-3, 4, 64], "rotation": [10, -8, 26], "scale": [0.075, 0.045, 0.46]},
                             {"mesh": "cone", "location": [4, -3, 82], "rotation": [-10, 10, -24], "scale": [0.065, 0.04, 0.44]},
                             {"mesh": "cone", "location": [0, 2, 102], "rotation": [6, 0, 8], "scale": [0.055, 0.036, 0.38]},
-                            {"mesh": "cylinder", "location": [-8, 2, 58], "rotation": [0, -14, -34], "scale": [0.045, 0.025, 0.34]},
-                            {"mesh": "cylinder", "location": [9, -1, 74], "rotation": [0, 12, 32], "scale": [0.04, 0.024, 0.36]},
                         ],
                     }
                 )
@@ -577,6 +576,49 @@ def apply_fire_production_preview(emitter: dict[str, Any]) -> None:
         material["emissive_strength"] = min(float(material.get("emissive_strength", 10.0)), 6.0)
         card["enabled"] = False
         niagara.update({"enabled": True, "location": [0, 0, 48] if short_sparks else [0, 0, 72], "rotation": [0, 0, 0], "scale": [0.16, 0.16, 0.16] if short_sparks else [0.22, 0.22, 0.22]})
+
+
+def fire_framework_mesh_instances(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    framework = (
+        (((spec.get("visual_profile") or {}).get("reference_understanding") or {}).get("vfx_structure") or {}).get("fire_framework")
+        or {}
+    )
+    curves = framework.get("flame_tongue_curves") or []
+    instances: list[dict[str, Any]] = []
+    for index, curve in enumerate(curves[:9]):
+        points = curve.get("points") or []
+        if len(points) < 2:
+            continue
+        start = points[0]
+        end = points[-1]
+        if len(start) < 2 or len(end) < 2:
+            continue
+        x0, z0 = float(start[0]), float(start[1])
+        x1, z1 = float(end[0]), float(end[1])
+        mid_x = (x0 + x1) * 0.5
+        mid_z = (z0 + z1) * 0.5
+        dx = x1 - x0
+        dz = max(z1 - z0, 0.08)
+        width = curve.get("width") or [0.06, 0.035]
+        base_width = float(width[0] if width else 0.06)
+        strength = float(curve.get("strength") or 0.65)
+        yaw = math.degrees(math.atan2(dx, dz)) * 0.8
+        pitch = max(-14.0, min(14.0, dx * -18.0))
+        mesh_kind = "cone" if index < 6 else "cylinder"
+        instances.append(
+            {
+                "mesh": mesh_kind,
+                "location": [round(mid_x * 34.0, 3), round((index % 3 - 1) * 2.5, 3), round(18.0 + mid_z * 92.0, 3)],
+                "rotation": [round(pitch, 3), round(dx * 24.0, 3), round(yaw, 3)],
+                "scale": [
+                    round(max(0.035, base_width * 0.92 * strength), 3),
+                    round(max(0.02, base_width * 0.42 * strength), 3),
+                    round(max(0.18, dz * 0.58 * strength), 3),
+                ],
+                "framework_curve": curve.get("name") or f"curve_{index + 1}",
+            }
+        )
+    return instances
 
 
 def apply_electric_production_preview(emitter: dict[str, Any]) -> None:
